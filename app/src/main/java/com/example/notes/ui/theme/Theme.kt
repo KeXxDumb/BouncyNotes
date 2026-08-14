@@ -10,12 +10,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
-private val LightColors = lightColorScheme(
-    primary = androidx.compose.ui.graphics.Color(0xFFFFB74D)
-)
-private val DarkColors = darkColorScheme(
-    primary = androidx.compose.ui.graphics.Color(0xFFFFB74D)
-)
+private val LightColors = lightColorScheme(primary = Seed)
+private val DarkColors = darkColorScheme(primary = Seed)
 
 @Composable
 fun NotesTheme(

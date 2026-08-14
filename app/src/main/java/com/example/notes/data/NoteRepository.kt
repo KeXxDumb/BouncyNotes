@@ -10,7 +10,7 @@ class NoteRepository(private val dao: NoteDao) {
 
     suspend fun save(note: Note): Long = dao.upsert(note)
 
-    suspend fun update(note: Note) = dao.update(note)
-
     suspend fun delete(note: Note) = dao.delete(note)
+
+    suspend fun purgeOldTrash(threshold: Long) = dao.purgeOldTrash(threshold)
 }
