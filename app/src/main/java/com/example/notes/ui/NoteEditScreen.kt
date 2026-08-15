@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -91,8 +92,8 @@ import com.example.notes.data.parseNoteContent
 import com.example.notes.data.removeImageOccurrence
 import com.example.notes.data.updateImageCaption
 import com.example.notes.ui.components.ChecklistEditor
-import com.example.notes.ui.components.ColorPickerRow
 import com.example.notes.ui.components.NoteContentView
+import com.example.notes.ui.components.RgbColorPicker
 import java.io.File
 
 // Modelo local para el editor segmentado: cada tramo de texto es un campo editable
@@ -364,9 +365,9 @@ fun NoteEditScreen(
         ) {
             Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
                 Text("Color", style = MaterialTheme.typography.labelLarge)
-                ColorPickerRow(
-                    selected = current.color,
-                    onSelect = { current = current.copy(color = it) }
+                RgbColorPicker(
+                    selectedHex = current.color,
+                    onColorChange = { current = current.copy(color = it) }
                 )
                 Spacer(Modifier.height(12.dp))
                 LabelsEditor(
