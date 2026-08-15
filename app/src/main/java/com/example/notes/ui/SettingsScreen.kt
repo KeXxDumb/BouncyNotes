@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.notes.data.AppSettings
 import com.example.notes.data.BackupManager
@@ -291,6 +292,15 @@ fun SettingsScreen(
                 }
             }
             item { Spacer(Modifier.height(32.dp)) }
+            item {
+                Text(
+                    text = "Bouncy Notes 🍑 — hecho por KeXxDumb",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

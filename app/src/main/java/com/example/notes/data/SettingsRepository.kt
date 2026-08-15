@@ -40,7 +40,7 @@ data class AppSettings(
     val trashPurgeDays: Int = 30,
     val compressImages: Boolean = false,
     val imageQuality: Int = 85,
-    val doubleTapToEdit: Boolean = false
+    val doubleTapToEdit: Boolean = true
 )
 
 class SettingsRepository(private val context: Context) {
@@ -85,7 +85,7 @@ class SettingsRepository(private val context: Context) {
             trashPurgeDays = prefs[Keys.TRASH_PURGE_DAYS] ?: 30,
             compressImages = prefs[Keys.COMPRESS_IMAGES] ?: false,
             imageQuality = prefs[Keys.IMAGE_QUALITY] ?: 85,
-            doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: false
+            doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true
         )
     }
 

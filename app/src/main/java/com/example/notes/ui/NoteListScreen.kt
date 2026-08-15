@@ -1,5 +1,8 @@
 package com.example.notes.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,10 +64,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.notes.data.AppSettings
 import com.example.notes.data.CheckboxPosition
@@ -73,6 +78,7 @@ import com.example.notes.data.ImageStorage
 import com.example.notes.data.Note
 import com.example.notes.data.NoteType
 import com.example.notes.data.parseNoteContent
+import com.example.notes.data.stripFormattingMarkers
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -187,15 +193,7 @@ fun NoteListScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = viewModel::setQuery,
-                            placeholder = { Text("Buscar notas...") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    },
+                    title = { BouncyPeach() },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Filled.Menu, contentDescription = "Menú")
@@ -268,6 +266,30 @@ fun NoteListScreen(
             }
         }
     }
+}
+
+@Composable
+private fun BouncyPeach() {
+    val scope = rememberCoroutineScope()
+    val scale = remember { Animatable(1f) }
+    Text(
+        text = "\uD83C\uDF51",
+        fontSize = 28.sp,
+        modifier = Modifier
+            .graphicsLayer(scaleX = scale.value, scaleY = scale.value)
+            .clickable {
+                scope.launch {
+                    scale.animateTo(
+                        1.5f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+                    )
+                    scale.animateTo(
+                        1f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessMedium)
+                    )
+                }
+            }
+    )
 }
 
 @Composable
@@ -345,6 +367,7 @@ private fun NoteCard(
                 val previewText = parseNoteContent(note.content)
                     .filterIsInstance<ContentPart.TextPart>()
                     .joinToString(" ") { it.text }
+                    .let { stripFormattingMarkers(it) }
                     .trim()
                 Text(
                     text = previewText,

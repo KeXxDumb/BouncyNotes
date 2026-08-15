@@ -54,3 +54,7 @@ fun removeImageOccurrence(content: String, occurrenceIndex: Int): String {
         if (count == occurrenceIndex) "" else match.value
     }
 }
+
+// Para previews en la lista: quita los marcadores de formato para que se lea limpio.
+fun stripFormattingMarkers(text: String): String =
+    text.replace("**", "").replace("~~", "").replace("`", "").replace("*", "")

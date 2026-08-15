@@ -25,8 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -121,6 +125,22 @@ fun NoteEditScreen(
         val newText = text.substring(0, start) + insertion + text.substring(end)
         val newCursor = start + insertion.length
         textFieldValue = TextFieldValue(newText, TextRange(newCursor))
+        current = current.copy(content = newText)
+    }
+
+    fun wrapSelection(marker: String) {
+        val selection = textFieldValue.selection
+        val text = textFieldValue.text
+        val start = selection.start.coerceIn(0, text.length)
+        val end = selection.end.coerceIn(0, text.length)
+        val selected = text.substring(start, end)
+        val newText = text.substring(0, start) + marker + selected + marker + text.substring(end)
+        val newSelection = if (start == end) {
+            TextRange(start + marker.length)
+        } else {
+            TextRange(start + marker.length, end + marker.length)
+        }
+        textFieldValue = TextFieldValue(newText, newSelection)
         current = current.copy(content = newText)
     }
 
@@ -408,12 +428,25 @@ fun NoteEditScreen(
             } else {
                 if (isEditing) {
                     item {
-                        TextButton(onClick = {
-                            showImageSourceDialog = true
-                        }) {
-                            Icon(Icons.Filled.Image, contentDescription = null)
-                            Spacer(Modifier.width(4.dp))
-                            Text("Insertar imagen aquí")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            IconButton(onClick = { showImageSourceDialog = true }) {
+                                Icon(Icons.Filled.Image, contentDescription = "Insertar imagen aquí")
+                            }
+                            IconButton(onClick = { wrapSelection("**") }) {
+                                Icon(Icons.Filled.FormatBold, contentDescription = "Negrita")
+                            }
+                            IconButton(onClick = { wrapSelection("*") }) {
+                                Icon(Icons.Filled.FormatItalic, contentDescription = "Cursiva")
+                            }
+                            IconButton(onClick = { wrapSelection("~~") }) {
+                                Icon(Icons.Filled.FormatStrikethrough, contentDescription = "Tachado")
+                            }
+                            IconButton(onClick = { wrapSelection("`") }) {
+                                Icon(Icons.Filled.Code, contentDescription = "Monoespaciado")
+                            }
                         }
                         OutlinedTextField(
                             value = textFieldValue,
@@ -422,7 +455,7 @@ fun NoteEditScreen(
                                 current = current.copy(content = it.text)
                             },
                             modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
-                            placeholder = { Text("Escribe tu nota... usa \"Insertar imagen\" para colocarla justo donde está el cursor.") }
+                            placeholder = { Text("Escribe tu nota... selecciona texto y usa los botones para darle formato.") }
                         )
                         Spacer(Modifier.height(12.dp))
                     }

@@ -32,7 +32,7 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
             when (part) {
                 is ContentPart.TextPart -> {
                     if (part.text.isNotBlank()) {
-                        Text(text = part.text, style = MaterialTheme.typography.bodyLarge)
+                        InlineMarkdownText(text = part.text)
                     }
                 }
                 is ContentPart.ImagePart -> {
