@@ -28,13 +28,14 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -61,11 +62,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.example.notes.data.AppSettings
+import com.example.notes.data.CheckboxPosition
+import com.example.notes.data.ContentPart
+import com.example.notes.data.ImageStorage
 import com.example.notes.data.Note
 import com.example.notes.data.NoteType
+import com.example.notes.data.parseNoteContent
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -73,10 +80,12 @@ import java.io.File
 @Composable
 fun NoteListScreen(
     viewModel: NoteViewModel,
+    settings: AppSettings,
     biometricUnlockedForPrivate: Boolean,
     onRequestBiometric: () -> Unit,
     onNoteClick: (Long) -> Unit,
-    onAddClick: (NoteType) -> Unit
+    onAddClick: (NoteType) -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val notes by viewModel.notes.collectAsState()
     val query by viewModel.query.collectAsState()
@@ -160,6 +169,17 @@ fun NoteListScreen(
                         )
                     }
                 }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                NavigationDrawerItem(
+                    label = { Text("Ajustes") },
+                    selected = false,
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        onOpenSettings()
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
                 Spacer(Modifier.height(12.dp))
             }
         }
@@ -229,7 +249,7 @@ fun NoteListScreen(
                 }
                 else -> {
                     LazyVerticalStaggeredGrid(
-                        columns = StaggeredGridCells.Fixed(2),
+                        columns = StaggeredGridCells.Fixed(settings.gridColumns.coerceIn(1, 3)),
                         modifier = Modifier.fillMaxSize().padding(padding),
                         contentPadding = PaddingValues(8.dp),
                         verticalItemSpacing = 8.dp,
@@ -238,6 +258,7 @@ fun NoteListScreen(
                         items(notes, key = { it.id }) { note ->
                             NoteCard(
                                 note = note,
+                                checkboxPosition = settings.checkboxPosition,
                                 onClick = { onNoteClick(note.id) },
                                 onTogglePin = { viewModel.togglePin(note) }
                             )
@@ -250,7 +271,13 @@ fun NoteListScreen(
 }
 
 @Composable
-private fun NoteCard(note: Note, onClick: () -> Unit, onTogglePin: () -> Unit) {
+private fun NoteCard(
+    note: Note,
+    checkboxPosition: CheckboxPosition,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit
+) {
+    val context = LocalContext.current
     val bg = note.color?.let {
         runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
     } ?: MaterialTheme.colorScheme.surfaceContainerHigh
@@ -263,17 +290,21 @@ private fun NoteCard(note: Note, onClick: () -> Unit, onTogglePin: () -> Unit) {
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            if (note.images.isNotEmpty()) {
-                AsyncImage(
-                    model = File(note.images.first().path),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                )
-                Spacer(Modifier.height(8.dp))
+            if (note.type == NoteType.TEXT) {
+                val parts = parseNoteContent(note.content)
+                val firstImage = parts.filterIsInstance<ContentPart.ImagePart>().firstOrNull()
+                if (firstImage != null) {
+                    AsyncImage(
+                        model = File(ImageStorage.imagesDir(context), firstImage.fileName),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -294,8 +325,14 @@ private fun NoteCard(note: Note, onClick: () -> Unit, onTogglePin: () -> Unit) {
             Spacer(Modifier.height(4.dp))
             if (note.type == NoteType.CHECKLIST) {
                 note.checklistItems.take(4).forEach { item ->
+                    val symbol = if (item.checked) "☑" else "☐"
+                    val text = if (checkboxPosition == CheckboxPosition.START) {
+                        "$symbol ${item.text}"
+                    } else {
+                        "${item.text} $symbol"
+                    }
                     Text(
-                        text = (if (item.checked) "☑ " else "☐ ") + item.text,
+                        text = text,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -305,8 +342,12 @@ private fun NoteCard(note: Note, onClick: () -> Unit, onTogglePin: () -> Unit) {
                     Text("+${note.checklistItems.size - 4} más", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
+                val previewText = parseNoteContent(note.content)
+                    .filterIsInstance<ContentPart.TextPart>()
+                    .joinToString(" ") { it.text }
+                    .trim()
                 Text(
-                    text = note.content,
+                    text = previewText,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis

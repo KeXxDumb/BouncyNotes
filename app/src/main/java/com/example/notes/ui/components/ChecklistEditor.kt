@@ -20,12 +20,16 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.example.notes.data.CheckboxPosition
 import com.example.notes.data.ChecklistItem
 
 @Composable
 fun ChecklistEditor(
     items: List<ChecklistItem>,
+    checkboxPosition: CheckboxPosition = CheckboxPosition.START,
+    readOnly: Boolean = false,
     onItemsChange: (List<ChecklistItem>) -> Unit
 ) {
     Column {
@@ -35,34 +39,59 @@ fun ChecklistEditor(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Checkbox(
-                        checked = item.checked,
-                        onCheckedChange = { checked ->
-                            onItemsChange(items.toMutableList().also { it[index] = item.copy(checked = checked) })
+                    val checkbox: @Composable () -> Unit = {
+                        Checkbox(
+                            checked = item.checked,
+                            onCheckedChange = { checked ->
+                                onItemsChange(items.toMutableList().also { it[index] = item.copy(checked = checked) })
+                            }
+                        )
+                    }
+                    val textArea: @Composable () -> Unit = {
+                        if (readOnly) {
+                            Text(
+                                text = item.text,
+                                textDecoration = if (item.checked) TextDecoration.LineThrough else null,
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = item.text,
+                                onValueChange = { text ->
+                                    onItemsChange(items.toMutableList().also { it[index] = item.copy(text = text) })
+                                },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text("Elemento") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
+                            )
                         }
-                    )
-                    OutlinedTextField(
-                        value = item.text,
-                        onValueChange = { text ->
-                            onItemsChange(items.toMutableList().also { it[index] = item.copy(text = text) })
-                        },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Elemento") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next)
-                    )
-                    IconButton(onClick = {
-                        onItemsChange(items.toMutableList().also { it.removeAt(index) })
-                    }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Quitar")
+                    }
+
+                    if (checkboxPosition == CheckboxPosition.START) {
+                        checkbox()
+                        textArea()
+                    } else {
+                        textArea()
+                        checkbox()
+                    }
+
+                    if (!readOnly) {
+                        IconButton(onClick = {
+                            onItemsChange(items.toMutableList().also { it.removeAt(index) })
+                        }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Quitar")
+                        }
                     }
                 }
             }
         }
-        TextButton(onClick = { onItemsChange(items + ChecklistItem()) }) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(4.dp))
-            Text("Agregar elemento")
+        if (!readOnly) {
+            TextButton(onClick = { onItemsChange(items + ChecklistItem()) }) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Agregar elemento")
+            }
         }
     }
 }

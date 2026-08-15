@@ -40,32 +40,6 @@ class Converters {
     }
 
     @TypeConverter
-    fun fromImages(images: List<NoteImage>): String {
-        val arr = JSONArray()
-        images.forEach {
-            val o = JSONObject()
-            o.put("p", it.path)
-            o.put("cap", it.caption)
-            arr.put(o)
-        }
-        return arr.toString()
-    }
-
-    @TypeConverter
-    fun toImages(json: String): List<NoteImage> {
-        if (json.isBlank()) return emptyList()
-        return try {
-            val arr = JSONArray(json)
-            (0 until arr.length()).map {
-                val o = arr.getJSONObject(it)
-                NoteImage(path = o.optString("p"), caption = o.optString("cap"))
-            }
-        } catch (e: Exception) {
-            emptyList()
-        }
-    }
-
-    @TypeConverter
     fun fromLabels(labels: List<String>): String {
         val arr = JSONArray()
         labels.forEach { arr.put(it) }

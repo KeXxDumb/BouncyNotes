@@ -3,15 +3,20 @@ package com.example.notes.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.notes.data.ImageStorage
 import com.example.notes.data.Note
 import com.example.notes.data.NoteDatabase
 import com.example.notes.data.NoteRepository
+import com.example.notes.data.SettingsRepository
+import com.example.notes.data.SortOrder
+import com.example.notes.data.StartView
+import com.example.notes.data.extractImageFileNames
+import com.example.notes.data.ImageStorage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -23,6 +28,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = NoteRepository(
         NoteDatabase.getInstance(application).noteDao()
     )
+    private val settingsRepository = SettingsRepository(application)
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -40,8 +46,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val notes: StateFlow<List<Note>> = combine(
-        allNotes, _query, _viewMode, _labelFilter
-    ) { list, q, mode, label ->
+        allNotes, _query, _viewMode, _labelFilter, settingsRepository.settings
+    ) { list, q, mode, label, settings ->
         var filtered = when (mode) {
             ViewMode.ALL -> list.filter { it.deletedAt == null && !it.archived && !it.isPrivate }
             ViewMode.ARCHIVED -> list.filter { it.deletedAt == null && it.archived }
@@ -58,13 +64,29 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     note.checklistItems.any { it.text.contains(q, ignoreCase = true) }
             }
         }
-        filtered.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt })
+        val secondary: Comparator<Note> = when (settings.sortOrder) {
+            SortOrder.UPDATED -> compareByDescending { it.updatedAt }
+            SortOrder.CREATED -> compareByDescending { it.createdAt }
+            SortOrder.ALPHABETICAL -> compareBy { it.title.lowercase() }
+            SortOrder.COLOR -> compareBy { it.color ?: "zzzzzz" }
+        }
+        filtered.sortedWith(compareByDescending<Note> { it.pinned }.then(secondary))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
-            val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
-            repository.purgeOldTrash(thirtyDaysAgo)
+            val initial = settingsRepository.settings.first()
+            if (initial.startView == StartView.LAST_USED) {
+                _viewMode.value = runCatching { ViewMode.valueOf(initial.lastViewMode) }.getOrDefault(ViewMode.ALL)
+            }
+        }
+        viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
+                if (settings.trashPurgeDays > 0) {
+                    val threshold = System.currentTimeMillis() - (settings.trashPurgeDays.toLong() * 24 * 60 * 60 * 1000)
+                    repository.purgeOldTrash(threshold)
+                }
+            }
         }
     }
 
@@ -75,6 +97,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun setViewMode(mode: ViewMode) {
         _viewMode.value = mode
         _labelFilter.value = null
+        viewModelScope.launch { settingsRepository.setLastViewMode(mode.name) }
     }
 
     fun setLabelFilter(label: String?) {
@@ -83,6 +106,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     suspend fun getById(id: Long): Note? = repository.getById(id)
+
+    suspend fun getAllNotesSnapshot(): List<Note> = allNotes.first()
 
     fun save(note: Note, onDone: (Long) -> Unit = {}) {
         viewModelScope.launch {
@@ -105,8 +130,14 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteForever(note: Note) {
         viewModelScope.launch {
-            note.images.forEach { ImageStorage.deleteFile(it.path) }
+            extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
             repository.delete(note)
+        }
+    }
+
+    fun importNotes(notes: List<Note>) {
+        viewModelScope.launch {
+            notes.forEach { repository.save(it) }
         }
     }
 }

@@ -83,4 +83,5 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 }
