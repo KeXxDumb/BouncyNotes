@@ -1,6 +1,7 @@
 package com.example.notes.ui.components
 
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -29,7 +30,8 @@ fun FlatTextField(
     modifier: Modifier = Modifier,
     placeholder: @Composable (() -> Unit)? = null,
     singleLine: Boolean = false,
-    textStyle: TextStyle = TextStyle.Default
+    textStyle: TextStyle = TextStyle.Default,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     TextField(
         value = value,
@@ -38,6 +40,7 @@ fun FlatTextField(
         placeholder = placeholder,
         singleLine = singleLine,
         textStyle = textStyle,
+        keyboardOptions = keyboardOptions,
         shape = RoundedCornerShape(12.dp),
         colors = flatColors()
     )
@@ -49,7 +52,8 @@ fun FlatTextField(
     onValueChange: (TextFieldValue) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: @Composable (() -> Unit)? = null,
-    singleLine: Boolean = false
+    singleLine: Boolean = false,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
 ) {
     TextField(
         value = value,
@@ -57,6 +61,7 @@ fun FlatTextField(
         modifier = modifier,
         placeholder = placeholder,
         singleLine = singleLine,
+        keyboardOptions = keyboardOptions,
         shape = RoundedCornerShape(12.dp),
         colors = flatColors()
     )
