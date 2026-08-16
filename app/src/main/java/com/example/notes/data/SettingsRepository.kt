@@ -37,6 +37,7 @@ data class AppSettings(
     val hideFromRecents: Boolean = false,
     val appWideBiometricLock: Boolean = false,
     // -1 = nunca purgar
+    val useTrash: Boolean = true,
     val trashPurgeDays: Int = 30,
     val compressImages: Boolean = false,
     val imageQuality: Int = 85,
@@ -60,6 +61,7 @@ class SettingsRepository(private val context: Context) {
         val BIOMETRIC_REMEMBER_MIN = intPreferencesKey("biometric_remember_min")
         val HIDE_FROM_RECENTS = booleanPreferencesKey("hide_from_recents")
         val APP_WIDE_LOCK = booleanPreferencesKey("app_wide_lock")
+        val USE_TRASH = booleanPreferencesKey("use_trash")
         val TRASH_PURGE_DAYS = intPreferencesKey("trash_purge_days")
         val COMPRESS_IMAGES = booleanPreferencesKey("compress_images")
         val IMAGE_QUALITY = intPreferencesKey("image_quality")
@@ -82,6 +84,7 @@ class SettingsRepository(private val context: Context) {
             biometricRememberMinutes = prefs[Keys.BIOMETRIC_REMEMBER_MIN] ?: -1,
             hideFromRecents = prefs[Keys.HIDE_FROM_RECENTS] ?: false,
             appWideBiometricLock = prefs[Keys.APP_WIDE_LOCK] ?: false,
+            useTrash = prefs[Keys.USE_TRASH] ?: true,
             trashPurgeDays = prefs[Keys.TRASH_PURGE_DAYS] ?: 30,
             compressImages = prefs[Keys.COMPRESS_IMAGES] ?: false,
             imageQuality = prefs[Keys.IMAGE_QUALITY] ?: 85,
@@ -107,6 +110,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BIOMETRIC_REMEMBER_MIN] = updated.biometricRememberMinutes
             prefs[Keys.HIDE_FROM_RECENTS] = updated.hideFromRecents
             prefs[Keys.APP_WIDE_LOCK] = updated.appWideBiometricLock
+            prefs[Keys.USE_TRASH] = updated.useTrash
             prefs[Keys.TRASH_PURGE_DAYS] = updated.trashPurgeDays
             prefs[Keys.COMPRESS_IMAGES] = updated.compressImages
             prefs[Keys.IMAGE_QUALITY] = updated.imageQuality

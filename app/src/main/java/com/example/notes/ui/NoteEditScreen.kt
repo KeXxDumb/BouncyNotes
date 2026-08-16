@@ -9,7 +9,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatStrikethrough
@@ -50,6 +53,7 @@ import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -75,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -92,6 +97,7 @@ import com.example.notes.data.parseNoteContent
 import com.example.notes.data.removeImageOccurrence
 import com.example.notes.data.updateImageCaption
 import com.example.notes.ui.components.ChecklistEditor
+import com.example.notes.ui.components.CompactCaptionField
 import com.example.notes.ui.components.FlatTextField
 import com.example.notes.ui.components.NoteContentView
 import com.example.notes.ui.components.RgbColorPicker
@@ -136,6 +142,7 @@ fun NoteEditScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     var loaded by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf(Note(type = initialType)) }
     var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
@@ -146,6 +153,7 @@ fun NoteEditScreen(
     var showImageSourceDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
+    var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
     var isEditing by remember { mutableStateOf(true) }
 
     LaunchedEffect(noteId) {
@@ -171,9 +179,34 @@ fun NoteEditScreen(
             val cursor = seg.value.selection.start.coerceIn(0, text.length)
             val before = text.substring(0, cursor)
             val after = text.substring(cursor)
-            newSegments[idx] = EditSegment.TextSeg(TextFieldValue(before))
-            newSegments.add(idx + 1, EditSegment.ImageSeg(fileName, ""))
-            newSegments.add(idx + 2, EditSegment.TextSeg(TextFieldValue(after)))
+
+            // Línea actual (donde está el cursor), delimitada por saltos de línea.
+            val lineStart = before.lastIndexOf('\n').let { if (it == -1) 0 else it + 1 }
+            val lineEndRel = after.indexOf('\n').let { if (it == -1) after.length else it }
+            val currentLine = before.substring(lineStart) + after.substring(0, lineEndRel)
+
+            if (currentLine.isBlank()) {
+                // La línea donde está el cursor está vacía: la imagen la reemplaza
+                // directamente, sin dejar líneas vacías de sobra.
+                val prefix = before.substring(0, lineStart).removeSuffix("\n")
+                val suffix = after.substring(lineEndRel).removePrefix("\n")
+
+                newSegments.removeAt(idx)
+                var insertAt = idx
+                if (prefix.isNotEmpty()) {
+                    newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(prefix)))
+                    insertAt++
+                }
+                newSegments.add(insertAt, EditSegment.ImageSeg(fileName, ""))
+                insertAt++
+                // Siempre dejamos exactamente un tramo (con o sin texto) después de la
+                // imagen para poder seguir escribiendo, nunca dos vacíos.
+                newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(suffix)))
+            } else {
+                newSegments[idx] = EditSegment.TextSeg(TextFieldValue(before))
+                newSegments.add(idx + 1, EditSegment.ImageSeg(fileName, ""))
+                newSegments.add(idx + 2, EditSegment.TextSeg(TextFieldValue(after)))
+            }
         } else {
             newSegments.add(EditSegment.ImageSeg(fileName, ""))
             newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
@@ -228,6 +261,7 @@ fun NoteEditScreen(
             }
             if (fileName != null) insertImageAtActiveSegment(fileName)
         }
+        if (uris.isNotEmpty()) focusManager.clearFocus(force = true)
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -237,6 +271,7 @@ fun NoteEditScreen(
         if (success && fileName != null) {
             if (settings.compressImages) ImageStorage.compressInPlace(context, fileName, settings.imageQuality)
             insertImageAtActiveSegment(fileName)
+            focusManager.clearFocus(force = true)
         } else if (fileName != null) {
             ImageStorage.deleteFile(context, fileName)
         }
@@ -358,12 +393,22 @@ fun NoteEditScreen(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("¿Enviar a la papelera?") },
-            text = { Text("Podrás restaurarla después desde la Papelera.") },
+            title = { Text(if (settings.useTrash) "¿Enviar a la papelera?" else "¿Eliminar nota?") },
+            text = {
+                Text(
+                    if (settings.useTrash) "Podrás restaurarla después desde la Papelera."
+                    else "Esta acción no se puede deshacer."
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
-                    viewModel.moveToTrash(current)
+                    if (settings.useTrash) {
+                        viewModel.moveToTrash(current)
+                    } else {
+                        extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
+                        viewModel.deleteForever(current)
+                    }
                     onBack()
                 }) { Text("Borrar") }
             },
@@ -423,7 +468,7 @@ fun NoteEditScreen(
             )
         },
         bottomBar = {
-            BottomAppBar {
+            BottomAppBar(modifier = Modifier.imePadding()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -471,8 +516,12 @@ fun NoteEditScreen(
                         IconButton(onClick = {
                             if (settings.confirmBeforeDelete) {
                                 showDeleteConfirm = true
-                            } else {
+                            } else if (settings.useTrash) {
                                 viewModel.moveToTrash(current)
+                                onBack()
+                            } else {
+                                extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
+                                viewModel.deleteForever(current)
                                 onBack()
                             }
                         }) {
@@ -611,18 +660,35 @@ fun NoteEditScreen(
                                                     modifier = Modifier.size(16.dp)
                                                 )
                                             }
+                                            if (segment.caption.isBlank() && index !in captionActiveIndices) {
+                                                TextButton(
+                                                    onClick = { captionActiveIndices = captionActiveIndices + index },
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomStart)
+                                                        .padding(6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                    colors = ButtonDefaults.textButtonColors(
+                                                        containerColor = Color.Black.copy(alpha = 0.5f),
+                                                        contentColor = Color.White
+                                                    )
+                                                ) {
+                                                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text("Descripción", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
                                         }
-                                        FlatTextField(
-                                            value = segment.caption,
-                                            onValueChange = { caption ->
-                                                val newSegments = segments.toMutableList()
-                                                newSegments[index] = segment.copy(caption = caption)
-                                                updateContentFromSegments(newSegments)
-                                            },
-                                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                            placeholder = { Text("Descripción (opcional)") },
-                                            singleLine = true
-                                        )
+                                        if (segment.caption.isNotBlank() || index in captionActiveIndices) {
+                                            CompactCaptionField(
+                                                value = segment.caption,
+                                                onValueChange = { caption ->
+                                                    val newSegments = segments.toMutableList()
+                                                    newSegments[index] = segment.copy(caption = caption)
+                                                    updateContentFromSegments(newSegments)
+                                                },
+                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

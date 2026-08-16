@@ -3,7 +3,11 @@ package com.example.notes.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,19 +22,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -102,6 +111,12 @@ fun NoteListScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var fabExpanded by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    val selectionMode = selectedIds.isNotEmpty()
+
+    LaunchedEffect(viewMode, labelFilter) {
+        selectedIds = emptySet()
+    }
 
     LaunchedEffect(viewMode) {
         if (viewMode == ViewMode.PRIVATE && !biometricUnlockedForPrivate) {
@@ -135,16 +150,18 @@ fun NoteListScreen(
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )
-                NavigationDrawerItem(
-                    label = { Text("Papelera") },
-                    selected = viewMode == ViewMode.TRASH,
-                    icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                    onClick = {
-                        viewModel.setViewMode(ViewMode.TRASH)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
+                if (settings.useTrash) {
+                    NavigationDrawerItem(
+                        label = { Text("Papelera") },
+                        selected = viewMode == ViewMode.TRASH,
+                        icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                        onClick = {
+                            viewModel.setViewMode(ViewMode.TRASH)
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
                 if (labels.isNotEmpty()) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Text(
@@ -182,17 +199,67 @@ fun NoteListScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { BouncyPeach() },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Filled.Menu, contentDescription = "Menú")
+                if (selectionMode) {
+                    TopAppBar(
+                        title = { Text("${selectedIds.size} seleccionadas") },
+                        navigationIcon = {
+                            IconButton(onClick = { selectedIds = emptySet() }) {
+                                Icon(Icons.Filled.Close, contentDescription = "Cancelar selección")
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                viewModel.setPinnedForIds(selectedIds, true)
+                                selectedIds = emptySet()
+                            }) {
+                                Icon(Icons.Filled.PushPin, contentDescription = "Fijar")
+                            }
+                            IconButton(onClick = {
+                                viewModel.setPinnedForIds(selectedIds, false)
+                                selectedIds = emptySet()
+                            }) {
+                                Icon(Icons.Outlined.PushPin, contentDescription = "Desfijar")
+                            }
+                            if (viewMode == ViewMode.TRASH) {
+                                IconButton(onClick = {
+                                    viewModel.restoreIds(selectedIds)
+                                    selectedIds = emptySet()
+                                }) {
+                                    Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
+                                }
+                                IconButton(onClick = {
+                                    viewModel.deleteForeverIds(selectedIds)
+                                    selectedIds = emptySet()
+                                }) {
+                                    Icon(Icons.Filled.DeleteForever, contentDescription = "Eliminar para siempre")
+                                }
+                            } else {
+                                IconButton(onClick = {
+                                    if (settings.useTrash) {
+                                        viewModel.moveToTrashIds(selectedIds)
+                                    } else {
+                                        viewModel.deleteForeverIds(selectedIds)
+                                    }
+                                    selectedIds = emptySet()
+                                }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Borrar")
+                                }
+                            }
                         }
-                    }
-                )
+                    )
+                } else {
+                    TopAppBar(
+                        title = { BouncyPeach() },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                Icon(Icons.Filled.Menu, contentDescription = "Menú")
+                            }
+                        }
+                    )
+                }
             },
             floatingActionButton = {
-                if (viewMode == ViewMode.ALL || viewMode == ViewMode.PRIVATE) {
+                if (!selectionMode && (viewMode == ViewMode.ALL || viewMode == ViewMode.PRIVATE)) {
                     Column(horizontalAlignment = Alignment.End) {
                         if (fabExpanded) {
                             ExtendedFloatingActionButton(
@@ -247,7 +314,18 @@ fun NoteListScreen(
                             NoteCard(
                                 note = note,
                                 checkboxPosition = settings.checkboxPosition,
-                                onClick = { onNoteClick(note.id) },
+                                selected = note.id in selectedIds,
+                                selectionMode = selectionMode,
+                                onClick = {
+                                    if (selectionMode) {
+                                        selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
+                                    } else {
+                                        onNoteClick(note.id)
+                                    }
+                                },
+                                onLongClick = {
+                                    selectedIds = selectedIds + note.id
+                                },
                                 onTogglePin = { viewModel.togglePin(note) }
                             )
                         }
@@ -282,11 +360,15 @@ private fun BouncyPeach() {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
     note: Note,
     checkboxPosition: CheckboxPosition,
+    selected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onTogglePin: () -> Unit
 ) {
     val context = LocalContext.current
@@ -294,13 +376,15 @@ private fun NoteCard(
         runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
     } ?: MaterialTheme.colorScheme.surfaceContainerHigh
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = bg),
-        shape = RoundedCornerShape(16.dp)
-    ) {
+    Box {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            colors = CardDefaults.cardColors(containerColor = bg),
+            shape = RoundedCornerShape(16.dp),
+            border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        ) {
         Column(modifier = Modifier.padding(12.dp)) {
             if (note.type == NoteType.TEXT) {
                 val parts = parseNoteContent(note.content)
@@ -373,6 +457,20 @@ private fun NoteCard(
                     }
                 }
             }
+        }
+        }
+        if (selectionMode) {
+            Icon(
+                if (selected) Icons.Filled.CheckCircle else Icons.Outlined.Circle,
+                contentDescription = if (selected) "Seleccionada" else "No seleccionada",
+                tint = if (selected) MaterialTheme.colorScheme.primary else Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(22.dp)
+                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                    .padding(2.dp)
+            )
         }
     }
 }

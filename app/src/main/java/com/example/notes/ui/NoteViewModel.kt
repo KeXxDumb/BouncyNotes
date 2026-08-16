@@ -139,4 +139,41 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             notes.forEach { repository.save(it) }
         }
     }
+
+    fun setPinnedForIds(ids: Set<Long>, pinned: Boolean) {
+        viewModelScope.launch {
+            val all = allNotes.first()
+            all.filter { it.id in ids }.forEach { note ->
+                repository.save(note.copy(pinned = pinned, updatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    fun moveToTrashIds(ids: Set<Long>) {
+        viewModelScope.launch {
+            val all = allNotes.first()
+            all.filter { it.id in ids }.forEach { note ->
+                repository.save(note.copy(deletedAt = System.currentTimeMillis(), pinned = false, updatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    fun deleteForeverIds(ids: Set<Long>) {
+        viewModelScope.launch {
+            val all = allNotes.first()
+            all.filter { it.id in ids }.forEach { note ->
+                extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
+                repository.delete(note)
+            }
+        }
+    }
+
+    fun restoreIds(ids: Set<Long>) {
+        viewModelScope.launch {
+            val all = allNotes.first()
+            all.filter { it.id in ids }.forEach { note ->
+                repository.save(note.copy(deletedAt = null, updatedAt = System.currentTimeMillis()))
+            }
+        }
+    }
 }

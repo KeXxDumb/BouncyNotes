@@ -235,13 +235,27 @@ fun SettingsScreen(
 
             item {
                 ExpandableSection(title = "Papelera", icon = Icons.Filled.Delete) {
-                    DiscreteSlider(
-                        label = "Purgar notas borradas después de",
-                        values = listOf(7, 14, 30, 60, 90, -1),
-                        valueLabels = listOf("7 días", "14 días", "30 días", "60 días", "90 días", "Nunca"),
-                        selected = settings.trashPurgeDays,
-                        onSelect = { v -> onUpdate { it.copy(trashPurgeDays = v) } }
+                    SwitchSetting(
+                        label = "Usar papelera",
+                        checked = settings.useTrash,
+                        onCheckedChange = { v -> onUpdate { it.copy(useTrash = v) } }
                     )
+                    if (settings.useTrash) {
+                        DiscreteSlider(
+                            label = "Purgar notas borradas después de",
+                            values = listOf(7, 14, 30, 60, 90, -1),
+                            valueLabels = listOf("7 días", "14 días", "30 días", "60 días", "90 días", "Nunca"),
+                            selected = settings.trashPurgeDays,
+                            onSelect = { v -> onUpdate { it.copy(trashPurgeDays = v) } }
+                        )
+                    } else {
+                        Text(
+                            "Al borrar una nota se eliminará de inmediato, sin poder recuperarla.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
 

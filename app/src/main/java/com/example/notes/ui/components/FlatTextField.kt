@@ -1,8 +1,10 @@
 package com.example.notes.ui.components
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -14,9 +16,9 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 private fun flatColors() = TextFieldDefaults.colors(
-    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-    unfocusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
-    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+    focusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+    unfocusedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
+    disabledContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
     focusedIndicatorColor = Color.Transparent,
     unfocusedIndicatorColor = Color.Transparent,
     disabledIndicatorColor = Color.Transparent
@@ -63,6 +65,25 @@ fun FlatTextField(
         singleLine = singleLine,
         keyboardOptions = keyboardOptions,
         shape = RoundedCornerShape(12.dp),
+        colors = flatColors()
+    )
+}
+
+// Campo compacto para descripciones de imagen: chico en altura y en tipografía.
+@Composable
+fun CompactCaptionField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.height(44.dp),
+        placeholder = { Text("Descripción", style = MaterialTheme.typography.bodySmall) },
+        textStyle = MaterialTheme.typography.bodySmall,
+        singleLine = true,
+        shape = RoundedCornerShape(10.dp),
         colors = flatColors()
     )
 }
