@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -32,6 +31,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -131,16 +131,6 @@ fun NoteListScreen(
                     icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                     onClick = {
                         viewModel.setViewMode(ViewMode.PRIVATE)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Archivadas") },
-                    selected = viewMode == ViewMode.ARCHIVED,
-                    icon = { Icon(Icons.Filled.Archive, contentDescription = null) },
-                    onClick = {
-                        viewModel.setViewMode(ViewMode.ARCHIVED)
                         scope.launch { drawerState.close() }
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
@@ -336,13 +326,12 @@ private fun NoteCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                if (note.pinned) {
-                    Icon(
-                        Icons.Filled.PushPin,
-                        contentDescription = "Fijada",
-                        modifier = Modifier.size(16.dp).clickable(onClick = onTogglePin)
-                    )
-                }
+                Icon(
+                    if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                    contentDescription = if (note.pinned) "Desfijar" else "Fijar",
+                    tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp).clickable(onClick = onTogglePin)
+                )
             }
             Spacer(Modifier.height(4.dp))
             if (note.type == NoteType.CHECKLIST) {

@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class ViewMode { ALL, ARCHIVED, TRASH, PRIVATE }
+enum class ViewMode { ALL, TRASH, PRIVATE }
 
 class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -49,8 +49,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         allNotes, _query, _viewMode, _labelFilter, settingsRepository.settings
     ) { list, q, mode, label, settings ->
         var filtered = when (mode) {
-            ViewMode.ALL -> list.filter { it.deletedAt == null && !it.archived && !it.isPrivate }
-            ViewMode.ARCHIVED -> list.filter { it.deletedAt == null && it.archived }
+            ViewMode.ALL -> list.filter { it.deletedAt == null && !it.isPrivate }
             ViewMode.TRASH -> list.filter { it.deletedAt != null }
             ViewMode.PRIVATE -> list.filter { it.deletedAt == null && it.isPrivate }
         }

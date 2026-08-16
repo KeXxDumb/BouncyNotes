@@ -1,6 +1,7 @@
 package com.example.notes.ui
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,7 +27,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -52,11 +52,11 @@ import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,6 +92,7 @@ import com.example.notes.data.parseNoteContent
 import com.example.notes.data.removeImageOccurrence
 import com.example.notes.data.updateImageCaption
 import com.example.notes.ui.components.ChecklistEditor
+import com.example.notes.ui.components.FlatTextField
 import com.example.notes.ui.components.NoteContentView
 import com.example.notes.ui.components.RgbColorPicker
 import java.io.File
@@ -250,6 +251,20 @@ fun NoteEditScreen(
             pendingCameraFileName = file.name
             cameraLauncher.launch(uri)
         }
+    }
+
+    // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
+    // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
+    // fijar/desfijar la nota.
+    BackHandler(enabled = loaded && viewerStartPos != null) {
+        viewerStartPos = null
+    }
+    BackHandler(
+        enabled = loaded && viewerStartPos == null &&
+            !(current.isPrivate && !biometricUnlockedForPrivate && !unlockedThisNote)
+    ) {
+        viewModel.save(current)
+        onBack()
     }
 
     if (!loaded) {
@@ -438,9 +453,6 @@ fun NoteEditScreen(
                             contentDescription = "Privada"
                         )
                     }
-                    IconButton(onClick = { current = current.copy(archived = !current.archived) }) {
-                        Icon(Icons.Filled.Archive, contentDescription = "Archivar")
-                    }
                     if (current.deletedAt != null) {
                         IconButton(onClick = {
                             extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
@@ -517,7 +529,7 @@ fun NoteEditScreen(
                 .padding(horizontal = 12.dp)
         ) {
             if (isEditing) {
-                OutlinedTextField(
+                FlatTextField(
                     value = current.title,
                     onValueChange = { current = current.copy(title = it) },
                     modifier = Modifier.fillMaxWidth(),
@@ -525,13 +537,17 @@ fun NoteEditScreen(
                     textStyle = MaterialTheme.typography.titleMedium,
                     singleLine = true
                 )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
             } else if (current.title.isNotBlank()) {
                 Text(
                     text = current.title,
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(vertical = 8.dp)
                 )
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
             }
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -554,7 +570,7 @@ fun NoteEditScreen(
                         segments.forEachIndexed { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
-                                    OutlinedTextField(
+                                    FlatTextField(
                                         value = segment.value,
                                         onValueChange = { value ->
                                             val newSegments = segments.toMutableList()
@@ -596,7 +612,7 @@ fun NoteEditScreen(
                                                 )
                                             }
                                         }
-                                        OutlinedTextField(
+                                        FlatTextField(
                                             value = segment.caption,
                                             onValueChange = { caption ->
                                                 val newSegments = segments.toMutableList()
@@ -659,7 +675,7 @@ private fun LabelsEditor(
         }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            FlatTextField(
                 value = newLabel,
                 onValueChange = { newLabel = it },
                 modifier = Modifier.weight(1f),

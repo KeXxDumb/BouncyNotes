@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,7 +54,7 @@ fun ChecklistEditor(
                                 modifier = Modifier.weight(1f)
                             )
                         } else {
-                            OutlinedTextField(
+                            FlatTextField(
                                 value = item.text,
                                 onValueChange = { text ->
                                     onItemsChange(items.toMutableList().also { it[index] = item.copy(text = text) })
