@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.notes"
+    namespace = "com.dumb.bouncynotes"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.notes"
+        applicationId = "com.dumb.bouncynotes"
         minSdk = 23
         targetSdk = 34
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
