@@ -68,7 +68,8 @@ fun FlatTextField(
     )
 }
 
-// Campo compacto para descripciones de imagen: chico en altura y en tipografía.
+// Campo compacto para descripciones de imagen: tipografía chica, sin forzar altura
+// (forzar la altura directamente recortaba el texto contra el padding interno).
 @Composable
 fun CompactCaptionField(
     value: String,
@@ -83,12 +84,6 @@ fun CompactCaptionField(
         textStyle = MaterialTheme.typography.bodySmall,
         singleLine = true,
         shape = RoundedCornerShape(10.dp),
-        colors = flatColors(),
-        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
-            start = 12.dp,
-            end = 12.dp,
-            top = 8.dp,
-            bottom = 8.dp
-        )
+        colors = flatColors()
     )
 }
