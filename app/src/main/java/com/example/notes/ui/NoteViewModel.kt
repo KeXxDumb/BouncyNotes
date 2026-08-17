@@ -176,4 +176,16 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    suspend fun getTrashedCount(): Int = allNotes.first().count { it.deletedAt != null }
+
+    fun deleteAllTrashed() {
+        viewModelScope.launch {
+            val all = allNotes.first()
+            all.filter { it.deletedAt != null }.forEach { note ->
+                extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
+                repository.delete(note)
+            }
+        }
+    }
 }

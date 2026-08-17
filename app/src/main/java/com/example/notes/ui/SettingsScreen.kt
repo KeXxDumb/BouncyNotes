@@ -2,6 +2,7 @@ package com.example.notes.ui
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +45,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -52,20 +55,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.notes.data.AppSettings
 import com.example.notes.data.BackupManager
 import com.example.notes.data.CheckboxPosition
 import com.example.notes.data.FontScale
+import com.example.notes.data.ImageStorage
 import com.example.notes.data.SortOrder
 import com.example.notes.data.StartView
 import com.example.notes.data.ThemeMode
 import com.example.notes.ui.theme.ThemeSeedColors
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +86,8 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var showDisableTrashWarning by remember { mutableStateOf(false) }
+    var trashedCount by remember { mutableStateOf(0) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
@@ -101,6 +111,43 @@ fun SettingsScreen(
                 statusMessage = "${imported.size} notas importadas"
             }
         }
+    }
+
+    val backgroundImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val fileName = ImageStorage.copyFromUri(context, uri)
+            if (fileName != null) {
+                onUpdate { it.copy(backgroundImagePath = fileName) }
+            }
+        }
+    }
+
+    if (showDisableTrashWarning) {
+        AlertDialog(
+            onDismissRequest = { showDisableTrashWarning = false },
+            title = { Text("¿Desactivar la papelera?") },
+            text = {
+                Text(
+                    if (trashedCount > 0) {
+                        "Esto eliminará PARA SIEMPRE las $trashedCount notas que están actualmente en la papelera. Esta acción no se puede deshacer."
+                    } else {
+                        "A partir de ahora, borrar una nota la eliminará de inmediato sin poder recuperarla."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    noteViewModel.deleteAllTrashed()
+                    onUpdate { it.copy(useTrash = false) }
+                    showDisableTrashWarning = false
+                }) { Text("Desactivar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDisableTrashWarning = false }) { Text("Cancelar") }
+            }
+        )
     }
 
     Scaffold(
@@ -165,6 +212,39 @@ fun SettingsScreen(
                         selected = settings.fontScale,
                         onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
                     )
+
+                    Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
+                    Spacer(Modifier.height(6.dp))
+                    if (settings.backgroundImagePath != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                            AsyncImage(
+                                model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            TextButton(onClick = { onUpdate { it.copy(backgroundImagePath = null) } }) {
+                                Text("Quitar imagen")
+                            }
+                        }
+                        SwitchSetting(
+                            label = "Monocromática (usa el color del tema)",
+                            checked = settings.backgroundMonochrome,
+                            onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
+                        )
+                        SwitchSetting(
+                            label = "Desvanecer bordes",
+                            checked = settings.backgroundFade,
+                            onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
+                        )
+                    } else {
+                        OutlinedButton(onClick = {
+                            backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        }) {
+                            Text("Elegir imagen de fondo")
+                        }
+                    }
                 }
             }
 
@@ -238,7 +318,16 @@ fun SettingsScreen(
                     SwitchSetting(
                         label = "Usar papelera",
                         checked = settings.useTrash,
-                        onCheckedChange = { v -> onUpdate { it.copy(useTrash = v) } }
+                        onCheckedChange = { v ->
+                            if (!v) {
+                                scope.launch {
+                                    trashedCount = noteViewModel.getTrashedCount()
+                                    showDisableTrashWarning = true
+                                }
+                            } else {
+                                onUpdate { it.copy(useTrash = true) }
+                            }
+                        }
                     )
                     if (settings.useTrash) {
                         DiscreteSlider(

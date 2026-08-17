@@ -41,7 +41,10 @@ data class AppSettings(
     val trashPurgeDays: Int = 30,
     val compressImages: Boolean = false,
     val imageQuality: Int = 85,
-    val doubleTapToEdit: Boolean = true
+    val doubleTapToEdit: Boolean = true,
+    val backgroundImagePath: String? = null,
+    val backgroundMonochrome: Boolean = true,
+    val backgroundFade: Boolean = true
 )
 
 class SettingsRepository(private val context: Context) {
@@ -66,6 +69,9 @@ class SettingsRepository(private val context: Context) {
         val COMPRESS_IMAGES = booleanPreferencesKey("compress_images")
         val IMAGE_QUALITY = intPreferencesKey("image_quality")
         val DOUBLE_TAP_EDIT = booleanPreferencesKey("double_tap_edit")
+        val BACKGROUND_IMAGE = stringPreferencesKey("background_image")
+        val BACKGROUND_MONOCHROME = booleanPreferencesKey("background_monochrome")
+        val BACKGROUND_FADE = booleanPreferencesKey("background_fade")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -88,7 +94,10 @@ class SettingsRepository(private val context: Context) {
             trashPurgeDays = prefs[Keys.TRASH_PURGE_DAYS] ?: 30,
             compressImages = prefs[Keys.COMPRESS_IMAGES] ?: false,
             imageQuality = prefs[Keys.IMAGE_QUALITY] ?: 85,
-            doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true
+            doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true,
+            backgroundImagePath = prefs[Keys.BACKGROUND_IMAGE]?.takeIf { it.isNotBlank() },
+            backgroundMonochrome = prefs[Keys.BACKGROUND_MONOCHROME] ?: true,
+            backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true
         )
     }
 
@@ -115,6 +124,9 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.COMPRESS_IMAGES] = updated.compressImages
             prefs[Keys.IMAGE_QUALITY] = updated.imageQuality
             prefs[Keys.DOUBLE_TAP_EDIT] = updated.doubleTapToEdit
+            prefs[Keys.BACKGROUND_IMAGE] = updated.backgroundImagePath ?: ""
+            prefs[Keys.BACKGROUND_MONOCHROME] = updated.backgroundMonochrome
+            prefs[Keys.BACKGROUND_FADE] = updated.backgroundFade
         }
     }
 

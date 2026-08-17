@@ -1,6 +1,5 @@
 package com.example.notes.ui.components
 
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
@@ -79,11 +78,17 @@ fun CompactCaptionField(
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.height(44.dp),
+        modifier = modifier,
         placeholder = { Text("Descripción", style = MaterialTheme.typography.bodySmall) },
         textStyle = MaterialTheme.typography.bodySmall,
         singleLine = true,
         shape = RoundedCornerShape(10.dp),
-        colors = flatColors()
+        colors = flatColors(),
+        contentPadding = TextFieldDefaults.contentPaddingWithoutLabel(
+            start = 12.dp,
+            end = 12.dp,
+            top = 8.dp,
+            bottom = 8.dp
+        )
     )
 }

@@ -1,8 +1,15 @@
 package com.example.notes.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -72,7 +79,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +121,7 @@ fun NoteListScreen(
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var fabExpanded by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
@@ -123,6 +135,30 @@ fun NoteListScreen(
             onRequestBiometric()
         }
     }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (settings.backgroundImagePath != null) {
+            AsyncImage(
+                model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                colorFilter = if (settings.backgroundMonochrome) {
+                    ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
+                } else null,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (settings.backgroundFade) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.radialGradient(
+                                colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background)
+                            )
+                        )
+                )
+            }
+        }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -198,6 +234,7 @@ fun NoteListScreen(
         }
     ) {
         Scaffold(
+            containerColor = if (settings.backgroundImagePath != null) Color.Transparent else MaterialTheme.colorScheme.background,
             topBar = {
                 if (selectionMode) {
                     TopAppBar(
@@ -208,17 +245,26 @@ fun NoteListScreen(
                             }
                         },
                         actions = {
-                            IconButton(onClick = {
-                                viewModel.setPinnedForIds(selectedIds, true)
-                                selectedIds = emptySet()
-                            }) {
-                                Icon(Icons.Filled.PushPin, contentDescription = "Fijar")
-                            }
-                            IconButton(onClick = {
-                                viewModel.setPinnedForIds(selectedIds, false)
-                                selectedIds = emptySet()
-                            }) {
-                                Icon(Icons.Outlined.PushPin, contentDescription = "Desfijar")
+                            if (viewMode != ViewMode.TRASH) {
+                                val selectedNotes = notes.filter { it.id in selectedIds }
+                                val anyUnpinned = selectedNotes.any { !it.pinned }
+                                val anyPinned = selectedNotes.any { it.pinned }
+                                if (anyUnpinned) {
+                                    IconButton(onClick = {
+                                        viewModel.setPinnedForIds(selectedIds, true)
+                                        selectedIds = emptySet()
+                                    }) {
+                                        Icon(Icons.Filled.PushPin, contentDescription = "Fijar")
+                                    }
+                                }
+                                if (anyPinned) {
+                                    IconButton(onClick = {
+                                        viewModel.setPinnedForIds(selectedIds, false)
+                                        selectedIds = emptySet()
+                                    }) {
+                                        Icon(Icons.Outlined.PushPin, contentDescription = "Desfijar")
+                                    }
+                                }
                             }
                             if (viewMode == ViewMode.TRASH) {
                                 IconButton(onClick = {
@@ -260,25 +306,39 @@ fun NoteListScreen(
             },
             floatingActionButton = {
                 if (!selectionMode && (viewMode == ViewMode.ALL || viewMode == ViewMode.PRIVATE)) {
+                    val fabRotation by animateFloatAsState(
+                        targetValue = if (fabExpanded) 45f else 0f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+                        label = "fabRotation"
+                    )
                     Column(horizontalAlignment = Alignment.End) {
-                        if (fabExpanded) {
-                            ExtendedFloatingActionButton(
-                                onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) },
-                                icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
-                                text = { Text("Checklist") }
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            ExtendedFloatingActionButton(
-                                onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) },
-                                icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                                text = { Text("Nota") }
-                            )
-                            Spacer(Modifier.height(8.dp))
+                        AnimatedVisibility(
+                            visible = fabExpanded,
+                            enter = fadeIn(animationSpec = tween(150)) +
+                                scaleIn(animationSpec = tween(150), transformOrigin = TransformOrigin(1f, 1f)),
+                            exit = fadeOut(animationSpec = tween(120)) +
+                                scaleOut(animationSpec = tween(120), transformOrigin = TransformOrigin(1f, 1f))
+                        ) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                ExtendedFloatingActionButton(
+                                    onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) },
+                                    icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
+                                    text = { Text("Checklist") }
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                ExtendedFloatingActionButton(
+                                    onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) },
+                                    icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                                    text = { Text("Nota") }
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
                         }
                         FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
                             Icon(
-                                if (fabExpanded) Icons.Filled.Close else Icons.Filled.Add,
-                                contentDescription = "Nueva nota"
+                                Icons.Filled.Add,
+                                contentDescription = "Nueva nota",
+                                modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
                             )
                         }
                     }
@@ -333,6 +393,7 @@ fun NoteListScreen(
                 }
             }
         }
+    }
     }
 }
 
