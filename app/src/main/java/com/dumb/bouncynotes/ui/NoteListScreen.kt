@@ -84,8 +84,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.drawscope.center
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -163,6 +163,7 @@ fun NoteListScreen(
                         .fillMaxSize()
                         .drawWithCache {
                             val radius = (size.width.coerceAtLeast(size.height) / 2f) * 1.15f
+                            val gradientCenter = Offset(size.width / 2f, size.height / 2f)
                             onDrawBehind {
                                 drawRect(
                                     brush = Brush.radialGradient(
@@ -170,7 +171,7 @@ fun NoteListScreen(
                                             0.55f to Color.Transparent,
                                             1f to fadeColor
                                         ),
-                                        center = center,
+                                        center = gradientCenter,
                                         radius = radius
                                     )
                                 )

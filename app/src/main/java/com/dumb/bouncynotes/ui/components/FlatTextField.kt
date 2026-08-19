@@ -1,5 +1,6 @@
 package com.dumb.bouncynotes.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -57,6 +58,7 @@ fun FlatTextField(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FlatTextField(
     value: TextFieldValue,
