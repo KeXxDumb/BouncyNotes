@@ -253,6 +253,21 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                        // Con imagen de fondo, la barra de título sólida tapaba parte de
+                        // la imagen y desentonaba con el resto de la pantalla (que sí
+                        // deja ver el fondo). La hacemos semitransparente para que
+                        // combine, con opacidad ajustable.
+                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                "Opacidad de la barra de título: ${(settings.topBarOpacity * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Slider(
+                                value = settings.topBarOpacity,
+                                onValueChange = { v -> onUpdate { it.copy(topBarOpacity = v) } },
+                                valueRange = 0f..1f
+                            )
+                        }
                     } else {
                         OutlinedButton(onClick = {
                             backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))

@@ -510,19 +510,13 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
-                }
-            )
-        },
-        bottomBar = {
-            BottomAppBar(modifier = Modifier.imePadding()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
+                },
+                actions = {
+                    // Antes fijar/proteger vivían en la barra de abajo, mezclados con
+                    // las herramientas que solo tienen sentido en modo edición (negrita,
+                    // imagen, etc.), compitiendo por espacio en una fila que había que
+                    // deslizar. Son acciones de la nota en sí, no de edición, así que
+                    // quedan mejor arriba, siempre visibles en los dos modos.
                     IconButton(onClick = { current = current.copy(pinned = !current.pinned) }) {
                         Icon(
                             if (current.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
@@ -544,6 +538,19 @@ fun NoteEditScreen(
                             contentDescription = "Privada"
                         )
                     }
+                }
+            )
+        },
+        bottomBar = {
+            BottomAppBar(modifier = Modifier.imePadding()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
                     if (current.deletedAt != null) {
                         IconButton(onClick = {
                             extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }

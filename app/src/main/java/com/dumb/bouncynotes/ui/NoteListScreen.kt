@@ -68,6 +68,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -84,7 +85,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -150,29 +150,52 @@ fun NoteListScreen(
                 modifier = Modifier.fillMaxSize()
             )
             if (settings.backgroundFade) {
-                // Brush.radialGradient() sin "radius" explícito usa por defecto
-                // min(ancho, alto) / 2 como radio: en una pantalla en vertical eso es
-                // la mitad del ANCHO, así que el círculo transparente queda chico y
-                // todo lo demás (la mayor parte de la pantalla) se pinta con el color
-                // sólido de fondo. Calculamos nosotros el radio a partir del tamaño
-                // real del composable para que el desvanecimiento ocurra recién cerca
-                // de los bordes/esquinas, dejando visible casi toda la imagen.
+                // Un radialGradient dibuja un círculo, así que en una imagen
+                // rectangular solo se nota el desvanecido cerca de las esquinas (que
+                // es donde el círculo realmente se acerca al borde); los bordes
+                // superior/inferior/laterales quedaban casi sin desvanecer. En vez de
+                // un círculo, desvanecemos cada borde por separado con un degradado
+                // lineal (arriba, abajo, izquierda, derecha); donde se superponen
+                // (las esquinas) el desvanecido se nota un poco más fuerte, que es
+                // justamente el efecto de viñeta esperado.
                 val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .drawWithCache {
-                            val radius = (size.width.coerceAtLeast(size.height) / 2f) * 1.15f
-                            val gradientCenter = Offset(size.width / 2f, size.height / 2f)
+                            val fadeWidth = size.width * 0.35f
+                            val fadeHeight = size.height * 0.35f
                             onDrawBehind {
+                                // Izquierda
                                 drawRect(
-                                    brush = Brush.radialGradient(
-                                        colorStops = arrayOf(
-                                            0.55f to Color.Transparent,
-                                            1f to fadeColor
-                                        ),
-                                        center = gradientCenter,
-                                        radius = radius
+                                    brush = Brush.horizontalGradient(
+                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
+                                        startX = 0f,
+                                        endX = fadeWidth
+                                    )
+                                )
+                                // Derecha
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
+                                        startX = size.width - fadeWidth,
+                                        endX = size.width
+                                    )
+                                )
+                                // Arriba
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
+                                        startY = 0f,
+                                        endY = fadeHeight
+                                    )
+                                )
+                                // Abajo
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
+                                        startY = size.height - fadeHeight,
+                                        endY = size.height
                                     )
                                 )
                             }
@@ -329,6 +352,13 @@ fun NoteListScreen(
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                 Icon(Icons.Filled.Menu, contentDescription = "Menú")
                             }
+                        },
+                        colors = if (settings.backgroundImagePath != null) {
+                            TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity)
+                            )
+                        } else {
+                            TopAppBarDefaults.topAppBarColors()
                         }
                     )
                 }
