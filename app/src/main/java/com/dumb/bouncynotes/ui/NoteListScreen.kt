@@ -15,6 +15,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,6 +85,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.center
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -148,14 +150,32 @@ fun NoteListScreen(
                 modifier = Modifier.fillMaxSize()
             )
             if (settings.backgroundFade) {
+                // Brush.radialGradient() sin "radius" explícito usa por defecto
+                // min(ancho, alto) / 2 como radio: en una pantalla en vertical eso es
+                // la mitad del ANCHO, así que el círculo transparente queda chico y
+                // todo lo demás (la mayor parte de la pantalla) se pinta con el color
+                // sólido de fondo. Calculamos nosotros el radio a partir del tamaño
+                // real del composable para que el desvanecimiento ocurra recién cerca
+                // de los bordes/esquinas, dejando visible casi toda la imagen.
+                val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(Color.Transparent, MaterialTheme.colorScheme.background)
-                            )
-                        )
+                        .drawWithCache {
+                            val radius = (size.width.coerceAtLeast(size.height) / 2f) * 1.15f
+                            onDrawBehind {
+                                drawRect(
+                                    brush = Brush.radialGradient(
+                                        colorStops = arrayOf(
+                                            0.55f to Color.Transparent,
+                                            1f to fadeColor
+                                        ),
+                                        center = center,
+                                        radius = radius
+                                    )
+                                )
+                            }
+                        }
                 )
             }
         }
@@ -224,8 +244,16 @@ fun NoteListScreen(
                     selected = false,
                     icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                     onClick = {
-                        scope.launch { drawerState.close() }
-                        onOpenSettings()
+                        // Antes esto disparaba drawerState.close() (async) y navegaba
+                        // a Ajustes en el mismo instante, sin esperar a que el drawer
+                        // terminara de cerrarse. Si al volver de Ajustes se tocaba el
+                        // botón de menú muy rápido, el drawer quedaba en un estado a
+                        // medio animar y se veía una pantalla negra (el scrim) sin
+                        // contenido. Ahora esperamos a que cierre antes de navegar.
+                        scope.launch {
+                            drawerState.close()
+                            onOpenSettings()
+                        }
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
                 )

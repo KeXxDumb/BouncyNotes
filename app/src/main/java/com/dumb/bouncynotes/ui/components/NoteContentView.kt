@@ -1,6 +1,6 @@
 package com.dumb.bouncynotes.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,12 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                     val occurrenceIndex = imageOccurrence
                     imageOccurrence++
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        // Antes tocar la imagen abría el visor de pantalla completa, que
+                        // a su vez dejaba editar la descripción ahí mismo: una segunda
+                        // forma de "editar" redundante con el botón "Descripción" del
+                        // modo edición. En modo vista ahora la imagen solo reacciona a
+                        // pellizcar hacia afuera (zoom in) para abrir el visor y poder
+                        // navegar/hacer zoom; ya no se puede editar nada tocándola.
                         AsyncImage(
                             model = File(ImageStorage.imagesDir(context), part.fileName),
                             contentDescription = part.caption.ifBlank { "Imagen" },
@@ -46,7 +53,11 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable { onImageClick(occurrenceIndex) }
+                                .pointerInput(occurrenceIndex) {
+                                    detectTransformGestures { _, _, zoom, _ ->
+                                        if (zoom > 1.15f) onImageClick(occurrenceIndex)
+                                    }
+                                }
                         )
                         if (part.caption.isNotBlank()) {
                             Text(

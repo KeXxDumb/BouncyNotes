@@ -7,9 +7,12 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
@@ -77,6 +80,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -86,6 +91,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.withTimeoutOrNull
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.ImageStorage
@@ -97,7 +103,6 @@ import com.dumb.bouncynotes.data.extractImageFileNames
 import com.dumb.bouncynotes.data.isNoteEmpty
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.removeImageOccurrence
-import com.dumb.bouncynotes.data.updateImageCaption
 import com.dumb.bouncynotes.ui.components.ChecklistEditor
 import com.dumb.bouncynotes.ui.components.CompactCaptionField
 import com.dumb.bouncynotes.ui.components.FlatTextField
@@ -115,11 +120,49 @@ private sealed class EditSegment {
 private fun buildEditSegments(content: String): List<EditSegment> {
     val parts = parseNoteContent(content)
     if (parts.isEmpty()) return listOf(EditSegment.TextSeg(TextFieldValue("")))
-    return parts.map { part ->
+    // Si dos imágenes quedan una justo al lado de la otra en el contenido guardado
+    // (sin ningún carácter entre medio), parseNoteContent no genera ningún TextPart
+    // ahí porque literalmente no hay texto que representar. Eso hacía que, al volver
+    // a abrir la nota, no existiera ningún campo editable entre esas imágenes y por
+    // lo tanto fuera imposible escribir ahí. Insertamos un tramo de texto vacío
+    // (solo en memoria, para editar) entre imágenes consecutivas, y al principio/final
+    // si la nota empieza o termina con una imagen.
+    val segments = mutableListOf<EditSegment>()
+    parts.forEach { part ->
         when (part) {
-            is ContentPart.TextPart -> EditSegment.TextSeg(TextFieldValue(part.text))
-            is ContentPart.ImagePart -> EditSegment.ImageSeg(part.fileName, part.caption)
+            is ContentPart.TextPart -> segments.add(EditSegment.TextSeg(TextFieldValue(part.text)))
+            is ContentPart.ImagePart -> {
+                if (segments.isEmpty() || segments.last() is EditSegment.ImageSeg) {
+                    segments.add(EditSegment.TextSeg(TextFieldValue("")))
+                }
+                segments.add(EditSegment.ImageSeg(part.fileName, part.caption))
+            }
         }
+    }
+    if (segments.last() is EditSegment.ImageSeg) {
+        segments.add(EditSegment.TextSeg(TextFieldValue("")))
+    }
+    return segments
+}
+
+// El doble-tap para pasar a modo edición se hacía con detectTapGestures en el
+// contenedor padre, en el pass por defecto (Main). Ese pass viaja de hijos hacia
+// el padre, así que cuando el toque caía sobre un elemento hijo con su propia
+// detección de toques (los enlaces del texto vía ClickableText, o antes las
+// imágenes con .clickable), el hijo consumía el evento primero y el padre nunca
+// llegaba a detectar el doble toque: por eso solo funcionaba tocando "fuera" del
+// texto/imagen. Usando el pass Initial (que viaja de padre a hijos, antes de que
+// cualquier hijo pueda consumir el evento) el contenedor ve el toque siempre.
+private suspend fun PointerInputScope.detectDoubleTapToEdit(onDoubleTap: () -> Unit) {
+    awaitEachGesture {
+        awaitFirstDown(pass = PointerEventPass.Initial)
+        waitForUpOrCancellation(pass = PointerEventPass.Initial) ?: return@awaitEachGesture
+        val secondDown = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) {
+            awaitFirstDown(pass = PointerEventPass.Initial)
+        } ?: return@awaitEachGesture
+        secondDown.consume()
+        waitForUpOrCancellation(pass = PointerEventPass.Initial)?.consume()
+        onDoubleTap()
     }
 }
 
@@ -176,6 +219,12 @@ fun NoteEditScreen(
         val idx = activeSegmentIndex.coerceIn(0, segments.size - 1)
         val seg = segments.getOrNull(idx)
         val newSegments = segments.toMutableList()
+        // Índice del tramo de texto que queda después de insertar, para dejar el
+        // cursor ahí. Antes activeSegmentIndex no se actualizaba tras insertar, así
+        // que al elegir varias imágenes seguidas todas se insertaban en el mismo
+        // punto original (el cursor de texto quedaba "congelado" al inicio de ese
+        // tramo), y el texto existente terminaba empujado después de la 2ª imagen.
+        var nextActiveIndex = idx
         if (seg is EditSegment.TextSeg) {
             val text = seg.value.text
             val cursor = seg.value.selection.start.coerceIn(0, text.length)
@@ -198,21 +247,32 @@ fun NoteEditScreen(
                 if (prefix.isNotEmpty()) {
                     newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(prefix)))
                     insertAt++
+                } else if (newSegments.getOrNull(insertAt - 1) is EditSegment.ImageSeg) {
+                    // Si justo antes ya hay otra imagen (p. ej. se insertaron dos
+                    // seguidas), dejamos un tramo de texto vacío como separador para
+                    // que no queden dos imágenes pegadas sin forma de escribir entre
+                    // ellas.
+                    newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue("")))
+                    insertAt++
                 }
                 newSegments.add(insertAt, EditSegment.ImageSeg(fileName, ""))
                 insertAt++
                 // Siempre dejamos exactamente un tramo (con o sin texto) después de la
                 // imagen para poder seguir escribiendo, nunca dos vacíos.
                 newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(suffix)))
+                nextActiveIndex = insertAt
             } else {
                 newSegments[idx] = EditSegment.TextSeg(TextFieldValue(before))
                 newSegments.add(idx + 1, EditSegment.ImageSeg(fileName, ""))
                 newSegments.add(idx + 2, EditSegment.TextSeg(TextFieldValue(after)))
+                nextActiveIndex = idx + 2
             }
         } else {
             newSegments.add(EditSegment.ImageSeg(fileName, ""))
             newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
+            nextActiveIndex = newSegments.size - 1
         }
+        activeSegmentIndex = nextActiveIndex
         updateContentFromSegments(newSegments)
     }
 
@@ -352,9 +412,6 @@ fun NoteEditScreen(
             images = images,
             startIndex = viewerStartPos ?: 0,
             onBack = { viewerStartPos = null },
-            onCaptionChange = { pos, caption ->
-                applyViewerContentChange(updateImageCaption(current.content, pos, caption))
-            },
             onDelete = { pos ->
                 if (pos < fileNames.size) ImageStorage.deleteFile(context, fileNames[pos])
                 applyViewerContentChange(removeImageOccurrence(current.content, pos))
@@ -452,20 +509,6 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
-                },
-                actions = {
-                    if (current.type == NoteType.TEXT) {
-                        IconButton(onClick = {
-                            val goingToEdit = !isEditing
-                            if (goingToEdit) segments = buildEditSegments(current.content)
-                            isEditing = goingToEdit
-                        }) {
-                            Icon(
-                                if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
-                                contentDescription = if (isEditing) "Vista previa" else "Editar"
-                            )
-                        }
-                    }
                 }
             )
         },
@@ -552,15 +595,38 @@ fun NoteEditScreen(
                             Icon(Icons.Filled.Palette, contentDescription = "Color y etiquetas")
                         }
                     }
+                    // Antes este botón vivía en la barra de arriba y solo aparecía para
+                    // notas de texto: las notas de tipo checklist no tenían forma de
+                    // volver a modo edición una vez guardadas (con "doble toque para
+                    // editar" activado, quedaban bloqueadas en solo lectura para
+                    // siempre). Ahora vive abajo, junto al resto de acciones, y
+                    // funciona para ambos tipos de nota.
                     IconButton(onClick = {
-                        if (!isNoteEmpty(current)) {
-                            viewModel.save(current) { id ->
-                                if (noteId == 0L) current = current.copy(id = id)
-                            }
+                        val goingToEdit = !isEditing
+                        if (goingToEdit && current.type == NoteType.TEXT) {
+                            segments = buildEditSegments(current.content)
                         }
-                        onBack()
+                        isEditing = goingToEdit
                     }) {
-                        Icon(Icons.Filled.Check, contentDescription = "Guardar")
+                        Icon(
+                            if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
+                            contentDescription = if (isEditing) "Vista previa" else "Editar"
+                        )
+                    }
+                    // El botón de guardar solo tiene sentido en modo edición: en modo
+                    // vista no hay nada que guardar (y el back ya guarda solo si hubo
+                    // cambios), así que antes no debía mostrarse ahí.
+                    if (isEditing) {
+                        IconButton(onClick = {
+                            if (!isNoteEmpty(current)) {
+                                viewModel.save(current) { id ->
+                                    if (noteId == 0L) current = current.copy(id = id)
+                                }
+                            }
+                            onBack()
+                        }) {
+                            Icon(Icons.Filled.Check, contentDescription = "Guardar")
+                        }
                     }
                 }
             }
@@ -568,10 +634,10 @@ fun NoteEditScreen(
     ) { padding ->
         val readModeGesture = if (!isEditing) {
             Modifier.pointerInput(Unit) {
-                detectTapGestures(onDoubleTap = {
+                detectDoubleTapToEdit {
                     segments = buildEditSegments(current.content)
                     isEditing = true
-                })
+                }
             }
         } else Modifier
 
@@ -605,7 +671,12 @@ fun NoteEditScreen(
 
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (current.type == NoteType.CHECKLIST) {
-                    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .then(readModeGesture)
+                    ) {
                         ChecklistEditor(
                             items = current.checklistItems,
                             checkboxPosition = settings.checkboxPosition,
@@ -623,6 +694,12 @@ fun NoteEditScreen(
                         segments.forEachIndexed { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
+                                    // Solo el campo activo necesita pedir "traeme a la
+                                    // vista" (no tiene sentido, y sería más costoso,
+                                    // hacerlo para todos los tramos de texto de la nota).
+                                    val bringIntoViewRequester = if (index == activeSegmentIndex) {
+                                        remember(index) { BringIntoViewRequester() }
+                                    } else null
                                     FlatTextField(
                                         value = segment.value,
                                         onValueChange = { value ->
@@ -637,7 +714,8 @@ fun NoteEditScreen(
                                                 else Modifier
                                             )
                                             .onFocusChanged { if (it.isFocused) activeSegmentIndex = index },
-                                        placeholder = { Text("Escribe...") }
+                                        placeholder = { Text("Escribe...") },
+                                        bringIntoViewRequester = bringIntoViewRequester
                                     )
                                 }
                                 is EditSegment.ImageSeg -> {

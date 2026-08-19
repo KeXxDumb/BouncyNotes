@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -238,6 +240,19 @@ fun SettingsScreen(
                             checked = settings.backgroundFade,
                             onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
                         )
+                        if (settings.backgroundFade) {
+                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                Text(
+                                    "Opacidad del desvanecido: ${(settings.backgroundFadeOpacity * 100).toInt()}%",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                Slider(
+                                    value = settings.backgroundFadeOpacity,
+                                    onValueChange = { v -> onUpdate { it.copy(backgroundFadeOpacity = v) } },
+                                    valueRange = 0f..1f
+                                )
+                            }
+                        }
                     } else {
                         OutlinedButton(onClick = {
                             backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
@@ -451,12 +466,19 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun <T> ChipSetting(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Antes era un Row: con 4 opciones ("Ordenar notas por") no entraban en el
+        // ancho de la pantalla y el último chip ("Color") se comprimía hasta quedar
+        // angosto y con el texto vertical. FlowRow los pasa a una segunda línea.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             options.forEach { (value, text) ->
                 FilterChip(
                     selected = value == selected,

@@ -16,8 +16,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -44,7 +42,6 @@ fun ImageViewerScreen(
     images: List<NoteImage>,
     startIndex: Int,
     onBack: () -> Unit,
-    onCaptionChange: (Int, String) -> Unit,
     onDelete: (Int) -> Unit
 ) {
     if (images.isEmpty()) {
@@ -114,19 +111,15 @@ fun ImageViewerScreen(
                     )
                 }
             }
+            // El visor ahora es solo para ver/hacer zoom; editar la descripción se
+            // hace desde el editor de la nota (botón "Descripción" bajo la imagen),
+            // para no tener dos lugares distintos donde editar lo mismo.
             val current = images.getOrNull(pagerState.currentPage)
-            if (current != null) {
-                OutlinedTextField(
-                    value = current.caption,
-                    onValueChange = { onCaptionChange(pagerState.currentPage, it) },
-                    placeholder = { Text("Agregar descripción...", color = Color.Gray) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    )
+            if (!current?.caption.isNullOrBlank()) {
+                Text(
+                    text = current!!.caption,
+                    color = Color.White,
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
                 )
             }
         }

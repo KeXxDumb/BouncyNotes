@@ -44,7 +44,8 @@ data class AppSettings(
     val doubleTapToEdit: Boolean = true,
     val backgroundImagePath: String? = null,
     val backgroundMonochrome: Boolean = true,
-    val backgroundFade: Boolean = true
+    val backgroundFade: Boolean = true,
+    val backgroundFadeOpacity: Float = 0.6f
 )
 
 class SettingsRepository(private val context: Context) {
@@ -72,6 +73,7 @@ class SettingsRepository(private val context: Context) {
         val BACKGROUND_IMAGE = stringPreferencesKey("background_image")
         val BACKGROUND_MONOCHROME = booleanPreferencesKey("background_monochrome")
         val BACKGROUND_FADE = booleanPreferencesKey("background_fade")
+        val BACKGROUND_FADE_OPACITY = intPreferencesKey("background_fade_opacity")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -97,7 +99,8 @@ class SettingsRepository(private val context: Context) {
             doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true,
             backgroundImagePath = prefs[Keys.BACKGROUND_IMAGE]?.takeIf { it.isNotBlank() },
             backgroundMonochrome = prefs[Keys.BACKGROUND_MONOCHROME] ?: true,
-            backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true
+            backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true,
+            backgroundFadeOpacity = (prefs[Keys.BACKGROUND_FADE_OPACITY] ?: 60) / 100f
         )
     }
 
@@ -127,6 +130,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BACKGROUND_IMAGE] = updated.backgroundImagePath ?: ""
             prefs[Keys.BACKGROUND_MONOCHROME] = updated.backgroundMonochrome
             prefs[Keys.BACKGROUND_FADE] = updated.backgroundFade
+            prefs[Keys.BACKGROUND_FADE_OPACITY] = (updated.backgroundFadeOpacity * 100).toInt()
         }
     }
 

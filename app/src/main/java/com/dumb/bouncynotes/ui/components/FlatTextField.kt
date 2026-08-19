@@ -1,13 +1,23 @@
 package com.dumb.bouncynotes.ui.components
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
@@ -54,36 +64,68 @@ fun FlatTextField(
     modifier: Modifier = Modifier,
     placeholder: @Composable (() -> Unit)? = null,
     singleLine: Boolean = false,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    // Opcional: si se pasa, el campo pedirá activamente que lo "traigan a la
+    // vista" (scrolleen) cada vez que cambia la selección/cursor. Sin esto, en un
+    // Column con verticalScroll un campo de texto multilínea que crece (por
+    // ejemplo al presionar Enter) no siempre queda visible: Compose no vuelve a
+    // pedir el scroll automáticamente en cada salto de línea dentro de un campo
+    // ya enfocado, así que el cursor podía terminar tapado por el teclado o fuera
+    // de la pantalla y había que deslizar a mano para volver a verlo.
+    bringIntoViewRequester: BringIntoViewRequester? = null
 ) {
+    val requesterModifier = if (bringIntoViewRequester != null) {
+        Modifier.bringIntoViewRequester(bringIntoViewRequester)
+    } else {
+        Modifier
+    }
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.then(requesterModifier),
         placeholder = placeholder,
         singleLine = singleLine,
         keyboardOptions = keyboardOptions,
         shape = RoundedCornerShape(12.dp),
         colors = flatColors()
     )
+    if (bringIntoViewRequester != null) {
+        LaunchedEffect(value.selection) {
+            bringIntoViewRequester.bringIntoView()
+        }
+    }
 }
 
-// Campo compacto para descripciones de imagen: tipografía chica, sin forzar altura
-// (forzar la altura directamente recortaba el texto contra el padding interno).
+// Campo compacto para descripciones de imagen: tipografía chica y una caja que se
+// ajusta a esa tipografía. TextField de Material3 no expone su padding interno
+// (siempre reserva ~56dp de alto pensados para texto normal), así que usamos
+// BasicTextField con nuestro propio padding pequeño para que la caja sea chica
+// de verdad, sin recortar el texto.
 @Composable
 fun CompactCaptionField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    TextField(
+    val textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface)
+    val interactionSource = remember { MutableInteractionSource() }
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
-        placeholder = { Text("Descripción", style = MaterialTheme.typography.bodySmall) },
-        textStyle = MaterialTheme.typography.bodySmall,
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+        textStyle = textStyle,
         singleLine = true,
-        shape = RoundedCornerShape(10.dp),
-        colors = flatColors()
+        interactionSource = interactionSource,
+        cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+        decorationBox = { innerTextField ->
+            Box(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                if (value.isEmpty()) {
+                    Text("Descripción", style = textStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                innerTextField()
+            }
+        }
     )
 }
