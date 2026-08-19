@@ -75,6 +75,7 @@ import com.dumb.bouncynotes.data.BackupManager
 import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.FontScale
 import com.dumb.bouncynotes.data.ImageStorage
+import com.dumb.bouncynotes.data.NoteLayout
 import com.dumb.bouncynotes.data.SortOrder
 import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
@@ -206,13 +207,21 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    DiscreteSlider(
-                        label = "Columnas del grid",
-                        values = listOf(1, 2, 3),
-                        valueLabels = listOf("1", "2", "3"),
-                        selected = settings.gridColumns,
-                        onSelect = { v -> onUpdate { it.copy(gridColumns = v) } }
+                    ChipSetting(
+                        label = "Diseño de la lista",
+                        options = listOf(NoteLayout.GRID to "Cuadrícula", NoteLayout.LIST to "Lista"),
+                        selected = settings.noteLayout,
+                        onSelect = { v -> onUpdate { it.copy(noteLayout = v) } }
                     )
+                    if (settings.noteLayout == NoteLayout.GRID) {
+                        DiscreteSlider(
+                            label = "Columnas del grid",
+                            values = listOf(1, 2, 3),
+                            valueLabels = listOf("1", "2", "3"),
+                            selected = settings.gridColumns,
+                            onSelect = { v -> onUpdate { it.copy(gridColumns = v) } }
+                        )
+                    }
                     ChipSetting(
                         label = "Tamaño de texto",
                         options = listOf(FontScale.SMALL to "Chico", FontScale.MEDIUM to "Mediano", FontScale.LARGE to "Grande"),

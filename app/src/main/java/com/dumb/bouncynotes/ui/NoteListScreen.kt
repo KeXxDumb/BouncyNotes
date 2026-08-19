@@ -1,5 +1,6 @@
 package com.dumb.bouncynotes.ui
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -27,6 +28,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.items
@@ -71,6 +74,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,6 +82,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -98,6 +103,7 @@ import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.Note
+import com.dumb.bouncynotes.data.NoteLayout
 import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.stripFormattingMarkers
@@ -127,6 +133,25 @@ fun NoteListScreen(
     var fabExpanded by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
+
+    // --- Logging temporal para diagnosticar el bug de la pantalla negra ---
+    // Todo esto se puede sacar después; el objetivo es ver en Logcat (filtrando
+    // por el tag "BouncyDrawerDebug") la secuencia exacta de eventos cuando pasa
+    // el bug: si NoteListScreen se recompone/recrea al volver de Ajustes, en qué
+    // estado queda el drawer, y si el toque en el borde dispara el gesto de
+    // apertura o no.
+    DisposableEffect(Unit) {
+        Log.d("BouncyDrawerDebug", "NoteListScreen ENTRA en composición (instancia ${System.identityHashCode(drawerState)})")
+        onDispose {
+            Log.d("BouncyDrawerDebug", "NoteListScreen SALE de composición (instancia ${System.identityHashCode(drawerState)})")
+        }
+    }
+    LaunchedEffect(drawerState) {
+        snapshotFlow { Triple(drawerState.currentValue, drawerState.targetValue, drawerState.isAnimationRunning) }
+            .collect { (current, target, animating) ->
+                Log.d("BouncyDrawerDebug", "drawerState cambió: current=$current target=$target animando=$animating")
+            }
+    }
 
     LaunchedEffect(viewMode, labelFilter) {
         selectedIds = emptySet()
@@ -286,8 +311,10 @@ fun NoteListScreen(
                         // botón de menú muy rápido, el drawer quedaba en un estado a
                         // medio animar y se veía una pantalla negra (el scrim) sin
                         // contenido. Ahora esperamos a que cierre antes de navegar.
+                        Log.d("BouncyDrawerDebug", "Ítem 'Ajustes' tocado, currentValue=${drawerState.currentValue}")
                         scope.launch {
                             drawerState.close()
+                            Log.d("BouncyDrawerDebug", "drawerState.close() terminó, currentValue=${drawerState.currentValue}, navegando a Ajustes")
                             onOpenSettings()
                         }
                     },
@@ -361,7 +388,10 @@ fun NoteListScreen(
                     TopAppBar(
                         title = { BouncyPeach() },
                         navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            IconButton(onClick = {
+                                Log.d("BouncyDrawerDebug", "Botón de menú tocado, currentValue=${drawerState.currentValue}")
+                                scope.launch { drawerState.open() }
+                            }) {
                                 Icon(Icons.Filled.Menu, contentDescription = "Menú")
                             }
                         },
@@ -434,31 +464,61 @@ fun NoteListScreen(
                     }
                 }
                 else -> {
-                    LazyVerticalStaggeredGrid(
-                        columns = StaggeredGridCells.Fixed(settings.gridColumns.coerceIn(1, 3)),
-                        modifier = Modifier.fillMaxSize().padding(padding),
-                        contentPadding = PaddingValues(8.dp),
-                        verticalItemSpacing = 8.dp,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(notes, key = { it.id }) { note ->
-                            NoteCard(
-                                note = note,
-                                checkboxPosition = settings.checkboxPosition,
-                                selected = note.id in selectedIds,
-                                selectionMode = selectionMode,
-                                onClick = {
-                                    if (selectionMode) {
-                                        selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
-                                    } else {
-                                        onNoteClick(note.id)
-                                    }
-                                },
-                                onLongClick = {
-                                    selectedIds = selectedIds + note.id
-                                },
-                                onTogglePin = { viewModel.togglePin(note) }
-                            )
+                    if (settings.noteLayout == NoteLayout.LIST) {
+                        // Lista tradicional: una columna, tarjetas de ancho completo,
+                        // sin el efecto "mampostería" (staggered) de la cuadrícula.
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().padding(padding),
+                            contentPadding = PaddingValues(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(notes, key = { it.id }) { note ->
+                                NoteCard(
+                                    note = note,
+                                    checkboxPosition = settings.checkboxPosition,
+                                    selected = note.id in selectedIds,
+                                    selectionMode = selectionMode,
+                                    onClick = {
+                                        if (selectionMode) {
+                                            selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
+                                        } else {
+                                            onNoteClick(note.id)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selectedIds = selectedIds + note.id
+                                    },
+                                    onTogglePin = { viewModel.togglePin(note) }
+                                )
+                            }
+                        }
+                    } else {
+                        LazyVerticalStaggeredGrid(
+                            columns = StaggeredGridCells.Fixed(settings.gridColumns.coerceIn(1, 3)),
+                            modifier = Modifier.fillMaxSize().padding(padding),
+                            contentPadding = PaddingValues(8.dp),
+                            verticalItemSpacing = 8.dp,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(notes, key = { it.id }) { note ->
+                                NoteCard(
+                                    note = note,
+                                    checkboxPosition = settings.checkboxPosition,
+                                    selected = note.id in selectedIds,
+                                    selectionMode = selectionMode,
+                                    onClick = {
+                                        if (selectionMode) {
+                                            selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
+                                        } else {
+                                            onNoteClick(note.id)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        selectedIds = selectedIds + note.id
+                                    },
+                                    onTogglePin = { viewModel.togglePin(note) }
+                                )
+                            }
                         }
                     }
                 }
@@ -584,6 +644,13 @@ private fun NoteCard(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 budget -= 3
+                                // Si este bloque de texto tenía más de 3 líneas, ya lo
+                                // cortamos con "...". Mostrar después una imagen que
+                                // está más abajo en la nota (a veces mucho más abajo)
+                                // da la impresión de que la nota "es" esa imagen, cuando
+                                // en realidad la nota es sobre todo texto. Frenamos acá
+                                // en vez de seguir con las partes siguientes.
+                                if (cleaned.lines().size > 3) budget = 0
                             }
                         }
                     }

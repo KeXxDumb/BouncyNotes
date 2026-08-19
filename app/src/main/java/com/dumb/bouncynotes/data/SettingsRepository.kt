@@ -19,12 +19,14 @@ enum class SortOrder { UPDATED, CREATED, ALPHABETICAL, COLOR }
 enum class CheckboxPosition { START, END }
 enum class StartView { ALL, LAST_USED }
 enum class FontScale { SMALL, MEDIUM, LARGE }
+enum class NoteLayout { GRID, LIST }
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
     val seedColorHex: String = "#EF6C57",
     val gridColumns: Int = 2,
+    val noteLayout: NoteLayout = NoteLayout.GRID,
     val fontScale: FontScale = FontScale.MEDIUM,
     val sortOrder: SortOrder = SortOrder.UPDATED,
     val checkboxPosition: CheckboxPosition = CheckboxPosition.START,
@@ -57,6 +59,7 @@ class SettingsRepository(private val context: Context) {
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val SEED_COLOR = stringPreferencesKey("seed_color")
         val GRID_COLUMNS = intPreferencesKey("grid_columns")
+        val NOTE_LAYOUT = stringPreferencesKey("note_layout")
         val FONT_SCALE = stringPreferencesKey("font_scale")
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val CHECKBOX_POSITION = stringPreferencesKey("checkbox_position")
@@ -86,6 +89,7 @@ class SettingsRepository(private val context: Context) {
             dynamicColor = prefs[Keys.DYNAMIC_COLOR] ?: true,
             seedColorHex = prefs[Keys.SEED_COLOR] ?: "#EF6C57",
             gridColumns = prefs[Keys.GRID_COLUMNS] ?: 2,
+            noteLayout = prefs[Keys.NOTE_LAYOUT]?.let { runCatching { NoteLayout.valueOf(it) }.getOrNull() } ?: NoteLayout.GRID,
             fontScale = runCatching { FontScale.valueOf(prefs[Keys.FONT_SCALE] ?: "MEDIUM") }.getOrDefault(FontScale.MEDIUM),
             sortOrder = runCatching { SortOrder.valueOf(prefs[Keys.SORT_ORDER] ?: "UPDATED") }.getOrDefault(SortOrder.UPDATED),
             checkboxPosition = runCatching { CheckboxPosition.valueOf(prefs[Keys.CHECKBOX_POSITION] ?: "START") }.getOrDefault(CheckboxPosition.START),
@@ -118,6 +122,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.DYNAMIC_COLOR] = updated.dynamicColor
             prefs[Keys.SEED_COLOR] = updated.seedColorHex
             prefs[Keys.GRID_COLUMNS] = updated.gridColumns
+            prefs[Keys.NOTE_LAYOUT] = updated.noteLayout.name
             prefs[Keys.FONT_SCALE] = updated.fontScale.name
             prefs[Keys.SORT_ORDER] = updated.sortOrder.name
             prefs[Keys.CHECKBOX_POSITION] = updated.checkboxPosition.name
