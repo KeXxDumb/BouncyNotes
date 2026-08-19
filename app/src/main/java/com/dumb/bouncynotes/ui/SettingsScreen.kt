@@ -553,7 +553,10 @@ private fun AppIconSetting() {
         }
     }
     Text(
-        "Puede tardar un momento en verse en el cajón de apps/pantalla de inicio.",
+        "El lanzador del teléfono puede tardar un momento en mostrarlo, o pedir " +
+            "reabrir el cajón de apps. En algunos casos el acceso directo de la " +
+            "pantalla de inicio hay que sacarlo y volver a agregarlo para que " +
+            "tome el ícono nuevo.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )

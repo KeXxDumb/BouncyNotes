@@ -30,20 +30,29 @@ object AppIconManager {
 
     fun setIcon(context: Context, icon: AppIcon) {
         val pm = context.packageManager
-        AppIcon.entries.forEach { candidate ->
-            val state = if (candidate == icon) {
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-            } else {
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        try {
+            // Importante: deshabilitar TODOS primero, y recién en un segundo paso
+            // habilitar el elegido, en dos pasadas separadas. Si se hace en una
+            // sola pasada (deshabilitar el resto y habilitar el elegido mezclado,
+            // en el orden que sea) hay una ventana muy breve donde puede haber dos
+            // alias habilitados a la vez (o ninguno), y varios lanzadores de
+            // Android no manejan bien esa ambigüedad: se quedan con el ícono
+            // anterior en caché y nunca lo actualizan hasta reinstalar la app.
+            AppIcon.entries.forEach { candidate ->
+                pm.setComponentEnabledSetting(
+                    ComponentName(context, candidate.alias),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
             }
             pm.setComponentEnabledSetting(
-                ComponentName(context, candidate.alias),
-                state,
-                // DONT_KILL_APP: si no, Android mata el proceso de la app al
-                // cambiar el estado de un componente, cerrando la app de golpe
-                // justo después de tocar el botón en Ajustes.
+                ComponentName(context, icon.alias),
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             )
+        } catch (_: Exception) {
+            // Si algo falla acá no vale la pena tirar abajo toda la pantalla de
+            // Ajustes por esto; el usuario simplemente ve que el ícono no cambió.
         }
     }
 }

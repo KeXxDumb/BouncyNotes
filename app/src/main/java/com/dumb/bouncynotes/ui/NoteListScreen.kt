@@ -207,6 +207,17 @@ fun NoteListScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        // Por defecto el drawer tiene un gesto de "deslizar desde el borde
+        // izquierdo para abrir" activo en TODA la altura de la pantalla, no solo
+        // sobre el botón de 3 líneas. Ese detector de gesto es independiente del
+        // botón y quedaba viviendo ahí incluso recién se vuelve de Ajustes; un
+        // toque justo en esa franja del borde (más una recomposición reciente al
+        // volver de otra pantalla) terminaba en el drawer quedando a medio
+        // renderizar: pantalla negra. Lo desactivamos cuando el drawer está
+        // cerrado (solo se abre con el botón, de forma controlada) y lo dejamos
+        // activo cuando ya está abierto, para poder cerrarlo deslizando como es
+        // normal.
+        gesturesEnabled = drawerState.isOpen,
         drawerContent = {
             ModalDrawerSheet {
                 Spacer(Modifier.height(12.dp))
