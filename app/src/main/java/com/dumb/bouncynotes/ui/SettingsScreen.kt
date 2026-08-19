@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,9 +63,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.dumb.bouncynotes.R
+import com.dumb.bouncynotes.data.AppIcon
+import com.dumb.bouncynotes.data.AppIconManager
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.BackupManager
 import com.dumb.bouncynotes.data.CheckboxPosition
@@ -215,6 +220,10 @@ fun SettingsScreen(
                         onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
                     )
 
+                    Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
+                    Spacer(Modifier.height(6.dp))
+                    AppIconSetting()
+
                     Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
                     Spacer(Modifier.height(6.dp))
                     if (settings.backgroundImagePath != null) {
@@ -235,6 +244,17 @@ fun SettingsScreen(
                             checked = settings.backgroundMonochrome,
                             onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
                         )
+                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                "Opacidad de la imagen: ${(settings.backgroundImageOpacity * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                            Slider(
+                                value = settings.backgroundImageOpacity,
+                                onValueChange = { v -> onUpdate { it.copy(backgroundImageOpacity = v) } },
+                                valueRange = 0f..1f
+                            )
+                        }
                         SwitchSetting(
                             label = "Desvanecer bordes",
                             checked = settings.backgroundFade,
@@ -479,6 +499,64 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
         Text(label, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+// Elegir entre los íconos de la app disponibles (activity-alias en el
+// manifiesto). El estado real vive en PackageManager, no en nuestro
+// DataStore, así que lo leemos directo de ahí al entrar a esta pantalla.
+@Composable
+private fun AppIconSetting() {
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(AppIconManager.current(context)) }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.padding(bottom = 8.dp)
+    ) {
+        AppIcon.entries.forEach { icon ->
+            val isSelected = icon == selected
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .clickable {
+                        AppIconManager.setIcon(context, icon)
+                        selected = icon
+                    }
+                    .padding(10.dp)
+            ) {
+                if (icon == AppIcon.NOTE_GIRL) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_notegirl_background),
+                        contentDescription = icon.label,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFFFB74D)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("🍑", style = MaterialTheme.typography.headlineMedium)
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(icon.label, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+    Text(
+        "Puede tardar un momento en verse en el cajón de apps/pantalla de inicio.",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

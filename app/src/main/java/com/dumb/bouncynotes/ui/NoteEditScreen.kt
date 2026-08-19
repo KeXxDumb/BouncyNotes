@@ -512,31 +512,31 @@ fun NoteEditScreen(
                     }
                 },
                 actions = {
-                    // Antes fijar/proteger vivían en la barra de abajo, mezclados con
-                    // las herramientas que solo tienen sentido en modo edición (negrita,
-                    // imagen, etc.), compitiendo por espacio en una fila que había que
-                    // deslizar. Son acciones de la nota en sí, no de edición, así que
-                    // quedan mejor arriba, siempre visibles en los dos modos.
-                    IconButton(onClick = { current = current.copy(pinned = !current.pinned) }) {
-                        Icon(
-                            if (current.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                            contentDescription = "Fijar"
-                        )
-                    }
-                    IconButton(onClick = {
-                        if (current.isPrivate) {
-                            current = current.copy(isPrivate = false)
-                        } else {
-                            onRequestBiometric {
-                                current = current.copy(isPrivate = true)
-                                unlockedThisNote = true
-                            }
+                    // El usuario pidió que fijar/proteger solo aparezcan en modo
+                    // vista, no en modo edición (son acciones rápidas sobre la nota
+                    // ya guardada, no herramientas de edición del contenido).
+                    if (!isEditing) {
+                        IconButton(onClick = { current = current.copy(pinned = !current.pinned) }) {
+                            Icon(
+                                if (current.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                                contentDescription = "Fijar"
+                            )
                         }
-                    }) {
-                        Icon(
-                            if (current.isPrivate) Icons.Filled.Lock else Icons.Outlined.LockOpen,
-                            contentDescription = "Privada"
-                        )
+                        IconButton(onClick = {
+                            if (current.isPrivate) {
+                                current = current.copy(isPrivate = false)
+                            } else {
+                                onRequestBiometric {
+                                    current = current.copy(isPrivate = true)
+                                    unlockedThisNote = true
+                                }
+                            }
+                        }) {
+                            Icon(
+                                if (current.isPrivate) Icons.Filled.Lock else Icons.Outlined.LockOpen,
+                                contentDescription = "Privada"
+                            )
+                        }
                     }
                 }
             )

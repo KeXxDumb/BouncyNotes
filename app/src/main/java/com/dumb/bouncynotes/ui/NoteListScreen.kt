@@ -144,6 +144,7 @@ fun NoteListScreen(
                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                alpha = settings.backgroundImageOpacity,
                 colorFilter = if (settings.backgroundMonochrome) {
                     ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
                 } else null,
