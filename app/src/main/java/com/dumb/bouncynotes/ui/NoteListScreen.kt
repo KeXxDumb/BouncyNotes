@@ -502,7 +502,9 @@ private fun NoteCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-            colors = CardDefaults.cardColors(containerColor = bg),
+            // Transparente al 60% para que, si hay una imagen de fondo puesta, se
+            // note a través de las tarjetas en vez de quedar tapada por completo.
+            colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.6f)),
             shape = RoundedCornerShape(16.dp),
             border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
         ) {

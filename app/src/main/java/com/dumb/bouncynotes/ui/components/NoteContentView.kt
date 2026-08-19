@@ -1,6 +1,6 @@
 package com.dumb.bouncynotes.ui.components
 
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,7 +10,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -40,12 +39,16 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                     val occurrenceIndex = imageOccurrence
                     imageOccurrence++
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                        // Antes tocar la imagen abría el visor de pantalla completa, que
-                        // a su vez dejaba editar la descripción ahí mismo: una segunda
-                        // forma de "editar" redundante con el botón "Descripción" del
-                        // modo edición. En modo vista ahora la imagen solo reacciona a
-                        // pellizcar hacia afuera (zoom in) para abrir el visor y poder
-                        // navegar/hacer zoom; ya no se puede editar nada tocándola.
+                        // El pellizco (detectTransformGestures) que había antes
+                        // capturaba TODO el toque sobre la imagen, incluido un
+                        // arrastre de un solo dedo, así que bloqueaba el scroll de la
+                        // nota cuando el deslizamiento arrancaba justo sobre una
+                        // imagen, y además el pellizco en sí no siempre se detectaba
+                        // bien. Un tap simple con .clickable convive bien con el
+                        // scroll (un arrastre se le "escapa" al contenedor que
+                        // scrollea) y abre el visor a pantalla completa, que ya tiene
+                        // su propio zoom/pan y sigue siendo de solo lectura (sin
+                        // edición de descripción).
                         AsyncImage(
                             model = File(ImageStorage.imagesDir(context), part.fileName),
                             contentDescription = part.caption.ifBlank { "Imagen" },
@@ -53,11 +56,7 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .pointerInput(occurrenceIndex) {
-                                    detectTransformGestures { _, _, zoom, _ ->
-                                        if (zoom > 1.15f) onImageClick(occurrenceIndex)
-                                    }
-                                }
+                                .clickable { onImageClick(occurrenceIndex) }
                         )
                         if (part.caption.isNotBlank()) {
                             Text(
