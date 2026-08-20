@@ -537,21 +537,37 @@ fun NoteListScreen(
 @Composable
 private fun BouncyPeach() {
     val scope = rememberCoroutineScope()
-    // Antes había un único Animatable escalando X e Y a la vez: eso se ve
-    // como un salto uniforme (crece y encoge igual en ambos ejes). Un rebote
-    // "gelatinoso" de verdad aplasta primero (ancho > alto) y luego estira
-    // (alto > alto normal, ancho < normal) mientras X e Y oscilan un poco
-    // desfasados entre sí antes de asentarse: por eso van en dos Animatable
-    // independientes con springs bien "bouncy", cada uno con su propia
-    // secuencia de objetivos.
-    val scaleX = remember { Animatable(1f) }
-    val scaleY = remember { Animatable(1f) }
-    val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+    // La 🍑 tiene la hendidura/las "hojas" arriba y es más redondeada abajo.
+    // Antes el rebote deformaba la fruta entera por igual desde el centro,
+    // lo cual se sentía parejo/soso. Fijando el pivote de la transformación
+    // (transformOrigin) ABAJO, cualquier cambio de escala vertical mueve
+    // mucho más la parte de ARRIBA (queda "clavada" por abajo y ondula desde
+    // ahí hacia arriba), que es justo el efecto de rebote gelatinoso
+    // concentrado en la parte de arriba que se pidió.
+    // OJO con los nombres: dentro del bloque graphicsLayer { ... } de más
+    // abajo, "scaleX"/"scaleY"/"rotationZ" sin calificar se resuelven contra
+    // las propiedades del propio GraphicsLayerScope (el receiver implícito
+    // del lambda), NO contra estas variables locales, aunque se llamen
+    // parecido. Por eso estas tres se llaman distinto (con sufijo "Anim"),
+    // para que no haya ninguna ambigüedad al leerlas adentro del lambda.
+    val scaleXAnim = remember { Animatable(1f) }
+    val scaleYAnim = remember { Animatable(1f) }
+    val skewDegAnim = remember { Animatable(0f) }
+    // Stiffness bien baja + damping bien "bouncy" = el spring no se asienta
+    // de una, sino que overshootea varias veces de forma visible antes de
+    // parar: eso es lo que da la sensación de "que rebote mucho" en vez de
+    // una única sacudida.
+    val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessVeryLow)
     Text(
         text = "\uD83C\uDF51",
         fontSize = 28.sp,
         modifier = Modifier
-            .graphicsLayer(scaleX = scaleX.value, scaleY = scaleY.value)
+            .graphicsLayer {
+                scaleX = scaleXAnim.value
+                scaleY = scaleYAnim.value
+                rotationZ = skewDegAnim.value
+                transformOrigin = TransformOrigin(0.5f, 1f)
+            }
             // El clip antes del clickable/indication ya no hace falta: quitamos
             // el ripple por completo (indication = null) porque el propio
             // rebote gelatinoso ya es el feedback visual del toque, y un
@@ -562,19 +578,35 @@ private fun BouncyPeach() {
                 indication = null
             ) {
                 scope.launch {
-                    // Aplastar: se ensancha y se achata, como si absorbiera el toque.
+                    // Aplastar bien fuerte (más que antes: 1.55/0.5 en vez de
+                    // 1.35/0.65) y soltar con un spring bien rebotón: como el
+                    // pivote está abajo, esto se ve como que la parte de
+                    // arriba de la fruta rebota y ondula varias veces antes
+                    // de asentarse, en vez de un solo salto uniforme.
                     launch {
-                        scaleX.animateTo(1.35f, animationSpec = tween(70))
-                        scaleX.animateTo(1f, animationSpec = jellySpring)
+                        scaleXAnim.animateTo(1.55f, animationSpec = tween(65))
+                        scaleXAnim.animateTo(1f, animationSpec = jellySpring)
                     }
                     launch {
-                        scaleY.animateTo(0.65f, animationSpec = tween(70))
-                        scaleY.animateTo(1f, animationSpec = jellySpring)
+                        scaleYAnim.animateTo(0.5f, animationSpec = tween(65))
+                        scaleYAnim.animateTo(1f, animationSpec = jellySpring)
+                    }
+                    // Un ligero balanceo (rotación) desfasado le suma la
+                    // sensación de "gelatina", como si la parte de arriba se
+                    // tambaleara de lado a lado mientras rebota.
+                    launch {
+                        skewDegAnim.snapTo(0f)
+                        skewDegAnim.animateTo(7f, animationSpec = tween(65))
+                        skewDegAnim.animateTo(
+                            0f,
+                            animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessLow)
+                        )
                     }
                 }
             }
     )
 }
+
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

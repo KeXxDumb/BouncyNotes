@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -82,6 +83,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -967,13 +969,32 @@ private fun GlassBottomBar(
     centered: Boolean,
     content: @Composable RowScope.() -> Unit
 ) {
-    val barTint = MaterialTheme.colorScheme.surface
-    Box(modifier = Modifier.fillMaxWidth().height(height)) {
+    // Antes el tinte de la barra era MaterialTheme.colorScheme.surface, que
+    // en tema claro es un color CLARO: con eso, más el desenfoque, los
+    // íconos (que también toman un tono relativamente oscuro/neutro del
+    // tema) quedaban con muy poco contraste encima y costaba distinguirlos.
+    // Ahora el tinte es directamente oscuro siempre (sin importar el tema
+    // claro/oscuro de la app), y los íconos se fuerzan a un blanco casi
+    // puro con CompositionLocalProvider más abajo, así el contraste es
+    // consistente sin importar qué tan clara sea la nota o el tema elegido.
+    val barTint = Color.Black
+    val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            // Borde sutil arriba y a los costados para que la barra se
+            // distinga claramente del contenido que se ve (desenfocado)
+            // detrás de ella, en vez de mezclarse con él.
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.18f), shape = barShape)
+    ) {
         // Capa de fondo: copia recortada y desenfocada del contenido de la
-        // nota que queda "detrás" de esta barra, más un tinte semitransparente.
+        // nota que queda "detrás" de esta barra, más un tinte oscuro
+        // semitransparente.
         Box(
             modifier = Modifier
                 .matchParentSize()
+                .clip(barShape)
                 .graphicsLayer {
                     clip = true
                     // El desenfoque real (RenderEffect) solo existe desde
@@ -986,7 +1007,6 @@ private fun GlassBottomBar(
                     }
                 }
                 .drawWithContent {
-                    drawRect(barTint.copy(alpha = 0.55f))
                     val layerSize = contentLayer.size
                     if (layerSize.height > 0) {
                         // El contenido grabado empieza en la parte de arriba de
@@ -998,19 +1018,29 @@ private fun GlassBottomBar(
                             drawLayer(contentLayer)
                         }
                     }
+                    // El tinte oscuro va DESPUÉS del contenido desenfocado (no
+                    // antes), para que oscurezca lo que se ve a través en vez
+                    // de quedar tapado por eso: así el resultado es siempre
+                    // oscuro y con buen contraste sin importar qué tan clara
+                    // sea la nota que hay detrás.
+                    drawRect(barTint.copy(alpha = 0.62f))
                 }
         )
-        // Capa de primer plano: los botones de verdad, sin desenfocar.
-        Row(
-            modifier = Modifier
-                .matchParentSize()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 4.dp)
-                .imePadding(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
-            content = content
-        )
+        // Capa de primer plano: los botones de verdad, sin desenfocar, con el
+        // color forzado a blanco para que resalten sobre el fondo oscuro de
+        // la barra sin importar el tema (claro/oscuro) que tenga la app.
+        CompositionLocalProvider(LocalContentColor provides Color.White.copy(alpha = 0.95f)) {
+            Row(
+                modifier = Modifier
+                    .matchParentSize()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp)
+                    .imePadding(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
+                content = content
+            )
+        }
     }
 }
 
@@ -1035,7 +1065,24 @@ private fun ReminderPickerSheet(
             }
         }
     }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = cal.timeInMillis)
+    val datePickerState = rememberDatePickerState(
+        // Mismo problema, en sentido inverso: el DatePicker espera recibir
+        // "medianoche UTC del día a preseleccionar", no un epoch millis
+        // normal en hora local. Si le pasamos cal.timeInMillis tal cual
+        // (como hacía la versión anterior), al reabrir un recordatorio ya
+        // guardado el calendario podía preseleccionar el día anterior al
+        // que realmente se había guardado.
+        initialSelectedDateMillis = run {
+            val utcMidnight = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+            utcMidnight.clear()
+            utcMidnight.set(
+                cal.get(java.util.Calendar.YEAR),
+                cal.get(java.util.Calendar.MONTH),
+                cal.get(java.util.Calendar.DAY_OF_MONTH)
+            )
+            utcMidnight.timeInMillis
+        }
+    )
     val timePickerState = rememberTimePickerState(
         initialHour = cal.get(java.util.Calendar.HOUR_OF_DAY),
         initialMinute = cal.get(java.util.Calendar.MINUTE),
@@ -1069,15 +1116,36 @@ private fun ReminderPickerSheet(
                 Button(onClick = {
                     val selectedDateMillis = datePickerState.selectedDateMillis
                     if (selectedDateMillis != null) {
-                        val target = java.util.Calendar.getInstance().apply {
+                        // BUG: el DatePicker de Compose siempre entrega
+                        // selectedDateMillis como medianoche en UTC del día
+                        // elegido, sin importar la zona horaria del teléfono.
+                        // Antes leíamos ese valor directo con
+                        // Calendar.getInstance() (zona horaria LOCAL): en
+                        // cualquier huso horario detrás de UTC (por ejemplo
+                        // Colombia/México, UTC-5), esa medianoche UTC cae en
+                        // la TARDE-NOCHE del día anterior en hora local, así
+                        // que year/month/day quedaban un día antes de lo que
+                        // el usuario realmente tocó en el calendario. Por eso
+                        // el recordatorio terminaba programado (y sonando) un
+                        // día antes de la fecha seleccionada.
+                        //
+                        // La forma correcta: leer año/mes/día usando un
+                        // Calendar en UTC (así se obtiene la fecha que
+                        // realmente se ve marcada en el widget), y recién ahí
+                        // combinarlos con la hora elegida en un Calendar en
+                        // horario LOCAL.
+                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
                             timeInMillis = selectedDateMillis
-                            // DatePicker devuelve la fecha en UTC a medianoche;
-                            // le aplicamos encima la hora local elegida en el
-                            // TimeInput para no arrastrar el desfase de huso
-                            // horario a la hora final.
-                            set(java.util.Calendar.HOUR_OF_DAY, timePickerState.hour)
-                            set(java.util.Calendar.MINUTE, timePickerState.minute)
-                            set(java.util.Calendar.SECOND, 0)
+                        }
+                        val target = java.util.Calendar.getInstance().apply {
+                            set(
+                                utcCal.get(java.util.Calendar.YEAR),
+                                utcCal.get(java.util.Calendar.MONTH),
+                                utcCal.get(java.util.Calendar.DAY_OF_MONTH),
+                                timePickerState.hour,
+                                timePickerState.minute,
+                                0
+                            )
                             set(java.util.Calendar.MILLISECOND, 0)
                         }
                         onConfirm(target.timeInMillis)
@@ -1087,7 +1155,10 @@ private fun ReminderPickerSheet(
                 }
             }
             Text(
-                "El recordatorio necesita el permiso de notificaciones y, en Android 12+, el de \"alarmas exactas\" en Ajustes del sistema para sonar puntual.",
+                "Se envían dos avisos: uno 1 hora antes y otro justo a la hora " +
+                    "elegida. Necesitan el permiso de notificaciones y, en " +
+                    "Android 12+, el de \"alarmas exactas\" en Ajustes del " +
+                    "sistema para sonar puntual.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)

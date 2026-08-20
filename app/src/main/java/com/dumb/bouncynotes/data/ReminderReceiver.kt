@@ -19,6 +19,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val EXTRA_NOTE_ID = "note_id"
+        const val EXTRA_IS_ADVANCE = "is_advance"
         const val CHANNEL_ID = "note_reminders"
 
         fun ensureChannel(context: Context) {
@@ -40,6 +41,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
+        val isAdvance = intent.getBooleanExtra(EXTRA_IS_ADVANCE, false)
         if (noteId == 0L) return
 
         // Ir a buscar la nota (para título/contenido) es async; usamos goAsync()
@@ -50,7 +52,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val dao = NoteDatabase.getInstance(context).noteDao()
                 val note = dao.getById(noteId)
                 if (note != null && note.deletedAt == null) {
-                    showNotification(context, note)
+                    showNotification(context, note, isAdvance)
                 }
             } finally {
                 pendingResult.finish()
@@ -58,7 +60,7 @@ class ReminderReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun showNotification(context: Context, note: Note) {
+    private fun showNotification(context: Context, note: Note, isAdvance: Boolean) {
         ensureChannel(context)
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
@@ -72,7 +74,11 @@ class ReminderReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val title = note.title.ifBlank { "Recordatorio" }
+        val title = if (isAdvance) {
+            "En 1 hora: ${note.title.ifBlank { "recordatorio" }}"
+        } else {
+            note.title.ifBlank { "Recordatorio" }
+        }
         val body = when {
             note.type == NoteType.CHECKLIST -> note.checklistItems.take(3).joinToString(", ") { it.text }
             else -> stripFormattingMarkers(note.content).take(120)
@@ -92,7 +98,11 @@ class ReminderReceiver : BroadcastReceiver() {
                 context, android.Manifest.permission.POST_NOTIFICATIONS
             ) == android.content.pm.PackageManager.PERMISSION_GRANTED || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
         ) {
-            NotificationManagerCompat.from(context).notify(note.id.toInt(), notification)
+            // IDs distintos para el aviso de 1 hora antes y el recordatorio
+            // final: así, si por lo que sea llegan a coincidir en el tiempo,
+            // no se pisan una a la otra en la bandeja de notificaciones.
+            val notificationId = if (isAdvance) note.id.toInt() + 1_000_000 else note.id.toInt()
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
         }
     }
 }
