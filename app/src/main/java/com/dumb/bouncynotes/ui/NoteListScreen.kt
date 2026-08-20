@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.Settings

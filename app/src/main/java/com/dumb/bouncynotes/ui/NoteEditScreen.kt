@@ -13,7 +13,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -110,12 +109,12 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.withTimeoutOrNull
