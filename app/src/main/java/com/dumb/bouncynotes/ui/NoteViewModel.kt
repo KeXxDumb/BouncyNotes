@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteRepository
+import com.dumb.bouncynotes.data.ReminderScheduler
 import com.dumb.bouncynotes.data.SettingsRepository
 import com.dumb.bouncynotes.data.SortOrder
 import com.dumb.bouncynotes.data.StartView
@@ -110,8 +111,24 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     fun save(note: Note, onDone: (Long) -> Unit = {}) {
         viewModelScope.launch {
-            val id = repository.save(note.copy(updatedAt = System.currentTimeMillis()))
-            onDone(if (note.id == 0L) id else note.id)
+            val toSave = note.copy(updatedAt = System.currentTimeMillis())
+            val id = repository.save(toSave)
+            val savedId = if (note.id == 0L) id else note.id
+            applyReminderScheduling(toSave.copy(id = savedId))
+            onDone(savedId)
+        }
+    }
+
+    // Programa o cancela la alarma de AlarmManager según el estado actual del
+    // recordatorio de la nota. Se llama cada vez que la nota se guarda o se
+    // borra, para que la alarma nunca quede desincronizada de lo que hay en
+    // la base de datos.
+    private fun applyReminderScheduling(note: Note) {
+        val app = getApplication<Application>()
+        if (note.reminderAt != null && note.deletedAt == null) {
+            ReminderScheduler.schedule(app, note)
+        } else {
+            ReminderScheduler.cancel(app, note.id)
         }
     }
 
@@ -130,6 +147,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteForever(note: Note) {
         viewModelScope.launch {
             extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
+            ReminderScheduler.cancel(getApplication(), note.id)
             repository.delete(note)
         }
     }
@@ -154,6 +172,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             val all = allNotes.first()
             all.filter { it.id in ids }.forEach { note ->
                 repository.save(note.copy(deletedAt = System.currentTimeMillis(), pinned = false, updatedAt = System.currentTimeMillis()))
+                ReminderScheduler.cancel(getApplication(), note.id)
             }
         }
     }
@@ -163,6 +182,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             val all = allNotes.first()
             all.filter { it.id in ids }.forEach { note ->
                 extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
+                ReminderScheduler.cancel(getApplication(), note.id)
                 repository.delete(note)
             }
         }

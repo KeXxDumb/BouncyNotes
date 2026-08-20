@@ -35,7 +35,9 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -53,8 +55,12 @@ import com.dumb.bouncynotes.ui.SettingsViewModel
 import com.dumb.bouncynotes.ui.theme.NotesTheme
 
 class MainActivity : FragmentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Si la actividad se abrió desde la notificación de un recordatorio,
+        // vamos directo a esa nota en vez de a la lista.
+        val openNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             val settings by settingsViewModel.settings.collectAsState()
@@ -135,16 +141,19 @@ class MainActivity : FragmentActivity() {
                         if (settings.appWideBiometricLock && !biometricValid) {
                             AppLockScreen(onUnlock = { requestBiometric {} })
                         } else {
-                            NavHost(navController = navController, startDestination = "list") {
+                            NavHost(
+                                navController = navController,
+                                startDestination = if (openNoteId != null) "edit/$openNoteId?type=TEXT" else "list"
+                            ) {
                                 composable("list") {
                                     NoteListScreen(
                                         viewModel = noteViewModel,
                                         settings = settings,
                                         biometricUnlockedForPrivate = biometricValid,
                                         onRequestBiometric = { requestBiometric {} },
-                                        onNoteClick = { id -> navController.navigate("edit/$id?type=TEXT") },
-                                        onAddClick = { type -> navController.navigate("edit/0?type=${type.name}") },
-                                        onOpenSettings = { navController.navigate("settings") }
+                                        onNoteClick = { id -> navController.navigateSafe("edit/$id?type=TEXT") },
+                                        onAddClick = { type -> navController.navigateSafe("edit/0?type=${type.name}") },
+                                        onOpenSettings = { navController.navigateSafe("settings") }
                                     )
                                 }
                                 composable(
@@ -172,7 +181,7 @@ class MainActivity : FragmentActivity() {
                                         biometricUnlockedForPrivate = biometricValid,
                                         onRequestBiometric = { onSuccess -> requestBiometric(onSuccess) },
                                         allLabels = allLabels,
-                                        onBack = { navController.popBackStack() }
+                                        onBack = { navController.popBackStackSafe() }
                                     )
                                 }
                                 composable("settings") {
@@ -180,7 +189,7 @@ class MainActivity : FragmentActivity() {
                                         settings = settings,
                                         noteViewModel = noteViewModel,
                                         onUpdate = { transform -> settingsViewModel.update(transform) },
-                                        onBack = { navController.popBackStack() }
+                                        onBack = { navController.popBackStackSafe() }
                                     )
                                 }
                             }
@@ -204,4 +213,47 @@ private fun AppLockScreen(onUnlock: () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { onUnlock() }
+}
+
+// --- Navegación "a prueba de doble toque" ------------------------------
+//
+// Bug reportado: abrir Ajustes, cerrarlo, y tocar rápido y repetidamente la
+// esquina superior izquierda (donde vive el botón de menú) podía dejar la
+// pantalla completamente negra, sin ningún elemento visible.
+//
+// La causa raíz es un problema clásico de Navigation Compose: cuando un
+// composable dispara navigate()/popBackStack() más de una vez antes de que
+// la transición anterior termine de procesarse (por ejemplo, por dos toques
+// casi simultáneos, uno de ellos "fantasma" mientras la pantalla anterior
+// todavía se estaba recomponiendo tras volver de Ajustes), el NavController
+// puede terminar procesando una navegación sobre un back stack que ya está
+// en medio de otro cambio, dejando el "currentBackStackEntry" en un estado
+// inconsistente: la pantalla vieja ya se descompuso pero la nueva nunca
+// llegó a componerse, resultando en una pantalla en blanco/negra sin ningún
+// error visible en Logcat.
+//
+// La solución recomendada por el propio equipo de Android (ver el patrón
+// "navigateSingleTopTo" usado en apps de referencia como Now In Android) es
+// verificar que el back stack entry actual ya esté en estado RESUMED antes
+// de permitir una nueva navegación: si todavía no llegó a RESUMED es porque
+// la transición previa sigue en curso, y ese segundo toque (el "fantasma")
+// se ignora en vez de dispararse.
+private fun NavController.navigateSafe(route: String) {
+    val resumed = currentBackStackEntry
+        ?.lifecycle
+        ?.currentState
+        ?.isAtLeast(Lifecycle.State.RESUMED) ?: true
+    if (resumed) {
+        navigate(route)
+    }
+}
+
+private fun NavController.popBackStackSafe() {
+    val resumed = currentBackStackEntry
+        ?.lifecycle
+        ?.currentState
+        ?.isAtLeast(Lifecycle.State.RESUMED) ?: true
+    if (resumed) {
+        popBackStack()
+    }
 }

@@ -13,4 +13,6 @@ class NoteRepository(private val dao: NoteDao) {
     suspend fun delete(note: Note) = dao.delete(note)
 
     suspend fun purgeOldTrash(threshold: Long) = dao.purgeOldTrash(threshold)
+
+    suspend fun getAllWithReminders(): List<Note> = dao.getAllWithReminders()
 }

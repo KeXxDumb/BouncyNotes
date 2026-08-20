@@ -13,12 +13,14 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,6 +37,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.outlined.AlarmAdd
+import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
@@ -59,18 +64,24 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -88,6 +99,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -199,8 +225,16 @@ fun NoteEditScreen(
     var showImageSourceDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
+    var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
     var isEditing by remember { mutableStateOf(true) }
+
+    // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
+    // permiso de notificaciones. Se pide justo al programar el primer
+    // recordatorio, no al abrir la app (evita pedir permisos sin contexto).
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* si lo niega, igual queda programada la alarma; solo no se verá la notificación */ }
 
     LaunchedEffect(noteId) {
         if (noteId != 0L) {
@@ -499,6 +533,31 @@ fun NoteEditScreen(
         }
     }
 
+    if (showReminderSheet) {
+        ReminderPickerSheet(
+            initialMillis = current.reminderAt,
+            onDismiss = { showReminderSheet = false },
+            onConfirm = { millis ->
+                current = current.copy(reminderAt = millis)
+                showReminderSheet = false
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context, android.Manifest.permission.POST_NOTIFICATIONS
+                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            },
+            onClear = {
+                current = current.copy(reminderAt = null)
+                showReminderSheet = false
+            }
+        )
+    }
+
+    val contentLayer = rememberGraphicsLayer()
+    val bottomBarHeight = 56.dp
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -542,99 +601,109 @@ fun NoteEditScreen(
             )
         },
         bottomBar = {
-            BottomAppBar(modifier = Modifier.imePadding()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(0.dp)
-                ) {
-                    if (current.deletedAt != null) {
-                        IconButton(onClick = {
+            // Antes era un BottomAppBar de Material3: ese componente reserva
+            // ~80dp de alto con relleno pensado para llevar un FAB embebido, que
+            // acá no usamos, así que sobraba una franja enorme vacía. Ahora es
+            // un contenedor propio con una altura fija y compacta (56dp, la
+            // misma que un TopAppBar chico) que además es semitransparente y
+            // desenfoca lo que hay detrás (el contenido de la nota, que se deja
+            // scrollear por debajo de la barra) para un efecto "vidrio
+            // esmerilado" en vez de un panel sólido.
+            GlassBottomBar(
+                contentLayer = contentLayer,
+                height = bottomBarHeight,
+                centered = isEditing
+            ) {
+                if (current.deletedAt != null) {
+                    IconButton(onClick = {
+                        extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
+                        viewModel.deleteForever(current)
+                        onBack()
+                    }) {
+                        Icon(Icons.Filled.DeleteForever, contentDescription = "Eliminar para siempre")
+                    }
+                    IconButton(onClick = {
+                        viewModel.restore(current)
+                        onBack()
+                    }) {
+                        Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
+                    }
+                } else {
+                    IconButton(onClick = {
+                        if (settings.confirmBeforeDelete) {
+                            showDeleteConfirm = true
+                        } else if (settings.useTrash) {
+                            viewModel.moveToTrash(current)
+                            onBack()
+                        } else {
                             extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
                             viewModel.deleteForever(current)
                             onBack()
-                        }) {
-                            Icon(Icons.Filled.DeleteForever, contentDescription = "Eliminar para siempre")
                         }
-                        IconButton(onClick = {
-                            viewModel.restore(current)
-                            onBack()
-                        }) {
-                            Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
-                        }
-                    } else {
-                        IconButton(onClick = {
-                            if (settings.confirmBeforeDelete) {
-                                showDeleteConfirm = true
-                            } else if (settings.useTrash) {
-                                viewModel.moveToTrash(current)
-                                onBack()
-                            } else {
-                                extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
-                                viewModel.deleteForever(current)
-                                onBack()
-                            }
-                        }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Borrar")
-                        }
-                    }
-                    if (current.type == NoteType.TEXT && isEditing) {
-                        IconButton(onClick = { showImageSourceDialog = true }) {
-                            Icon(Icons.Filled.Image, contentDescription = "Insertar imagen")
-                        }
-                        IconButton(onClick = { wrapActiveSelection("**") }) {
-                            Icon(Icons.Filled.FormatBold, contentDescription = "Negrita")
-                        }
-                        IconButton(onClick = { wrapActiveSelection("*") }) {
-                            Icon(Icons.Filled.FormatItalic, contentDescription = "Cursiva")
-                        }
-                        IconButton(onClick = { wrapActiveSelection("~~") }) {
-                            Icon(Icons.Filled.FormatStrikethrough, contentDescription = "Tachado")
-                        }
-                        IconButton(onClick = { wrapActiveSelection("`") }) {
-                            Icon(Icons.Filled.Code, contentDescription = "Monoespaciado")
-                        }
-                    }
-                    if (isEditing) {
-                        IconButton(onClick = { showMoreSheet = true }) {
-                            Icon(Icons.Filled.Palette, contentDescription = "Color y etiquetas")
-                        }
-                    }
-                    // Antes este botón vivía en la barra de arriba y solo aparecía para
-                    // notas de texto: las notas de tipo checklist no tenían forma de
-                    // volver a modo edición una vez guardadas (con "doble toque para
-                    // editar" activado, quedaban bloqueadas en solo lectura para
-                    // siempre). Ahora vive abajo, junto al resto de acciones, y
-                    // funciona para ambos tipos de nota.
-                    IconButton(onClick = {
-                        val goingToEdit = !isEditing
-                        if (goingToEdit && current.type == NoteType.TEXT) {
-                            segments = buildEditSegments(current.content)
-                        }
-                        isEditing = goingToEdit
                     }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Borrar")
+                    }
+                }
+                if (current.type == NoteType.TEXT && isEditing) {
+                    IconButton(onClick = { showImageSourceDialog = true }) {
+                        Icon(Icons.Filled.Image, contentDescription = "Insertar imagen")
+                    }
+                    IconButton(onClick = { wrapActiveSelection("**") }) {
+                        Icon(Icons.Filled.FormatBold, contentDescription = "Negrita")
+                    }
+                    IconButton(onClick = { wrapActiveSelection("*") }) {
+                        Icon(Icons.Filled.FormatItalic, contentDescription = "Cursiva")
+                    }
+                    IconButton(onClick = { wrapActiveSelection("~~") }) {
+                        Icon(Icons.Filled.FormatStrikethrough, contentDescription = "Tachado")
+                    }
+                    IconButton(onClick = { wrapActiveSelection("`") }) {
+                        Icon(Icons.Filled.Code, contentDescription = "Monoespaciado")
+                    }
+                }
+                if (isEditing) {
+                    IconButton(onClick = { showMoreSheet = true }) {
+                        Icon(Icons.Filled.Palette, contentDescription = "Color y etiquetas")
+                    }
+                    IconButton(onClick = { showReminderSheet = true }) {
                         Icon(
-                            if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
-                            contentDescription = if (isEditing) "Vista previa" else "Editar"
+                            if (current.reminderAt != null) Icons.Filled.Alarm else Icons.Outlined.AlarmAdd,
+                            contentDescription = "Recordatorio",
+                            tint = if (current.reminderAt != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }
-                    // El botón de guardar solo tiene sentido en modo edición: en modo
-                    // vista no hay nada que guardar (y el back ya guarda solo si hubo
-                    // cambios), así que antes no debía mostrarse ahí.
-                    if (isEditing) {
-                        IconButton(onClick = {
-                            if (!isNoteEmpty(current)) {
-                                viewModel.save(current) { id ->
-                                    if (noteId == 0L) current = current.copy(id = id)
-                                }
+                }
+                // Antes este botón vivía en la barra de arriba y solo aparecía para
+                // notas de texto: las notas de tipo checklist no tenían forma de
+                // volver a modo edición una vez guardadas (con "doble toque para
+                // editar" activado, quedaban bloqueadas en solo lectura para
+                // siempre). Ahora vive abajo, junto al resto de acciones, y
+                // funciona para ambos tipos de nota.
+                IconButton(onClick = {
+                    val goingToEdit = !isEditing
+                    if (goingToEdit && current.type == NoteType.TEXT) {
+                        segments = buildEditSegments(current.content)
+                    }
+                    isEditing = goingToEdit
+                }) {
+                    Icon(
+                        if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
+                        contentDescription = if (isEditing) "Vista previa" else "Editar"
+                    )
+                }
+                // El botón de guardar solo tiene sentido en modo edición: en modo
+                // vista no hay nada que guardar (y el back ya guarda solo si hubo
+                // cambios), así que antes no debía mostrarse ahí.
+                if (isEditing) {
+                    IconButton(onClick = {
+                        if (!isNoteEmpty(current)) {
+                            viewModel.save(current) { id ->
+                                if (noteId == 0L) current = current.copy(id = id)
                             }
-                            onBack()
-                        }) {
-                            Icon(Icons.Filled.Check, contentDescription = "Guardar")
                         }
+                        onBack()
+                    }) {
+                        Icon(Icons.Filled.Check, contentDescription = "Guardar")
                     }
                 }
             }
@@ -652,8 +721,27 @@ fun NoteEditScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                // OJO: a propósito NO aplicamos el padding inferior que da el
+                // Scaffold acá. Si lo hiciéramos, el contenido nunca se dibujaría
+                // detrás de la barra inferior y no habría nada que desenfocar
+                // (desenfocar "nada" no se nota). En su lugar dejamos que el
+                // contenido llegue hasta el fondo real de la pantalla, y más abajo
+                // le agregamos un espacio en blanco del alto de la barra para que
+                // el texto/checklist no quede tapado al hacer scroll hasta el final.
+                .padding(
+                    top = padding.calculateTopPadding(),
+                    start = padding.calculateStartPadding(LocalLayoutDirection.current),
+                    end = padding.calculateEndPadding(LocalLayoutDirection.current)
+                )
                 .padding(horizontal = 12.dp)
+                // Graba todo lo que se dibuja acá (título, texto, checklist,
+                // imágenes) en una "capa" que la barra de abajo puede volver a
+                // dibujar recortada y desenfocada, logrando el efecto de vidrio
+                // esmerilado sin duplicar la UI real.
+                .drawWithContent {
+                    contentLayer.record { this@drawWithContent.drawContent() }
+                    drawContent()
+                }
         ) {
             if (isEditing) {
                 FlatTextField(
@@ -696,6 +784,9 @@ fun NoteEditScreen(
                                 current = current.copy(checklistItems = finalItems)
                             }
                         )
+                        // Despeje para que el último ítem no quede tapado por la
+                        // barra inferior flotante y semitransparente.
+                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
                     }
                 } else if (isEditing) {
                     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -787,6 +878,7 @@ fun NoteEditScreen(
                                 }
                             }
                         }
+                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
                     }
                 } else {
                     Column(
@@ -799,6 +891,7 @@ fun NoteEditScreen(
                             content = current.content,
                             onImageClick = { idx -> viewerStartPos = idx }
                         )
+                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
                     }
                 }
             }
@@ -848,6 +941,158 @@ private fun LabelsEditor(
                     newLabel = ""
                 }
             }) { Text("Agregar") }
+        }
+    }
+}
+
+// Barra inferior "de vidrio esmerilado" para el editor de notas.
+//
+// Reemplaza al BottomAppBar de Material3 (que reservaba ~80dp con relleno
+// pensado para un FAB embebido que acá no se usa). Esta versión:
+//  - tiene una altura fija y compacta (parámetro `height`, 56dp desde donde se
+//    llama), en vez de la altura excesiva por defecto.
+//  - centra sus botones cuando `centered = true` (modo edición); en modo
+//    vista los deja alineados al inicio, ya que ahí hay menos botones y
+//    centrarlos se vería raro con tanto espacio vacío alrededor.
+//  - es semitransparente y desenfoca lo que hay detrás en vez de tapar todo
+//    con un panel sólido. El contenido de la nota (en NoteEditScreen) se
+//    deja dibujar por debajo de esta barra a propósito, grabando su dibujo
+//    en `contentLayer`; acá simplemente volvemos a dibujar (recortada a esta
+//    franja) esa misma grabación con un desenfoque real encima, así que lo
+//    que se ve "a través" de la barra es efectivamente el contenido real que
+//    hay detrás, no una imitación.
+@Composable
+private fun GlassBottomBar(
+    contentLayer: GraphicsLayer,
+    height: Dp,
+    centered: Boolean,
+    content: @Composable RowScope.() -> Unit
+) {
+    val barTint = MaterialTheme.colorScheme.surface
+    Box(modifier = Modifier.fillMaxWidth().height(height)) {
+        // Capa de fondo: copia recortada y desenfocada del contenido de la
+        // nota que queda "detrás" de esta barra, más un tinte semitransparente.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    clip = true
+                    // El desenfoque real (RenderEffect) solo existe desde
+                    // Android 12 (API 31). En versiones anteriores nos
+                    // quedamos con la transparencia sola: se sigue viendo
+                    // "liviana" aunque sin el desenfoque, degradación
+                    // razonable en vez de romper algo.
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        renderEffect = BlurEffect(26f, 26f, TileMode.Clamp)
+                    }
+                }
+                .drawWithContent {
+                    drawRect(barTint.copy(alpha = 0.55f))
+                    val layerSize = contentLayer.size
+                    if (layerSize.height > 0) {
+                        // El contenido grabado empieza en la parte de arriba de
+                        // la pantalla; a esta barra le corresponde solo su
+                        // franja final (la más cercana al borde inferior), así
+                        // que lo trasladamos hacia arriba para recortar
+                        // justo esa porción.
+                        translate(top = -(layerSize.height - size.height)) {
+                            drawLayer(contentLayer)
+                        }
+                    }
+                }
+        )
+        // Capa de primer plano: los botones de verdad, sin desenfocar.
+        Row(
+            modifier = Modifier
+                .matchParentSize()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp)
+                .imePadding(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
+            content = content
+        )
+    }
+}
+
+// Selector de fecha y hora para el recordatorio de una nota, usando los
+// componentes nativos de Material3 (DatePicker + TimeInput) en vez de traer
+// una librería aparte.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderPickerSheet(
+    initialMillis: Long?,
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit,
+    onClear: () -> Unit
+) {
+    val cal = remember {
+        java.util.Calendar.getInstance().apply {
+            if (initialMillis != null) {
+                timeInMillis = initialMillis
+            } else {
+                add(java.util.Calendar.HOUR_OF_DAY, 1)
+                set(java.util.Calendar.MINUTE, 0)
+            }
+        }
+    }
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = cal.timeInMillis)
+    val timePickerState = rememberTimePickerState(
+        initialHour = cal.get(java.util.Calendar.HOUR_OF_DAY),
+        initialMinute = cal.get(java.util.Calendar.MINUTE),
+        is24Hour = true
+    )
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text("Recordatorio", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(8.dp))
+            DatePicker(state = datePickerState, showModeToggle = false)
+            Spacer(Modifier.height(8.dp))
+            TimeInput(state = timePickerState)
+            Spacer(Modifier.height(16.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (initialMillis != null) {
+                    TextButton(onClick = onClear) {
+                        Icon(Icons.Filled.AlarmOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Quitar")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    val selectedDateMillis = datePickerState.selectedDateMillis
+                    if (selectedDateMillis != null) {
+                        val target = java.util.Calendar.getInstance().apply {
+                            timeInMillis = selectedDateMillis
+                            // DatePicker devuelve la fecha en UTC a medianoche;
+                            // le aplicamos encima la hora local elegida en el
+                            // TimeInput para no arrastrar el desfase de huso
+                            // horario a la hora final.
+                            set(java.util.Calendar.HOUR_OF_DAY, timePickerState.hour)
+                            set(java.util.Calendar.MINUTE, timePickerState.minute)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        onConfirm(target.timeInMillis)
+                    }
+                }) {
+                    Text("Guardar")
+                }
+            }
+            Text(
+                "El recordatorio necesita el permiso de notificaciones y, en Android 12+, el de \"alarmas exactas\" en Ajustes del sistema para sonar puntual.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp)
+            )
         }
     }
 }

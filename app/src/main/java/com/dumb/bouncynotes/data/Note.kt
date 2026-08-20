@@ -33,5 +33,8 @@ data class Note(
     val isPrivate: Boolean = false,
     val deletedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    // Fecha/hora (epoch millis) en la que debe sonar el recordatorio de esta
+    // nota, o null si no tiene ninguno programado.
+    val reminderAt: Long? = null
 )

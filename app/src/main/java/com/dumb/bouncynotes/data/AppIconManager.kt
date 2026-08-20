@@ -1,15 +1,19 @@
 package com.dumb.bouncynotes.data
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Process
+import com.dumb.bouncynotes.MainActivity
 
 // Cambiar el ícono de la app en Android se hace con "activity-alias": varios
 // alias en el manifiesto apuntan a la misma MainActivity, cada uno con su
 // propio ícono, y en runtime se habilita uno y se deshabilitan los demás con
 // PackageManager. El lanzador (launcher) del teléfono lee ese estado para
-// decidir qué ícono mostrar; algunos lanzadores tardan un momento o piden
-// reabrir el cajón de apps para reflejar el cambio.
+// decidir qué ícono mostrar.
 enum class AppIcon(val alias: String, val label: String) {
     DEFAULT("com.dumb.bouncynotes.DefaultIconAlias", "Por defecto"),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl")
@@ -28,16 +32,27 @@ object AppIconManager {
         }
     }
 
+    // OJO: la primera implementación cambiaba el estado de los alias con
+    // PackageManager.DONT_KILL_APP (a propósito, para no cerrar la app) y ahí
+    // quedaba: en el emulador/algunos Pixel se veía andar, pero en launchers
+    // como los de Samsung (One UI), Xiaomi (MIUI) y varios otros, el ícono
+    // mostrado queda cacheado mientras el proceso de la app sigue vivo, y
+    // recién se refresca la próxima vez que el proceso arranca de cero. El
+    // cambio en PackageManager era correcto (currentComponentEnabledSetting
+    // ya reportaba el nuevo valor), pero visualmente "no hacía nada" en esos
+    // teléfonos porque el launcher nunca se enteraba.
+    //
+    // Esta versión, en cambio, mata y reinicia el proceso de la app justo
+    // después de cambiar el alias: eso fuerza a que TODOS los launchers
+    // vuelvan a leer los metadatos del paquete (íconos incluidos) al
+    // relanzarla, en vez de depender de que cada launcher decida refrescar su
+    // caché por su cuenta.
     fun setIcon(context: Context, icon: AppIcon) {
         val pm = context.packageManager
         try {
-            // Importante: deshabilitar TODOS primero, y recién en un segundo paso
-            // habilitar el elegido, en dos pasadas separadas. Si se hace en una
-            // sola pasada (deshabilitar el resto y habilitar el elegido mezclado,
-            // en el orden que sea) hay una ventana muy breve donde puede haber dos
-            // alias habilitados a la vez (o ninguno), y varios lanzadores de
-            // Android no manejan bien esa ambigüedad: se quedan con el ícono
-            // anterior en caché y nunca lo actualizan hasta reinstalar la app.
+            // Deshabilitar TODOS primero y recién en un segundo paso habilitar
+            // el elegido (en dos pasadas separadas) evita que, por un instante,
+            // haya dos alias habilitados a la vez o ninguno.
             AppIcon.entries.forEach { candidate ->
                 pm.setComponentEnabledSetting(
                     ComponentName(context, candidate.alias),
@@ -51,8 +66,32 @@ object AppIconManager {
                 PackageManager.DONT_KILL_APP
             )
         } catch (_: Exception) {
-            // Si algo falla acá no vale la pena tirar abajo toda la pantalla de
-            // Ajustes por esto; el usuario simplemente ve que el ícono no cambió.
+            // Si ni siquiera pudimos cambiar el estado del componente, no
+            // tiene sentido reiniciar la app para nada: mejor dejarla como
+            // estaba y que el usuario simplemente vea que no cambió.
+            return
         }
+
+        restartToApplyIcon(context)
+    }
+
+    // Reinicia la app un instante después de matarla, usando una alarma casi
+    // inmediata: es la forma estándar de "reiniciar la app" en Android (no
+    // existe una API directa para eso). Sin esto, el cambio de ícono queda
+    // aplicado a nivel de PackageManager pero invisible en varios launchers
+    // hasta que el usuario cierre la app manualmente por su cuenta.
+    private fun restartToApplyIcon(context: Context) {
+        val restartIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            restartIntent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + 300, pendingIntent)
+        Process.killProcess(Process.myPid())
     }
 }

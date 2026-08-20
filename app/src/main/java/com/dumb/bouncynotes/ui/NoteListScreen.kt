@@ -1,6 +1,5 @@
 package com.dumb.bouncynotes.ui
 
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -16,6 +15,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,7 +74,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,7 +81,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,24 +132,20 @@ fun NoteListScreen(
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
 
-    // --- Logging temporal para diagnosticar el bug de la pantalla negra ---
-    // Todo esto se puede sacar después; el objetivo es ver en Logcat (filtrando
-    // por el tag "BouncyDrawerDebug") la secuencia exacta de eventos cuando pasa
-    // el bug: si NoteListScreen se recompone/recrea al volver de Ajustes, en qué
-    // estado queda el drawer, y si el toque en el borde dispara el gesto de
-    // apertura o no.
-    DisposableEffect(Unit) {
-        Log.d("BouncyDrawerDebug", "NoteListScreen ENTRA en composición (instancia ${System.identityHashCode(drawerState)})")
-        onDispose {
-            Log.d("BouncyDrawerDebug", "NoteListScreen SALE de composición (instancia ${System.identityHashCode(drawerState)})")
-        }
-    }
-    LaunchedEffect(drawerState) {
-        snapshotFlow { Triple(drawerState.currentValue, drawerState.targetValue, drawerState.isAnimationRunning) }
-            .collect { (current, target, animating) ->
-                Log.d("BouncyDrawerDebug", "drawerState cambió: current=$current target=$target animando=$animating")
-            }
-    }
+    // Bug reportado: abrir Ajustes, cerrarlo y tocar rápido y repetido la
+    // esquina superior izquierda dejaba la pantalla en negro. Con el log de
+    // diagnóstico (tag "BouncyDrawerDebug", ya retirado) se confirmó que no
+    // había ningún gesto de swipe disparándose de más: el problema era que
+    // un segundo toque "fantasma" llegaba a alcanzar a scope.launch { } y
+    // disparaba una segunda apertura del drawer, o una segunda navegación a
+    // Ajustes, mientras la transición anterior todavía estaba en curso y
+    // NoteListScreen estaba a medio recomponer al volver. Eso se arregla en
+    // dos frentes: 1. navigateSafe()/popBackStackSafe() en MainActivity, que
+    // ignoran una navegación si la pantalla actual aún no llegó a RESUMED, y
+    // 2. acá abajo, ignorando toques en el botón de menú mientras el drawer
+    // ya está animando (isAnimationRunning), para que un doble-toque
+    // accidental no dispare dos animaciones open()/close() superpuestas.
+    var navigatingToSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(viewMode, labelFilter) {
         selectedIds = emptySet()
@@ -305,17 +299,17 @@ fun NoteListScreen(
                     selected = false,
                     icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                     onClick = {
-                        // Antes esto disparaba drawerState.close() (async) y navegaba
-                        // a Ajustes en el mismo instante, sin esperar a que el drawer
-                        // terminara de cerrarse. Si al volver de Ajustes se tocaba el
-                        // botón de menú muy rápido, el drawer quedaba en un estado a
-                        // medio animar y se veía una pantalla negra (el scrim) sin
-                        // contenido. Ahora esperamos a que cierre antes de navegar.
-                        Log.d("BouncyDrawerDebug", "Ítem 'Ajustes' tocado, currentValue=${drawerState.currentValue}")
-                        scope.launch {
-                            drawerState.close()
-                            Log.d("BouncyDrawerDebug", "drawerState.close() terminó, currentValue=${drawerState.currentValue}, navegando a Ajustes")
-                            onOpenSettings()
+                        // Ignoramos toques repetidos mientras ya hay una
+                        // navegación a Ajustes en curso: esto era justamente lo
+                        // que dejaba dos animaciones/navegaciones superpuestas
+                        // y terminaba en pantalla negra.
+                        if (!navigatingToSettings) {
+                            navigatingToSettings = true
+                            scope.launch {
+                                drawerState.close()
+                                onOpenSettings()
+                                navigatingToSettings = false
+                            }
                         }
                     },
                     modifier = Modifier.padding(horizontal = 12.dp)
@@ -388,10 +382,19 @@ fun NoteListScreen(
                     TopAppBar(
                         title = { BouncyPeach() },
                         navigationIcon = {
-                            IconButton(onClick = {
-                                Log.d("BouncyDrawerDebug", "Botón de menú tocado, currentValue=${drawerState.currentValue}")
-                                scope.launch { drawerState.open() }
-                            }) {
+                            IconButton(
+                                onClick = {
+                                    // Mientras el drawer ya está animando (abriéndose o
+                                    // cerrándose) ignoramos toques nuevos, para que un
+                                    // doble-toque accidental (justo lo que describía el
+                                    // reporte del bug) no dispare dos animaciones open()
+                                    // superpuestas sobre el mismo drawerState.
+                                    if (!drawerState.isAnimationRunning) {
+                                        scope.launch { drawerState.open() }
+                                    }
+                                },
+                                enabled = !drawerState.isAnimationRunning
+                            ) {
                                 Icon(Icons.Filled.Menu, contentDescription = "Menú")
                             }
                         },
@@ -478,6 +481,7 @@ fun NoteListScreen(
                                     checkboxPosition = settings.checkboxPosition,
                                     selected = note.id in selectedIds,
                                     selectionMode = selectionMode,
+                                    showFirstImage = settings.showFirstImage,
                                     onClick = {
                                         if (selectionMode) {
                                             selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
@@ -506,6 +510,7 @@ fun NoteListScreen(
                                     checkboxPosition = settings.checkboxPosition,
                                     selected = note.id in selectedIds,
                                     selectionMode = selectionMode,
+                                    showFirstImage = settings.showFirstImage,
                                     onClick = {
                                         if (selectionMode) {
                                             selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
@@ -531,22 +536,40 @@ fun NoteListScreen(
 @Composable
 private fun BouncyPeach() {
     val scope = rememberCoroutineScope()
-    val scale = remember { Animatable(1f) }
+    // Antes había un único Animatable escalando X e Y a la vez: eso se ve
+    // como un salto uniforme (crece y encoge igual en ambos ejes). Un rebote
+    // "gelatinoso" de verdad aplasta primero (ancho > alto) y luego estira
+    // (alto > alto normal, ancho < normal) mientras X e Y oscilan un poco
+    // desfasados entre sí antes de asentarse: por eso van en dos Animatable
+    // independientes con springs bien "bouncy", cada uno con su propia
+    // secuencia de objetivos.
+    val scaleX = remember { Animatable(1f) }
+    val scaleY = remember { Animatable(1f) }
+    val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
     Text(
         text = "\uD83C\uDF51",
         fontSize = 28.sp,
         modifier = Modifier
-            .graphicsLayer(scaleX = scale.value, scaleY = scale.value)
-            .clickable {
+            .graphicsLayer(scaleX = scaleX.value, scaleY = scaleY.value)
+            // El clip antes del clickable/indication ya no hace falta: quitamos
+            // el ripple por completo (indication = null) porque el propio
+            // rebote gelatinoso ya es el feedback visual del toque, y un
+            // ripple encima competía con la deformación y además se veía
+            // como un cuadrado feo sobre el emoji.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {
                 scope.launch {
-                    scale.animateTo(
-                        1.5f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
-                    )
-                    scale.animateTo(
-                        1f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessMedium)
-                    )
+                    // Aplastar: se ensancha y se achata, como si absorbiera el toque.
+                    launch {
+                        scaleX.animateTo(1.35f, animationSpec = tween(70))
+                        scaleX.animateTo(1f, animationSpec = jellySpring)
+                    }
+                    launch {
+                        scaleY.animateTo(0.65f, animationSpec = tween(70))
+                        scaleY.animateTo(1f, animationSpec = jellySpring)
+                    }
                 }
             }
     )
@@ -559,6 +582,7 @@ private fun NoteCard(
     checkboxPosition: CheckboxPosition,
     selected: Boolean,
     selectionMode: Boolean,
+    showFirstImage: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onTogglePin: () -> Unit
@@ -567,16 +591,27 @@ private fun NoteCard(
     val bg = note.color?.let {
         runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
     } ?: MaterialTheme.colorScheme.surfaceContainerHigh
+    val cardShape = RoundedCornerShape(16.dp)
 
     Box {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                // El clip DEBE ir antes que combinedClickable en la cadena de
+                // modifiers: el ripple del clickable se dibuja con los límites
+                // que tenga en ese punto de la cadena, y Card recién aplica su
+                // propio recorte redondeado después (internamente, al pasar
+                // "shape" a su Surface). Como el .clip() del Card llega más
+                // tarde que el clickable, el ripple no quedaba recortado y se
+                // veía como un cuadrado perfecto sobresaliendo de las esquinas
+                // redondeadas. Con el clip acá, antes del clickable, el ripple
+                // queda contenido dentro de la forma redondeada de la tarjeta.
+                .clip(cardShape)
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick),
             // Transparente al 60% para que, si hay una imagen de fondo puesta, se
             // note a través de las tarjetas en vez de quedar tapada por completo.
             colors = CardDefaults.cardColors(containerColor = bg.copy(alpha = 0.6f)),
-            shape = RoundedCornerShape(16.dp),
+            shape = cardShape,
             border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
         ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -588,6 +623,14 @@ private fun NoteCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
+                if (note.reminderAt != null) {
+                    Icon(
+                        Icons.Filled.Alarm,
+                        contentDescription = "Tiene recordatorio",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                    )
+                }
                 Icon(
                     if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
                     contentDescription = if (note.pinned) "Desfijar" else "Fijar",
@@ -615,11 +658,40 @@ private fun NoteCard(
                     Text("+${note.checklistItems.size - 4} más", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
+                val allParts = parseNoteContent(note.content)
+                val firstImage = if (showFirstImage) {
+                    allParts.filterIsInstance<ContentPart.ImagePart>().firstOrNull()
+                } else null
+
+                if (firstImage != null) {
+                    // El usuario pidió poder forzar que la miniatura de la nota
+                    // sea siempre su primera imagen, incluso si hay mucho texto
+                    // antes que normalmente "gastaría" el presupuesto de la
+                    // tarjeta antes de llegar a ella. La mostramos primero,
+                    // aparte del recorrido de abajo (que se salta esta misma
+                    // imagen para no repetirla).
+                    AsyncImage(
+                        model = File(ImageStorage.imagesDir(context), firstImage.fileName),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                    Spacer(Modifier.height(6.dp))
+                }
+
                 // Recorre el contenido en su orden real (texto e imágenes intercalados),
                 // en vez de agrupar todo el texto junto y la imagen aparte.
                 var budget = 6
-                for (part in parseNoteContent(note.content)) {
+                var skippedFirstImage = false
+                for (part in allParts) {
                     if (budget <= 0) break
+                    if (firstImage != null && !skippedFirstImage && part === firstImage) {
+                        skippedFirstImage = true
+                        continue
+                    }
                     when (part) {
                         is ContentPart.ImagePart -> {
                             AsyncImage(

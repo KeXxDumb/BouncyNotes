@@ -30,13 +30,37 @@ import androidx.compose.ui.unit.dp
 // Selector de color libre por canales R, G, B (en vez de una paleta fija).
 @Composable
 fun RgbColorPicker(selectedHex: String?, onColorChange: (String?) -> Unit) {
+    // OJO: antes esto era `remember(selectedHex)`. Cada vez que se movía un
+    // slider, emit() llamaba a onColorChange -> el padre actualizaba su
+    // estado -> selectedHex cambiaba -> remember(selectedHex) recreaba r/g/b
+    // desde cero. Eso pasaba en CADA evento de arrastre (docenas de veces
+    // por segundo), así que el slider competía consigo mismo durante el
+    // arrastre y se sentía trabado/saltón ("no funciona"). Ahora el estado
+    // interno se inicializa una sola vez; solo se resincroniza si el color
+    // recibido cambia por una fuente EXTERNA a este picker (por ejemplo, al
+    // abrir una nota distinta), usando su propio valor recordado como
+    // referencia en vez de recrearse en cada emisión propia.
+    var lastEmittedHex by remember { mutableStateOf(selectedHex) }
     val parsed = selectedHex?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
-    var r by remember(selectedHex) { mutableStateOf(if (parsed != null) android.graphics.Color.red(parsed) else 239) }
-    var g by remember(selectedHex) { mutableStateOf(if (parsed != null) android.graphics.Color.green(parsed) else 235) }
-    var b by remember(selectedHex) { mutableStateOf(if (parsed != null) android.graphics.Color.blue(parsed) else 233) }
+    var r by remember { mutableStateOf(if (parsed != null) android.graphics.Color.red(parsed) else 239) }
+    var g by remember { mutableStateOf(if (parsed != null) android.graphics.Color.green(parsed) else 235) }
+    var b by remember { mutableStateOf(if (parsed != null) android.graphics.Color.blue(parsed) else 233) }
+
+    if (selectedHex != lastEmittedHex) {
+        // Cambio externo real (no producido por nuestros propios sliders):
+        // resincronizamos.
+        lastEmittedHex = selectedHex
+        if (parsed != null) {
+            r = android.graphics.Color.red(parsed)
+            g = android.graphics.Color.green(parsed)
+            b = android.graphics.Color.blue(parsed)
+        }
+    }
 
     fun emit() {
-        onColorChange(String.format("#%02X%02X%02X", r, g, b))
+        val hex = String.format("#%02X%02X%02X", r, g, b)
+        lastEmittedHex = hex
+        onColorChange(hex)
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {

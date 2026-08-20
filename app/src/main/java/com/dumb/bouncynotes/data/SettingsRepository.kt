@@ -49,7 +49,11 @@ data class AppSettings(
     val backgroundImageOpacity: Float = 1f,
     val backgroundFade: Boolean = true,
     val backgroundFadeOpacity: Float = 0.6f,
-    val topBarOpacity: Float = 0.5f
+    val topBarOpacity: Float = 0.5f,
+    // Si está activo, la tarjeta de la lista siempre muestra la primera
+    // imagen de la nota como miniatura, aunque el texto anterior a esa
+    // imagen ya haya llenado el espacio disponible de la tarjeta.
+    val showFirstImage: Boolean = false
 )
 
 class SettingsRepository(private val context: Context) {
@@ -81,6 +85,7 @@ class SettingsRepository(private val context: Context) {
         val BACKGROUND_FADE_OPACITY = intPreferencesKey("background_fade_opacity")
         val TOP_BAR_OPACITY = intPreferencesKey("top_bar_opacity")
         val BACKGROUND_IMAGE_OPACITY = intPreferencesKey("background_image_opacity")
+        val SHOW_FIRST_IMAGE = booleanPreferencesKey("show_first_image")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -110,7 +115,8 @@ class SettingsRepository(private val context: Context) {
             backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true,
             backgroundFadeOpacity = (prefs[Keys.BACKGROUND_FADE_OPACITY] ?: 60) / 100f,
             topBarOpacity = (prefs[Keys.TOP_BAR_OPACITY] ?: 50) / 100f,
-            backgroundImageOpacity = (prefs[Keys.BACKGROUND_IMAGE_OPACITY] ?: 100) / 100f
+            backgroundImageOpacity = (prefs[Keys.BACKGROUND_IMAGE_OPACITY] ?: 100) / 100f,
+            showFirstImage = prefs[Keys.SHOW_FIRST_IMAGE] ?: false
         )
     }
 
@@ -144,6 +150,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BACKGROUND_FADE_OPACITY] = (updated.backgroundFadeOpacity * 100).toInt()
             prefs[Keys.TOP_BAR_OPACITY] = (updated.topBarOpacity * 100).toInt()
             prefs[Keys.BACKGROUND_IMAGE_OPACITY] = (updated.backgroundImageOpacity * 100).toInt()
+            prefs[Keys.SHOW_FIRST_IMAGE] = updated.showFirstImage
         }
     }
 

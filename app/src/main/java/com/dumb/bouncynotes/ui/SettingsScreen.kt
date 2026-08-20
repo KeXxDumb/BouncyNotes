@@ -327,6 +327,11 @@ fun SettingsScreen(
                         onSelect = { v -> onUpdate { it.copy(checkboxPosition = v) } }
                     )
                     SwitchSetting(
+                        label = "Mostrar siempre la primera imagen de la nota",
+                        checked = settings.showFirstImage,
+                        onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
+                    )
+                    SwitchSetting(
                         label = "Enviar tareas marcadas al final",
                         checked = settings.autoSortChecked,
                         onCheckedChange = { v -> onUpdate { it.copy(autoSortChecked = v) } }
@@ -533,8 +538,13 @@ private fun AppIconSetting() {
                         shape = RoundedCornerShape(14.dp)
                     )
                     .clickable {
-                        AppIconManager.setIcon(context, icon)
+                        // El cambio de ícono ahora reinicia la app (ver el
+                        // comentario en AppIconManager.setIcon): actualizamos
+                        // el estado ANTES de llamar, porque el proceso puede
+                        // morir dentro de esa llamada y esta línea de acá
+                        // abajo nunca llegaría a ejecutarse.
                         selected = icon
+                        AppIconManager.setIcon(context, icon)
                     }
                     .padding(10.dp)
             ) {
@@ -562,10 +572,10 @@ private fun AppIconSetting() {
         }
     }
     Text(
-        "El lanzador del teléfono puede tardar un momento en mostrarlo, o pedir " +
-            "reabrir el cajón de apps. En algunos casos el acceso directo de la " +
-            "pantalla de inicio hay que sacarlo y volver a agregarlo para que " +
-            "tome el ícono nuevo.",
+        "Al elegir un ícono la app se cerrará y se volverá a abrir sola: es " +
+            "necesario para que el lanzador del teléfono muestre el ícono " +
+            "nuevo de una (antes se quedaba con el viejo en varios teléfonos " +
+            "hasta reiniciar la app manualmente).",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
