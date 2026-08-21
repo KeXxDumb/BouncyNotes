@@ -692,19 +692,27 @@ private fun NoteCard(
                 }
             } else {
                 val allParts = parseNoteContent(note.content)
-                val firstImage = if (showFirstImage) {
-                    allParts.filterIsInstance<ContentPart.ImagePart>().firstOrNull()
+                // Puede ser una imagen suelta o la primera imagen de un grupo,
+                // lo que aparezca primero en el contenido de la nota.
+                val firstImageFileName = if (showFirstImage) {
+                    allParts.firstNotNullOfOrNull { part ->
+                        when (part) {
+                            is ContentPart.ImagePart -> part.fileName
+                            is ContentPart.GalleryPart -> part.fileNames.firstOrNull()
+                            is ContentPart.TextPart -> null
+                        }
+                    }
                 } else null
 
-                if (firstImage != null) {
+                if (firstImageFileName != null) {
                     // El usuario pidió poder forzar que la miniatura de la nota
                     // sea siempre su primera imagen, incluso si hay mucho texto
                     // antes que normalmente "gastaría" el presupuesto de la
                     // tarjeta antes de llegar a ella. La mostramos primero,
-                    // aparte del recorrido de abajo (que se salta esta misma
+                    // aparte del recorrido de abajo (que se salta esa misma
                     // imagen para no repetirla).
                     AsyncImage(
-                        model = File(ImageStorage.imagesDir(context), firstImage.fileName),
+                        model = File(ImageStorage.imagesDir(context), firstImageFileName),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -715,13 +723,26 @@ private fun NoteCard(
                     Spacer(Modifier.height(6.dp))
                 }
 
-                // Recorre el contenido en su orden real (texto e imágenes intercalados),
-                // en vez de agrupar todo el texto junto y la imagen aparte.
+                // Recorre el contenido en su orden real (texto, imágenes y
+                // grupos intercalados), en vez de agrupar todo el texto junto.
                 var budget = 6
                 var skippedFirstImage = false
                 for (part in allParts) {
                     if (budget <= 0) break
-                    if (firstImage != null && !skippedFirstImage && part === firstImage) {
+                    val partFirstFileName = when (part) {
+                        is ContentPart.ImagePart -> part.fileName
+                        is ContentPart.GalleryPart -> part.fileNames.firstOrNull()
+                        is ContentPart.TextPart -> null
+                    }
+                    if (firstImageFileName != null && !skippedFirstImage &&
+                        partFirstFileName == firstImageFileName && part is ContentPart.ImagePart
+                    ) {
+                        // Solo saltamos por completo la parte si ERA justo una
+                        // imagen suelta igual a la ya mostrada arriba. Si la
+                        // primera imagen vino de un grupo, el grupo entero
+                        // igual se muestra acá abajo (con todas sus imágenes),
+                        // ya que mostrar solo la miniatura de arriba y ocultar
+                        // el resto del grupo sería confuso.
                         skippedFirstImage = true
                         continue
                     }
@@ -736,6 +757,30 @@ private fun NoteCard(
                                     .height(110.dp)
                                     .clip(RoundedCornerShape(12.dp))
                             )
+                            Spacer(Modifier.height(6.dp))
+                            budget -= 3
+                        }
+                        is ContentPart.GalleryPart -> {
+                            // Preview compacto: un par de miniaturas en fila en
+                            // vez de reproducir el formato completo del grupo
+                            // (eso ya se ve al abrir la nota); acá solo interesa
+                            // dar la idea de "esto es un grupo de fotos".
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                part.fileNames.take(2).forEach { fileName ->
+                                    AsyncImage(
+                                        model = File(ImageStorage.imagesDir(context), fileName),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(90.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                    )
+                                }
+                            }
                             Spacer(Modifier.height(6.dp))
                             budget -= 3
                         }

@@ -53,7 +53,11 @@ data class AppSettings(
     // Si está activo, la tarjeta de la lista siempre muestra la primera
     // imagen de la nota como miniatura, aunque el texto anterior a esa
     // imagen ya haya llenado el espacio disponible de la tarjeta.
-    val showFirstImage: Boolean = false
+    val showFirstImage: Boolean = false,
+    // Formato por defecto para las imágenes agrupadas (ver GalleryLayout en
+    // MarkdownContent.kt). Se puede elegir uno distinto cada vez desde el
+    // popup al insertar el grupo, pero este es el que aparece preseleccionado.
+    val defaultGalleryLayout: GalleryLayout = GalleryLayout.GRID_2
 )
 
 class SettingsRepository(private val context: Context) {
@@ -86,6 +90,7 @@ class SettingsRepository(private val context: Context) {
         val TOP_BAR_OPACITY = intPreferencesKey("top_bar_opacity")
         val BACKGROUND_IMAGE_OPACITY = intPreferencesKey("background_image_opacity")
         val SHOW_FIRST_IMAGE = booleanPreferencesKey("show_first_image")
+        val DEFAULT_GALLERY_LAYOUT = stringPreferencesKey("default_gallery_layout")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -116,7 +121,10 @@ class SettingsRepository(private val context: Context) {
             backgroundFadeOpacity = (prefs[Keys.BACKGROUND_FADE_OPACITY] ?: 60) / 100f,
             topBarOpacity = (prefs[Keys.TOP_BAR_OPACITY] ?: 50) / 100f,
             backgroundImageOpacity = (prefs[Keys.BACKGROUND_IMAGE_OPACITY] ?: 100) / 100f,
-            showFirstImage = prefs[Keys.SHOW_FIRST_IMAGE] ?: false
+            showFirstImage = prefs[Keys.SHOW_FIRST_IMAGE] ?: false,
+            defaultGalleryLayout = runCatching {
+                GalleryLayout.valueOf(prefs[Keys.DEFAULT_GALLERY_LAYOUT] ?: GalleryLayout.GRID_2.name)
+            }.getOrDefault(GalleryLayout.GRID_2)
         )
     }
 
@@ -151,6 +159,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.TOP_BAR_OPACITY] = (updated.topBarOpacity * 100).toInt()
             prefs[Keys.BACKGROUND_IMAGE_OPACITY] = (updated.backgroundImageOpacity * 100).toInt()
             prefs[Keys.SHOW_FIRST_IMAGE] = updated.showFirstImage
+            prefs[Keys.DEFAULT_GALLERY_LAYOUT] = updated.defaultGalleryLayout.name
         }
     }
 

@@ -18,6 +18,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -74,6 +75,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -122,10 +124,12 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.withTimeoutOrNull
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.ContentPart
+import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteImage
 import com.dumb.bouncynotes.data.NoteType
+import com.dumb.bouncynotes.data.buildGalleryTag
 import com.dumb.bouncynotes.data.buildImageTag
 import com.dumb.bouncynotes.data.extractImageFileNames
 import com.dumb.bouncynotes.data.isNoteEmpty
@@ -143,6 +147,7 @@ import java.io.File
 private sealed class EditSegment {
     data class TextSeg(val value: TextFieldValue) : EditSegment()
     data class ImageSeg(val fileName: String, val caption: String) : EditSegment()
+    data class GallerySeg(val layout: GalleryLayout, val fileNames: List<String>) : EditSegment()
 }
 
 private fun buildEditSegments(content: String): List<EditSegment> {
@@ -156,18 +161,25 @@ private fun buildEditSegments(content: String): List<EditSegment> {
     // (solo en memoria, para editar) entre imágenes consecutivas, y al principio/final
     // si la nota empieza o termina con una imagen.
     val segments = mutableListOf<EditSegment>()
+    fun isMediaSeg(seg: EditSegment) = seg is EditSegment.ImageSeg || seg is EditSegment.GallerySeg
     parts.forEach { part ->
         when (part) {
             is ContentPart.TextPart -> segments.add(EditSegment.TextSeg(TextFieldValue(part.text)))
             is ContentPart.ImagePart -> {
-                if (segments.isEmpty() || segments.last() is EditSegment.ImageSeg) {
+                if (segments.isEmpty() || isMediaSeg(segments.last())) {
                     segments.add(EditSegment.TextSeg(TextFieldValue("")))
                 }
                 segments.add(EditSegment.ImageSeg(part.fileName, part.caption))
             }
+            is ContentPart.GalleryPart -> {
+                if (segments.isEmpty() || isMediaSeg(segments.last())) {
+                    segments.add(EditSegment.TextSeg(TextFieldValue("")))
+                }
+                segments.add(EditSegment.GallerySeg(part.layout, part.fileNames))
+            }
         }
     }
-    if (segments.last() is EditSegment.ImageSeg) {
+    if (isMediaSeg(segments.last())) {
         segments.add(EditSegment.TextSeg(TextFieldValue("")))
     }
     return segments
@@ -199,6 +211,7 @@ private fun segmentsToContent(segments: List<EditSegment>): String =
         when (seg) {
             is EditSegment.TextSeg -> seg.value.text
             is EditSegment.ImageSeg -> buildImageTag(seg.fileName, seg.caption)
+            is EditSegment.GallerySeg -> buildGalleryTag(seg.layout, seg.fileNames)
         }
     }
 
@@ -224,6 +237,11 @@ fun NoteEditScreen(
     var pendingCameraFileName by remember { mutableStateOf<String?>(null) }
     var viewerStartPos by remember { mutableStateOf<Int?>(null) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
+    // Cuando se seleccionan varias imágenes a la vez desde la galería, quedan
+    // acá mientras se le pregunta al usuario si van agrupadas o sueltas (ver
+    // el AlertDialog más abajo). null = no hay ninguna pregunta pendiente.
+    var pendingGroupFileNames by remember { mutableStateOf<List<String>?>(null) }
+    var pendingGroupLayout by remember(pendingGroupFileNames) { mutableStateOf(settings.defaultGalleryLayout) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
     var showReminderSheet by remember { mutableStateOf(false) }
@@ -251,7 +269,7 @@ fun NoteEditScreen(
         current = current.copy(content = segmentsToContent(newSegments))
     }
 
-    fun insertImageAtActiveSegment(fileName: String) {
+    fun insertMediaSegmentAtActiveSegment(mediaSeg: EditSegment) {
         val idx = activeSegmentIndex.coerceIn(0, segments.size - 1)
         val seg = segments.getOrNull(idx)
         val newSegments = segments.toMutableList()
@@ -273,8 +291,8 @@ fun NoteEditScreen(
             val currentLine = before.substring(lineStart) + after.substring(0, lineEndRel)
 
             if (currentLine.isBlank()) {
-                // La línea donde está el cursor está vacía: la imagen la reemplaza
-                // directamente, sin dejar líneas vacías de sobra.
+                // La línea donde está el cursor está vacía: el medio (imagen o
+                // grupo) la reemplaza directamente, sin dejar líneas vacías de sobra.
                 val prefix = before.substring(0, lineStart).removeSuffix("\n")
                 val suffix = after.substring(lineEndRel).removePrefix("\n")
 
@@ -283,28 +301,27 @@ fun NoteEditScreen(
                 if (prefix.isNotEmpty()) {
                     newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(prefix)))
                     insertAt++
-                } else if (newSegments.getOrNull(insertAt - 1) is EditSegment.ImageSeg) {
-                    // Si justo antes ya hay otra imagen (p. ej. se insertaron dos
-                    // seguidas), dejamos un tramo de texto vacío como separador para
-                    // que no queden dos imágenes pegadas sin forma de escribir entre
-                    // ellas.
+                } else if (newSegments.getOrNull(insertAt - 1).let { it is EditSegment.ImageSeg || it is EditSegment.GallerySeg }) {
+                    // Si justo antes ya hay otra imagen/grupo (p. ej. se insertaron
+                    // dos seguidos), dejamos un tramo de texto vacío como separador
+                    // para que no queden pegados sin forma de escribir entre medio.
                     newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue("")))
                     insertAt++
                 }
-                newSegments.add(insertAt, EditSegment.ImageSeg(fileName, ""))
+                newSegments.add(insertAt, mediaSeg)
                 insertAt++
-                // Siempre dejamos exactamente un tramo (con o sin texto) después de la
-                // imagen para poder seguir escribiendo, nunca dos vacíos.
+                // Siempre dejamos exactamente un tramo (con o sin texto) después del
+                // medio para poder seguir escribiendo, nunca dos vacíos.
                 newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(suffix)))
                 nextActiveIndex = insertAt
             } else {
                 newSegments[idx] = EditSegment.TextSeg(TextFieldValue(before))
-                newSegments.add(idx + 1, EditSegment.ImageSeg(fileName, ""))
+                newSegments.add(idx + 1, mediaSeg)
                 newSegments.add(idx + 2, EditSegment.TextSeg(TextFieldValue(after)))
                 nextActiveIndex = idx + 2
             }
         } else {
-            newSegments.add(EditSegment.ImageSeg(fileName, ""))
+            newSegments.add(mediaSeg)
             newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
             nextActiveIndex = newSegments.size - 1
         }
@@ -312,9 +329,21 @@ fun NoteEditScreen(
         updateContentFromSegments(newSegments)
     }
 
-    fun deleteImageSegment(idx: Int) {
-        val seg = segments.getOrNull(idx) as? EditSegment.ImageSeg ?: return
-        ImageStorage.deleteFile(context, seg.fileName)
+    fun insertImageAtActiveSegment(fileName: String) {
+        insertMediaSegmentAtActiveSegment(EditSegment.ImageSeg(fileName, ""))
+    }
+
+    fun insertGalleryAtActiveSegment(fileNames: List<String>, layout: GalleryLayout) {
+        insertMediaSegmentAtActiveSegment(EditSegment.GallerySeg(layout, fileNames))
+    }
+
+    fun deleteMediaSegment(idx: Int) {
+        val seg = segments.getOrNull(idx) ?: return
+        when (seg) {
+            is EditSegment.ImageSeg -> ImageStorage.deleteFile(context, seg.fileName)
+            is EditSegment.GallerySeg -> seg.fileNames.forEach { ImageStorage.deleteFile(context, it) }
+            is EditSegment.TextSeg -> return
+        }
         val newSegments = segments.toMutableList()
         newSegments.removeAt(idx)
         if (idx > 0 && idx < newSegments.size) {
@@ -351,15 +380,28 @@ fun NoteEditScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
-        uris.forEach { uri ->
-            val fileName = if (settings.compressImages) {
+        val fileNames = uris.mapNotNull { uri ->
+            if (settings.compressImages) {
                 ImageStorage.compressFromUri(context, uri, settings.imageQuality)
             } else {
                 ImageStorage.copyFromUri(context, uri)
             }
-            if (fileName != null) insertImageAtActiveSegment(fileName)
         }
-        if (uris.isNotEmpty()) focusManager.clearFocus(force = true)
+        when {
+            fileNames.isEmpty() -> { /* el usuario canceló o algo falló al copiar */ }
+            fileNames.size == 1 -> {
+                // Con una sola imagen no hay nada que preguntar: se inserta
+                // directo, como siempre.
+                insertImageAtActiveSegment(fileNames.first())
+                focusManager.clearFocus(force = true)
+            }
+            else -> {
+                // Varias imágenes de una: en vez de insertarlas ya mismo una
+                // tras otra (como hacía antes), preguntamos si van agrupadas
+                // o sueltas.
+                pendingGroupFileNames = fileNames
+            }
+        }
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(
@@ -442,8 +484,35 @@ fun NoteEditScreen(
 
     if (viewerStartPos != null) {
         val fileNames = extractImageFileNames(current.content)
-        val parts = parseNoteContent(current.content).filterIsInstance<ContentPart.ImagePart>()
-        val images = parts.map { NoteImage(path = "${ImageStorage.imagesDir(context)}/${it.fileName}", caption = it.caption) }
+        // OJO: antes esto se armaba filtrando solo ContentPart.ImagePart, así
+        // que las imágenes que están DENTRO de un grupo (ContentPart.GalleryPart)
+        // ni aparecían en el visor, y encima los índices quedaban desalineados
+        // con `fileNames` (que sí las incluye) apenas la nota tuviera algún
+        // grupo. Ahora se arma directo desde `fileNames` (la lista plana real),
+        // y las descripciones se buscan aparte por índice plano; las imágenes
+        // de un grupo no tienen descripción individual en esta versión, así
+        // que quedan con descripción vacía.
+        val captionsByFlatIndex = run {
+            val map = HashMap<Int, String>()
+            var flat = 0
+            parseNoteContent(current.content).forEach { part ->
+                when (part) {
+                    is ContentPart.ImagePart -> {
+                        map[flat] = part.caption
+                        flat++
+                    }
+                    is ContentPart.GalleryPart -> flat += part.fileNames.size
+                    is ContentPart.TextPart -> {}
+                }
+            }
+            map
+        }
+        val images = fileNames.mapIndexed { i, fileName ->
+            NoteImage(
+                path = "${ImageStorage.imagesDir(context)}/$fileName",
+                caption = captionsByFlatIndex[i].orEmpty()
+            )
+        }
         ImageViewerScreen(
             images = images,
             startIndex = viewerStartPos ?: 0,
@@ -481,6 +550,58 @@ fun NoteEditScreen(
                     Spacer(Modifier.width(4.dp))
                     Text("Galería")
                 }
+            }
+        )
+    }
+
+    if (pendingGroupFileNames != null) {
+        val names = pendingGroupFileNames.orEmpty()
+        AlertDialog(
+            onDismissRequest = {
+                // Si cierran el diálogo tocando afuera, insertamos sueltas (el
+                // comportamiento de siempre) en vez de perder las imágenes que
+                // ya se copiaron al almacenamiento de la app.
+                names.forEach { insertImageAtActiveSegment(it) }
+                pendingGroupFileNames = null
+                focusManager.clearFocus(force = true)
+            },
+            title = { Text("${names.size} imágenes seleccionadas") },
+            text = {
+                Column {
+                    Text("¿Las agregamos como un grupo o cada una por separado?")
+                    Spacer(Modifier.height(12.dp))
+                    Text("Formato del grupo", style = MaterialTheme.typography.labelMedium)
+                    GalleryLayout.entries.forEach { layout ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { pendingGroupLayout = layout }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = pendingGroupLayout == layout,
+                                onClick = { pendingGroupLayout = layout }
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(layout.label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    insertGalleryAtActiveSegment(names, pendingGroupLayout)
+                    pendingGroupFileNames = null
+                    focusManager.clearFocus(force = true)
+                }) { Text("Agrupadas") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    names.forEach { insertImageAtActiveSegment(it) }
+                    pendingGroupFileNames = null
+                    focusManager.clearFocus(force = true)
+                }) { Text("Sueltas") }
             }
         )
     }
@@ -570,34 +691,6 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
-                },
-                actions = {
-                    // El usuario pidió que fijar/proteger solo aparezcan en modo
-                    // vista, no en modo edición (son acciones rápidas sobre la nota
-                    // ya guardada, no herramientas de edición del contenido).
-                    if (!isEditing) {
-                        IconButton(onClick = { current = current.copy(pinned = !current.pinned) }) {
-                            Icon(
-                                if (current.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                                contentDescription = "Fijar"
-                            )
-                        }
-                        IconButton(onClick = {
-                            if (current.isPrivate) {
-                                current = current.copy(isPrivate = false)
-                            } else {
-                                onRequestBiometric {
-                                    current = current.copy(isPrivate = true)
-                                    unlockedThisNote = true
-                                }
-                            }
-                        }) {
-                            Icon(
-                                if (current.isPrivate) Icons.Filled.Lock else Icons.Outlined.LockOpen,
-                                contentDescription = "Privada"
-                            )
-                        }
-                    }
                 }
             )
         },
@@ -673,6 +766,31 @@ fun NoteEditScreen(
                             tint = if (current.reminderAt != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
                         )
                     }
+                } else {
+                    // Antes vivían en la barra de arriba; ahora están acá abajo
+                    // junto con el resto de acciones sobre la nota ya guardada
+                    // (siguen apareciendo solo en modo vista, no en edición).
+                    IconButton(onClick = { current = current.copy(pinned = !current.pinned) }) {
+                        Icon(
+                            if (current.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = "Fijar"
+                        )
+                    }
+                    IconButton(onClick = {
+                        if (current.isPrivate) {
+                            current = current.copy(isPrivate = false)
+                        } else {
+                            onRequestBiometric {
+                                current = current.copy(isPrivate = true)
+                                unlockedThisNote = true
+                            }
+                        }
+                    }) {
+                        Icon(
+                            if (current.isPrivate) Icons.Filled.Lock else Icons.Outlined.LockOpen,
+                            contentDescription = "Privada"
+                        )
+                    }
                 }
                 // Antes este botón vivía en la barra de arriba y solo aparecía para
                 // notas de texto: las notas de tipo checklist no tenían forma de
@@ -680,10 +798,25 @@ fun NoteEditScreen(
                 // editar" activado, quedaban bloqueadas en solo lectura para
                 // siempre). Ahora vive abajo, junto al resto de acciones, y
                 // funciona para ambos tipos de nota.
+                //
+                // El botón de guardar (✓) que estaba acá al lado se quitó: tanto
+                // este mismo botón del ojo (al pasar a modo vista) como la flecha
+                // de volver ya guardan la nota si hubo cambios, así que era
+                // redundante.
                 IconButton(onClick = {
                     val goingToEdit = !isEditing
                     if (goingToEdit && current.type == NoteType.TEXT) {
                         segments = buildEditSegments(current.content)
+                    } else if (!goingToEdit) {
+                        // Al pasar de edición a vista es cuando efectivamente
+                        // "se sale" del modo de edición, así que aprovechamos
+                        // para guardar acá (antes solo se guardaba al tocar el
+                        // botón de guardar dedicado, o al salir con la flecha).
+                        if (!isNoteEmpty(current)) {
+                            viewModel.save(current) { id ->
+                                if (noteId == 0L) current = current.copy(id = id)
+                            }
+                        }
                     }
                     isEditing = goingToEdit
                 }) {
@@ -691,21 +824,6 @@ fun NoteEditScreen(
                         if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
                         contentDescription = if (isEditing) "Vista previa" else "Editar"
                     )
-                }
-                // El botón de guardar solo tiene sentido en modo edición: en modo
-                // vista no hay nada que guardar (y el back ya guarda solo si hubo
-                // cambios), así que antes no debía mostrarse ahí.
-                if (isEditing) {
-                    IconButton(onClick = {
-                        if (!isNoteEmpty(current)) {
-                            viewModel.save(current) { id ->
-                                if (noteId == 0L) current = current.copy(id = id)
-                            }
-                        }
-                        onBack()
-                    }) {
-                        Icon(Icons.Filled.Check, contentDescription = "Guardar")
-                    }
                 }
             }
         }
@@ -821,7 +939,17 @@ fun NoteEditScreen(
                                 is EditSegment.ImageSeg -> {
                                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
                                         Box {
-                                            val imageIndex = segments.take(index).count { it is EditSegment.ImageSeg }
+                                            // Cuenta imágenes en la lista PLANA (sueltas + las
+                                            // que están dentro de cada grupo anterior), la misma
+                                            // indexación que usa extractImageFileNames y por lo
+                                            // tanto el visor a pantalla completa.
+                                            val imageIndex = segments.take(index).sumOf { s ->
+                                                when (s) {
+                                                    is EditSegment.ImageSeg -> 1
+                                                    is EditSegment.GallerySeg -> s.fileNames.size
+                                                    is EditSegment.TextSeg -> 0
+                                                }
+                                            }
                                             AsyncImage(
                                                 model = File(ImageStorage.imagesDir(context), segment.fileName),
                                                 contentDescription = null,
@@ -832,7 +960,7 @@ fun NoteEditScreen(
                                                     .clickable { viewerStartPos = imageIndex }
                                             )
                                             IconButton(
-                                                onClick = { deleteImageSegment(index) },
+                                                onClick = { deleteMediaSegment(index) },
                                                 modifier = Modifier
                                                     .align(Alignment.TopEnd)
                                                     .padding(4.dp)
@@ -873,6 +1001,42 @@ fun NoteEditScreen(
                                                     updateContentFromSegments(newSegments)
                                                 },
                                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                is EditSegment.GallerySeg -> {
+                                    // Índice plano de la primera imagen de este grupo (misma
+                                    // lógica que en la rama de arriba).
+                                    val startIndex = segments.take(index).sumOf { s ->
+                                        when (s) {
+                                            is EditSegment.ImageSeg -> 1
+                                            is EditSegment.GallerySeg -> s.fileNames.size
+                                            is EditSegment.TextSeg -> 0
+                                        }
+                                    }
+                                    Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                                        GalleryEditorPreview(
+                                            fileNames = segment.fileNames,
+                                            onImageClick = { i -> viewerStartPos = startIndex + i }
+                                        )
+                                        // A diferencia de una imagen suelta, acá no se puede
+                                        // sacar una sola imagen del grupo desde el editor (para
+                                        // eso está el visor a pantalla completa, que sí borra de
+                                        // a una); este botón quita el grupo entero.
+                                        IconButton(
+                                            onClick = { deleteMediaSegment(index) },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(28.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Quitar grupo de imágenes",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }
@@ -1163,6 +1327,46 @@ private fun ReminderPickerSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
             )
+        }
+    }
+}
+
+// Miniatura compacta de un grupo de imágenes DENTRO del editor (no scrollea
+// por su cuenta, a diferencia de GalleryGrid en modo lectura): acá solo
+// interesa un preview rápido, no reproducir el formato final (carrusel/grid)
+// elegido, que ya se ve tal cual en modo vista. Máximo 4 miniaturas visibles;
+// si hay más, la última muestra un "+N" superpuesto.
+@Composable
+private fun GalleryEditorPreview(fileNames: List<String>, onImageClick: (Int) -> Unit) {
+    val context = LocalContext.current
+    val maxThumbs = 4
+    val shown = fileNames.take(maxThumbs)
+    val extra = fileNames.size - shown.size
+    Row(modifier = Modifier.fillMaxWidth()) {
+        shown.forEachIndexed { i, fileName ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f)
+                    .padding(2.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onImageClick(i) }
+            ) {
+                AsyncImage(
+                    model = File(ImageStorage.imagesDir(context), fileName),
+                    contentDescription = "Imagen ${i + 1} de ${fileNames.size}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (i == shown.lastIndex && extra > 0) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+$extra", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
         }
     }
 }

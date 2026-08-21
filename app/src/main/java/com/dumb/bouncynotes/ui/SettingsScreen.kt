@@ -74,6 +74,7 @@ import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.BackupManager
 import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.FontScale
+import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteLayout
 import com.dumb.bouncynotes.data.SortOrder
@@ -330,6 +331,12 @@ fun SettingsScreen(
                         label = "Mostrar siempre la primera imagen de la nota",
                         checked = settings.showFirstImage,
                         onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
+                    )
+                    ChipSetting(
+                        label = "Formato por defecto para imágenes agrupadas",
+                        options = GalleryLayout.entries.map { it to it.label },
+                        selected = settings.defaultGalleryLayout,
+                        onSelect = { v -> onUpdate { it.copy(defaultGalleryLayout = v) } }
                     )
                     SwitchSetting(
                         label = "Enviar tareas marcadas al final",
