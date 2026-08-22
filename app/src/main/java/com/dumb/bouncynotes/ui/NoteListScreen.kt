@@ -609,6 +609,108 @@ private fun BouncyPeach() {
 }
 
 
+// --- Presupuesto de líneas para la preview de la tarjeta ---------------
+//
+// Antes, la preview recortaba por "partes" (hasta 5 ContentPart, cada una
+// tal cual: un ImagePart entero, un TextPart con maxLines=3, etc.). Eso
+// tenía dos problemas: (1) una imagen y tres líneas de texto "pesaban"
+// igual (1 parte cada una) aunque una imagen ocupa muchísimo más espacio
+// visual, y (2) cuánto texto se terminaba viendo dependía del ANCHO real
+// de la tarjeta al momento de wrapear (maxLines corta líneas YA
+// renderizadas/wrapeadas): en modo Lista (tarjeta a ancho completo) el
+// mismo texto wrapea en menos líneas visuales que en modo Grid (columnas
+// angostas), así que con maxLines=3 el modo Lista terminaba mostrando
+// mucho menos contenido "de verdad" (a veces lo que cabía en 1-2 líneas
+// wrapeadas) que el modo Grid con el mismo texto.
+//
+// Ahora la preview usa un presupuesto FIJO de 5 "líneas" que no depende
+// del ancho de la tarjeta: cada línea real del texto (separada por \n en
+// el contenido guardado) cuenta 1, y cada imagen/grupo/video cuenta 3
+// (por el espacio vertical que ocupan). Se recorre la nota en su orden
+// real sin reordenar nada, gastando el presupuesto a medida que se
+// avanza, y se corta apenas se acaba. Con esto la cantidad de contenido
+// mostrado es la misma en Lista y en Grid.
+private const val PREVIEW_LINE_BUDGET = 5
+private const val PREVIEW_MEDIA_LINE_COST = 3
+
+private sealed class PreviewElement {
+    data class TextLines(val lines: List<String>) : PreviewElement()
+    data class Image(val fileName: String) : PreviewElement()
+    data class Gallery(val fileNames: List<String>) : PreviewElement()
+    data class Video(val fileName: String) : PreviewElement()
+}
+
+// Arma la lista de elementos a mostrar en la tarjeta respetando el
+// presupuesto de 5 líneas descripto arriba.
+//
+// Con "mostrar primera imagen" activado, el recorrido normal gasta solo 4
+// líneas del presupuesto (en vez de 5) y la 5ta línea queda SIEMPRE
+// reservada para la primera imagen/grupo de la nota: si esa imagen ya
+// había entrado dentro de esas 4 líneas no se duplica, pero si el
+// recorrido no llegó a alcanzarla (porque hay más de 4 líneas de texto
+// antes, por ejemplo), se agrega igual al final, sin mover el resto de
+// contenido de lugar (sigue viéndose después del texto que la precede en
+// la nota real, tal como se venía haciendo).
+private fun buildNotePreviewElements(content: String, showFirstImage: Boolean): List<PreviewElement> {
+    val allParts = parseNoteContent(content)
+
+    val firstImagePartIndex = if (showFirstImage) {
+        allParts.indexOfFirst { part ->
+            (part is ContentPart.ImagePart) ||
+                (part is ContentPart.GalleryPart && part.fileNames.isNotEmpty())
+        }
+    } else -1
+
+    val walkBudget = if (firstImagePartIndex >= 0) {
+        PREVIEW_LINE_BUDGET - 1
+    } else {
+        PREVIEW_LINE_BUDGET
+    }
+
+    var remaining = walkBudget
+    var firstImageAlreadyShown = false
+    val elements = mutableListOf<PreviewElement>()
+
+    for ((partIndex, part) in allParts.withIndex()) {
+        if (remaining <= 0) break
+        when (part) {
+            is ContentPart.TextPart -> {
+                val rawLines = stripFormattingMarkers(part.text).split("\n")
+                val takeCount = minOf(rawLines.size, remaining)
+                val takenLines = rawLines.take(takeCount).map { it.trim() }
+                if (takenLines.any { it.isNotEmpty() }) {
+                    elements.add(PreviewElement.TextLines(takenLines))
+                }
+                remaining -= takeCount
+            }
+            is ContentPart.ImagePart -> {
+                elements.add(PreviewElement.Image(part.fileName))
+                remaining -= PREVIEW_MEDIA_LINE_COST
+                if (partIndex == firstImagePartIndex) firstImageAlreadyShown = true
+            }
+            is ContentPart.GalleryPart -> {
+                elements.add(PreviewElement.Gallery(part.fileNames))
+                remaining -= PREVIEW_MEDIA_LINE_COST
+                if (partIndex == firstImagePartIndex) firstImageAlreadyShown = true
+            }
+            is ContentPart.VideoPart -> {
+                elements.add(PreviewElement.Video(part.fileName))
+                remaining -= PREVIEW_MEDIA_LINE_COST
+            }
+        }
+    }
+
+    if (showFirstImage && firstImagePartIndex >= 0 && !firstImageAlreadyShown) {
+        when (val forced = allParts[firstImagePartIndex]) {
+            is ContentPart.ImagePart -> elements.add(PreviewElement.Image(forced.fileName))
+            is ContentPart.GalleryPart -> elements.add(PreviewElement.Gallery(forced.fileNames))
+            else -> Unit
+        }
+    }
+
+    return elements
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
@@ -692,42 +794,12 @@ private fun NoteCard(
                     Text("+${note.checklistItems.size - 4} más", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
-                val allParts = parseNoteContent(note.content)
-                // Índice (dentro de allParts) de la parte que contiene la
-                // primera imagen de la nota, sea suelta o el primer archivo de
-                // un grupo. Se usa solo con el ajuste "mostrar primera imagen"
-                // activado, para garantizar que esa parte entre en el recorte
-                // de abajo aunque normalmente hubiera quedado afuera.
-                val firstImagePartIndex = if (showFirstImage) {
-                    allParts.indexOfFirst { part ->
-                        (part is ContentPart.ImagePart) ||
-                            (part is ContentPart.GalleryPart && part.fileNames.isNotEmpty())
-                    }
-                } else -1
-
-                // Antes esto: (1) sacaba la primera imagen de su posición real y la
-                // ponía siempre arriba de todo (rompiendo el orden real de la nota), y
-                // (2) usaba un "presupuesto" que a veces cortaba el recorrido a mitad
-                // de camino de forma medio arbitraria. Ahora se recorre la nota tal
-                // cual está estructurada, en orden, sin mover nada de lugar: se
-                // muestran hasta maxParts partes (texto/imagen/grupo, cada una tal
-                // cual, sin recortar imágenes) y, si "mostrar primera imagen" está
-                // activo y esa imagen hubiera quedado justo afuera de ese límite, se
-                // extiende el recorrido SOLO hasta incluirla (sin reordenar: si está
-                // después de texto, se sigue viendo después de ese texto).
-                val maxParts = 5
-                val effectiveLimit = if (firstImagePartIndex in maxParts until allParts.size) {
-                    firstImagePartIndex + 1
-                } else {
-                    maxParts
-                }
-
-                for ((partIndex, part) in allParts.withIndex()) {
-                    if (partIndex >= effectiveLimit) break
-                    when (part) {
-                        is ContentPart.ImagePart -> {
+                val previewElements = buildNotePreviewElements(note.content, showFirstImage)
+                for (element in previewElements) {
+                    when (element) {
+                        is PreviewElement.Image -> {
                             AsyncImage(
-                                model = File(ImageStorage.imagesDir(context), part.fileName),
+                                model = File(ImageStorage.imagesDir(context), element.fileName),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -737,7 +809,7 @@ private fun NoteCard(
                             )
                             Spacer(Modifier.height(6.dp))
                         }
-                        is ContentPart.GalleryPart -> {
+                        is PreviewElement.Gallery -> {
                             // Preview compacto: un par de miniaturas en fila en
                             // vez de reproducir el formato completo del grupo
                             // (eso ya se ve al abrir la nota); acá solo interesa
@@ -746,7 +818,7 @@ private fun NoteCard(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                part.fileNames.take(2).forEach { fileName ->
+                                element.fileNames.take(2).forEach { fileName ->
                                     AsyncImage(
                                         model = File(ImageStorage.imagesDir(context), fileName),
                                         contentDescription = null,
@@ -760,18 +832,15 @@ private fun NoteCard(
                             }
                             Spacer(Modifier.height(6.dp))
                         }
-                        is ContentPart.TextPart -> {
-                            val cleaned = stripFormattingMarkers(part.text).trim()
-                            if (cleaned.isNotEmpty()) {
-                                Text(
-                                    text = cleaned,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                        is PreviewElement.TextLines -> {
+                            Text(
+                                text = element.lines.joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = element.lines.size,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        is ContentPart.VideoPart -> {
+                        is PreviewElement.Video -> {
                             // Reproducir video en cada tarjeta de la lista sería carísimo
                             // (una instancia de ExoPlayer por nota visible), así que acá
                             // alcanza con un cartel simple indicando que hay un video: se

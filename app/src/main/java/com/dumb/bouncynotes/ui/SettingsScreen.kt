@@ -1,5 +1,7 @@
 package com.dumb.bouncynotes.ui
 
+import android.app.Activity
+import android.content.ContextWrapper
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -29,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
@@ -56,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,9 +72,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.AppIcon
@@ -83,12 +90,23 @@ import com.dumb.bouncynotes.data.FontScale
 import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteLayout
+import com.dumb.bouncynotes.data.ReminderScheduler
 import com.dumb.bouncynotes.data.SortOrder
 import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
 import com.dumb.bouncynotes.ui.theme.ThemeSeedColors
 import kotlinx.coroutines.launch
 import java.io.File
+
+// Desenvuelve el Context de Compose (que puede venir envuelto en capas de
+// ContextWrapper, p. ej. por el tema) hasta encontrar la Activity real.
+// Se necesita para poder abrir los diálogos de "alarmas exactas" y
+// "optimización de batería", que son startActivity() normales.
+private tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -450,6 +468,73 @@ fun SettingsScreen(
                         selected = settings.startView,
                         onSelect = { v -> onUpdate { it.copy(startView = v) } }
                     )
+                }
+            }
+
+            item {
+                // El estado de estos dos permisos solo se puede leer al
+                // momento (no hay un "onCheckedChange" como en un switch
+                // normal), y cambian afuera de la app cuando el usuario los
+                // otorga desde Ajustes del sistema. Por eso se recalculan
+                // cada vez que esta pantalla vuelve a RESUMED (por ejemplo al
+                // volver del diálogo de "optimización de batería"), en vez de
+                // quedar pegados al valor que tenían al entrar.
+                val lifecycleOwner = LocalLifecycleOwner.current
+                var refreshTick by remember { mutableStateOf(0) }
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) refreshTick++
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+                val canScheduleExact = remember(refreshTick) { ReminderScheduler.canScheduleExact(context) }
+                val ignoringBatteryOpt = remember(refreshTick) { ReminderScheduler.isIgnoringBatteryOptimizations(context) }
+                val activity = remember { context.findActivity() }
+
+                ExpandableSection(title = "Recordatorios", icon = Icons.Filled.Alarm) {
+                    Text(
+                        "Para que un recordatorio suene puntual con la app cerrada o el " +
+                            "teléfono en reposo, Android necesita estos dos permisos. Sin " +
+                            "ellos el recordatorio puede sonar tarde o directamente no sonar " +
+                            "(esto depende del fabricante: es más común en Samsung, Xiaomi/MIUI " +
+                            "y similares).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    if (!canScheduleExact) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Alarmas exactas", modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = {
+                                activity?.let { ReminderScheduler.requestExactAlarmPermission(it) }
+                            }) { Text("Permitir") }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    if (!ignoringBatteryOpt) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Ignorar optimización de batería", modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = {
+                                activity?.let { ReminderScheduler.requestIgnoreBatteryOptimizations(it) }
+                            }) { Text("Permitir") }
+                        }
+                    }
+                    if (canScheduleExact && ignoringBatteryOpt) {
+                        Text(
+                            "Todo en orden: ambos permisos ya están concedidos.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
 

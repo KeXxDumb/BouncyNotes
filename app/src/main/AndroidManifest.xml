@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Para poder pedirle al usuario que excluya la app del ahorro de
+         batería: sin esto, en fabricantes como Samsung o Xiaomi (MIUI) el
+         sistema puede seguir matando/demorando la alarma del recordatorio
+         aunque se use setAlarmClock(). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Solo hace falta en Android 9 o anterior para poder guardar imágenes o
          videos de una nota en la carpeta pública Pictures/Movies del
          teléfono (desde Android 10 en adelante MediaStore no la necesita). -->
