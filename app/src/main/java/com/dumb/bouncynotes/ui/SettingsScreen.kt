@@ -9,6 +9,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,6 +39,8 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +76,7 @@ import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.AppIcon
 import com.dumb.bouncynotes.data.AppIconManager
 import com.dumb.bouncynotes.data.AppSettings
+import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.BackupManager
 import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.FontScale
@@ -97,15 +103,25 @@ fun SettingsScreen(
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var showDisableTrashWarning by remember { mutableStateOf(false) }
     var trashedCount by remember { mutableStateOf(0) }
+    // Notas elegidas en el diálogo de selección (ver más abajo), leídas por el
+    // callback de exportLauncher cuando el usuario ya eligió dónde guardar el
+    // zip. null = exportar todas (comportamiento de siempre, cuando el usuario
+    // no pasó por el selector, p. ej. si en el futuro se vuelve a exponer un
+    // botón de "exportar todo" directo).
+    var exportSelection by remember { mutableStateOf<Set<Long>?>(null) }
+    var showExportPicker by remember { mutableStateOf(false) }
+    var notesForExportPicker by remember { mutableStateOf<List<Note>>(emptyList()) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                val notes = noteViewModel.getAllNotesSnapshot()
-                val ok = BackupManager.exportNotes(context, uri, notes)
-                statusMessage = if (ok) "Notas exportadas correctamente" else "No se pudo exportar"
+                val allNotes = noteViewModel.getAllNotesSnapshot()
+                val selection = exportSelection
+                val notesToExport = if (selection == null) allNotes else allNotes.filter { it.id in selection }
+                val ok = BackupManager.exportNotes(context, uri, notesToExport)
+                statusMessage = if (ok) "${notesToExport.size} notas exportadas correctamente" else "No se pudo exportar"
             }
         }
     }
@@ -155,6 +171,81 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDisableTrashWarning = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showExportPicker) {
+        var selected by remember(notesForExportPicker) {
+            mutableStateOf(notesForExportPicker.map { it.id }.toSet())
+        }
+        AlertDialog(
+            onDismissRequest = { showExportPicker = false },
+            title = { Text("Elegir notas a exportar") },
+            text = {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selected = if (selected.size == notesForExportPicker.size) {
+                                    emptySet()
+                                } else {
+                                    notesForExportPicker.map { it.id }.toSet()
+                                }
+                            }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = selected.size == notesForExportPicker.size && notesForExportPicker.isNotEmpty(),
+                            onCheckedChange = null
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (selected.size == notesForExportPicker.size) "Deseleccionar todas" else "Seleccionar todas",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                    HorizontalDivider()
+                    Column(modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                        notesForExportPicker.forEach { note ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selected = if (note.id in selected) selected - note.id else selected + note.id
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = note.id in selected,
+                                    onCheckedChange = null
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    note.title.ifBlank { "(Sin título)" },
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = selected.isNotEmpty(),
+                    onClick = {
+                        exportSelection = if (selected.size == notesForExportPicker.size) null else selected
+                        showExportPicker = false
+                        exportLauncher.launch("notas_respaldo.zip")
+                    }
+                ) { Text("Exportar (${selected.size})") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExportPicker = false }) { Text("Cancelar") }
             }
         )
     }
@@ -444,7 +535,12 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        OutlinedButton(onClick = { exportLauncher.launch("notas_respaldo.zip") }) {
+                        OutlinedButton(onClick = {
+                            scope.launch {
+                                notesForExportPicker = noteViewModel.getAllNotesSnapshot()
+                                showExportPicker = true
+                            }
+                        }) {
                             Text("Exportar notas")
                         }
                         OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/zip")) }) {

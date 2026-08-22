@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.ui
 
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -17,6 +18,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
@@ -55,6 +64,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.RestoreFromTrash
@@ -132,13 +142,17 @@ import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.buildGalleryTag
 import com.dumb.bouncynotes.data.buildImageTag
 import com.dumb.bouncynotes.data.extractImageFileNames
+import com.dumb.bouncynotes.data.extractMediaRefs
+import com.dumb.bouncynotes.data.MediaStorageExporter
 import com.dumb.bouncynotes.data.isNoteEmpty
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.removeImageOccurrence
 import com.dumb.bouncynotes.ui.components.ChecklistEditor
 import com.dumb.bouncynotes.ui.components.CompactCaptionField
 import com.dumb.bouncynotes.ui.components.FlatTextField
+import com.dumb.bouncynotes.ui.components.GalleryGrid
 import com.dumb.bouncynotes.ui.components.NoteContentView
+import com.dumb.bouncynotes.ui.components.NoteVideoPlayer
 import com.dumb.bouncynotes.ui.components.RgbColorPicker
 import java.io.File
 
@@ -148,6 +162,7 @@ private sealed class EditSegment {
     data class TextSeg(val value: TextFieldValue) : EditSegment()
     data class ImageSeg(val fileName: String, val caption: String) : EditSegment()
     data class GallerySeg(val layout: GalleryLayout, val fileNames: List<String>) : EditSegment()
+    data class VideoSeg(val fileName: String, val caption: String) : EditSegment()
 }
 
 private fun buildEditSegments(content: String): List<EditSegment> {
@@ -161,7 +176,8 @@ private fun buildEditSegments(content: String): List<EditSegment> {
     // (solo en memoria, para editar) entre imágenes consecutivas, y al principio/final
     // si la nota empieza o termina con una imagen.
     val segments = mutableListOf<EditSegment>()
-    fun isMediaSeg(seg: EditSegment) = seg is EditSegment.ImageSeg || seg is EditSegment.GallerySeg
+    fun isMediaSeg(seg: EditSegment) =
+        seg is EditSegment.ImageSeg || seg is EditSegment.GallerySeg || seg is EditSegment.VideoSeg
     parts.forEach { part ->
         when (part) {
             is ContentPart.TextPart -> segments.add(EditSegment.TextSeg(TextFieldValue(part.text)))
@@ -176,6 +192,12 @@ private fun buildEditSegments(content: String): List<EditSegment> {
                     segments.add(EditSegment.TextSeg(TextFieldValue("")))
                 }
                 segments.add(EditSegment.GallerySeg(part.layout, part.fileNames))
+            }
+            is ContentPart.VideoPart -> {
+                if (segments.isEmpty() || isMediaSeg(segments.last())) {
+                    segments.add(EditSegment.TextSeg(TextFieldValue("")))
+                }
+                segments.add(EditSegment.VideoSeg(part.fileName, part.caption))
             }
         }
     }
@@ -212,6 +234,7 @@ private fun segmentsToContent(segments: List<EditSegment>): String =
             is EditSegment.TextSeg -> seg.value.text
             is EditSegment.ImageSeg -> buildImageTag(seg.fileName, seg.caption)
             is EditSegment.GallerySeg -> buildGalleryTag(seg.layout, seg.fileNames)
+            is EditSegment.VideoSeg -> buildVideoTag(seg.fileName, seg.caption)
         }
     }
 
@@ -235,6 +258,26 @@ fun NoteEditScreen(
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
     var pendingCameraFileName by remember { mutableStateOf<String?>(null) }
+    var showVideoTooLarge by remember { mutableStateOf(false) }
+    // Guarda temporalmente qué archivo hay que exportar (y su callback de
+    // resultado) mientras se espera la respuesta del diálogo de permiso de
+    // almacenamiento (solo hace falta pedirlo en Android 9 o anterior).
+    var pendingSaveToDevice by remember { mutableStateOf<Triple<String, Boolean, (Boolean) -> Unit>?>(null) }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val pending = pendingSaveToDevice
+        pendingSaveToDevice = null
+        if (pending != null) {
+            val (fileName, isVideo, callback) = pending
+            if (granted) {
+                val file = File(ImageStorage.imagesDir(context), fileName)
+                callback(MediaStorageExporter.saveToDevice(context, file, isVideo))
+            } else {
+                callback(false)
+            }
+        }
+    }
     var viewerStartPos by remember { mutableStateOf<Int?>(null) }
     var showImageSourceDialog by remember { mutableStateOf(false) }
     // Cuando se seleccionan varias imágenes a la vez desde la galería, quedan
@@ -247,6 +290,21 @@ fun NoteEditScreen(
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
     var isEditing by remember { mutableStateOf(true) }
+
+    // BUG: al abrir el visor de imágenes a pantalla completa, más abajo hay un
+    // "return" temprano que hace que todo el Scaffold con el contenido de la
+    // nota (y su Column con scroll) directamente NO se componga mientras el
+    // visor está abierto. Al cerrar el visor, esa Column vuelve a entrar en
+    // composición desde cero, y como su rememberScrollState() se creaba ahí
+    // mismo (en la línea del .verticalScroll(...)), perdía cualquier scroll
+    // previo y arrancaba siempre en 0 (el inicio de la nota). La solución es
+    // crear estos ScrollState ACÁ arriba, antes de ese "return": como esta
+    // parte de la función SIEMPRE se ejecuta en cada recomposición (viewer
+    // abierto o no), Compose los recuerda de forma estable sin importar que
+    // la Column de más abajo se deje de componer temporalmente.
+    val checklistScrollState = rememberScrollState()
+    val editScrollState = rememberScrollState()
+    val viewScrollState = rememberScrollState()
 
     // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
     // permiso de notificaciones. Se pide justo al programar el primer
@@ -337,11 +395,16 @@ fun NoteEditScreen(
         insertMediaSegmentAtActiveSegment(EditSegment.GallerySeg(layout, fileNames))
     }
 
+    fun insertVideoAtActiveSegment(fileName: String) {
+        insertMediaSegmentAtActiveSegment(EditSegment.VideoSeg(fileName, ""))
+    }
+
     fun deleteMediaSegment(idx: Int) {
         val seg = segments.getOrNull(idx) ?: return
         when (seg) {
             is EditSegment.ImageSeg -> ImageStorage.deleteFile(context, seg.fileName)
             is EditSegment.GallerySeg -> seg.fileNames.forEach { ImageStorage.deleteFile(context, it) }
+            is EditSegment.VideoSeg -> ImageStorage.deleteFile(context, seg.fileName)
             is EditSegment.TextSeg -> return
         }
         val newSegments = segments.toMutableList()
@@ -428,6 +491,21 @@ fun NoteEditScreen(
         }
     }
 
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val result = ImageStorage.copyVideoFromUri(context, uri)
+            when {
+                result.fileName != null -> {
+                    insertVideoAtActiveSegment(result.fileName)
+                    focusManager.clearFocus(force = true)
+                }
+                result.tooLarge -> showVideoTooLarge = true
+            }
+        }
+    }
+
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
     // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
     // fijar/desfijar la nota.
@@ -484,33 +562,18 @@ fun NoteEditScreen(
 
     if (viewerStartPos != null) {
         val fileNames = extractImageFileNames(current.content)
-        // OJO: antes esto se armaba filtrando solo ContentPart.ImagePart, así
-        // que las imágenes que están DENTRO de un grupo (ContentPart.GalleryPart)
-        // ni aparecían en el visor, y encima los índices quedaban desalineados
-        // con `fileNames` (que sí las incluye) apenas la nota tuviera algún
-        // grupo. Ahora se arma directo desde `fileNames` (la lista plana real),
-        // y las descripciones se buscan aparte por índice plano; las imágenes
-        // de un grupo no tienen descripción individual en esta versión, así
-        // que quedan con descripción vacía.
-        val captionsByFlatIndex = run {
-            val map = HashMap<Int, String>()
-            var flat = 0
-            parseNoteContent(current.content).forEach { part ->
-                when (part) {
-                    is ContentPart.ImagePart -> {
-                        map[flat] = part.caption
-                        flat++
-                    }
-                    is ContentPart.GalleryPart -> flat += part.fileNames.size
-                    is ContentPart.TextPart -> {}
-                }
-            }
-            map
-        }
-        val images = fileNames.mapIndexed { i, fileName ->
+        // Antes esto se armaba a mano (filtrando ContentPart.ImagePart y
+        // buscando captions aparte), lo cual además de repetir lógica que ya
+        // vive en extractMediaRefs, no sabía distinguir cuáles archivos eran
+        // video (por eso el visor siempre intentaba mostrarlos como imagen).
+        // extractMediaRefs ya devuelve, en el mismo orden plano que usa
+        // removeImageOccurrence, si cada ítem es imagen o video.
+        val mediaRefs = extractMediaRefs(current.content)
+        val images = mediaRefs.map { ref ->
             NoteImage(
-                path = "${ImageStorage.imagesDir(context)}/$fileName",
-                caption = captionsByFlatIndex[i].orEmpty()
+                path = "${ImageStorage.imagesDir(context)}/${ref.fileName}",
+                caption = ref.caption,
+                isVideo = ref.isVideo
             )
         }
         ImageViewerScreen(
@@ -521,6 +584,26 @@ fun NoteEditScreen(
                 if (pos < fileNames.size) ImageStorage.deleteFile(context, fileNames[pos])
                 applyViewerContentChange(removeImageOccurrence(current.content, pos))
                 viewerStartPos = null
+            },
+            onSaveToDevice = { pos, callback ->
+                val ref = mediaRefs.getOrNull(pos)
+                if (ref == null) {
+                    callback(false)
+                } else {
+                    pendingSaveToDevice = Triple(ref.fileName, ref.isVideo, callback)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                        androidx.core.content.ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        val file = File(ImageStorage.imagesDir(context), ref.fileName)
+                        val ok = MediaStorageExporter.saveToDevice(context, file, ref.isVideo)
+                        pendingSaveToDevice = null
+                        callback(ok)
+                    } else {
+                        storagePermissionLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    }
+                }
             }
         )
         return
@@ -529,27 +612,58 @@ fun NoteEditScreen(
     if (showImageSourceDialog) {
         AlertDialog(
             onDismissRequest = { showImageSourceDialog = false },
-            title = { Text("Agregar imagen") },
-            text = { Text("Se insertará donde está el cursor.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showImageSourceDialog = false
-                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                }) {
-                    Icon(Icons.Filled.PhotoCamera, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Cámara")
+            title = { Text("Agregar contenido") },
+            text = {
+                Column {
+                    Text("Se insertará donde está el cursor.", style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                    listOf(
+                        Triple(Icons.Filled.PhotoCamera, "Cámara") {
+                            showImageSourceDialog = false
+                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                        },
+                        Triple(Icons.Filled.PhotoLibrary, "Galería (fotos y gifs)") {
+                            showImageSourceDialog = false
+                            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        Triple(Icons.Filled.Videocam, "Video (máx. ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB)") {
+                            showImageSourceDialog = false
+                            videoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                        }
+                    ).forEach { (icon, label, onClick) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onClick)
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(icon, contentDescription = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(label)
+                        }
+                    }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = {
-                    showImageSourceDialog = false
-                    galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }) {
-                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Galería")
-                }
+            confirmButton = {
+                TextButton(onClick = { showImageSourceDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showVideoTooLarge) {
+        AlertDialog(
+            onDismissRequest = { showVideoTooLarge = false },
+            title = { Text("Video demasiado pesado") },
+            text = {
+                Text(
+                    "Este video pesa más de ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB, " +
+                        "así que no se agregó a la nota. Los videos no se comprimen (recodificar " +
+                        "video en el teléfono es lento), por eso hay un límite de tamaño de origen."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showVideoTooLarge = false }) { Text("Entendido") }
             }
         )
     }
@@ -820,10 +934,23 @@ fun NoteEditScreen(
                     }
                     isEditing = goingToEdit
                 }) {
-                    Icon(
-                        if (isEditing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
-                        contentDescription = if (isEditing) "Vista previa" else "Editar"
-                    )
+                    // Un pequeño AnimatedContent para que el propio ícono
+                    // también "avise" el cambio de modo (gira/rota levemente
+                    // en vez de cambiar de golpe), reforzando el fundido del
+                    // contenido de más abajo.
+                    AnimatedContent(
+                        targetState = isEditing,
+                        transitionSpec = {
+                            (scaleIn(animationSpec = tween(180)) + fadeIn(animationSpec = tween(180)))
+                                .togetherWith(scaleOut(animationSpec = tween(120)) + fadeOut(animationSpec = tween(120)))
+                        },
+                        label = "icono-modo-edicion-vista"
+                    ) { editing ->
+                        Icon(
+                            if (editing) Icons.Filled.RemoveRedEye else Icons.Outlined.EditNote,
+                            contentDescription = if (editing) "Vista previa" else "Editar"
+                        )
+                    }
                 }
             }
         }
@@ -889,7 +1016,7 @@ fun NoteEditScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(checklistScrollState)
                             .then(readModeGesture)
                     ) {
                         ChecklistEditor(
@@ -907,8 +1034,21 @@ fun NoteEditScreen(
                         // barra inferior flotante y semitransparente.
                         Spacer(Modifier.height(bottomBarHeight + 12.dp))
                     }
-                } else if (isEditing) {
-                    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                } else {
+                    // Antes el cambio entre modo edición y vista (el botón del
+                    // ojo/lápiz en la barra inferior) era un salto instantáneo,
+                    // sin ninguna transición, así que costaba notar que
+                    // realmente había cambiado de modo. Crossfade anima un
+                    // fundido cruzado entre ambos sin tocar el scroll de cada
+                    // uno (que ya quedan hoisted arriba, en
+                    // editScrollState/viewScrollState).
+                    Crossfade(
+                        targetState = isEditing,
+                        animationSpec = tween(220),
+                        label = "modo-edicion-vista"
+                    ) { editing ->
+                        if (editing) {
+                    Column(modifier = Modifier.fillMaxSize().verticalScroll(editScrollState)) {
                         segments.forEachIndexed { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
@@ -947,6 +1087,7 @@ fun NoteEditScreen(
                                                 when (s) {
                                                     is EditSegment.ImageSeg -> 1
                                                     is EditSegment.GallerySeg -> s.fileNames.size
+                                                    is EditSegment.VideoSeg -> 1
                                                     is EditSegment.TextSeg -> 0
                                                 }
                                             }
@@ -1012,11 +1153,21 @@ fun NoteEditScreen(
                                         when (s) {
                                             is EditSegment.ImageSeg -> 1
                                             is EditSegment.GallerySeg -> s.fileNames.size
+                                            is EditSegment.VideoSeg -> 1
                                             is EditSegment.TextSeg -> 0
                                         }
                                     }
                                     Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                                        GalleryEditorPreview(
+                                        // Antes esto llamaba a GalleryEditorPreview, un preview
+                                        // "genérico" (siempre una fila de miniaturas) que NO
+                                        // reflejaba el formato elegido (cuadrícula 2/3, carrusel).
+                                        // Por eso, sin importar qué formato se eligiera en el
+                                        // popup, en el editor siempre se veía igual (una fila, que
+                                        // se confundía con "siempre carrusel"). Ahora reutiliza el
+                                        // mismo GalleryGrid que se usa en modo lectura, así el
+                                        // editor muestra exactamente el layout real elegido.
+                                        GalleryGrid(
+                                            layout = segment.layout,
                                             fileNames = segment.fileNames,
                                             onImageClick = { i -> viewerStartPos = startIndex + i }
                                         )
@@ -1041,15 +1192,41 @@ fun NoteEditScreen(
                                         }
                                     }
                                 }
+                                is EditSegment.VideoSeg -> {
+                                    Box(modifier = Modifier.padding(vertical = 8.dp)) {
+                                        NoteVideoPlayer(
+                                            fileName = segment.fileName,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .aspectRatio(16f / 9f)
+                                                .clip(RoundedCornerShape(16.dp))
+                                        )
+                                        IconButton(
+                                            onClick = { deleteMediaSegment(index) },
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(4.dp)
+                                                .size(28.dp)
+                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Quitar video",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                         Spacer(Modifier.height(bottomBarHeight + 12.dp))
                     }
-                } else {
+                        } else {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(viewScrollState)
                             .then(readModeGesture)
                     ) {
                         NoteContentView(
@@ -1057,6 +1234,8 @@ fun NoteEditScreen(
                             onImageClick = { idx -> viewerStartPos = idx }
                         )
                         Spacer(Modifier.height(bottomBarHeight + 12.dp))
+                    }
+                        }
                     }
                 }
             }
@@ -1331,42 +1510,3 @@ private fun ReminderPickerSheet(
     }
 }
 
-// Miniatura compacta de un grupo de imágenes DENTRO del editor (no scrollea
-// por su cuenta, a diferencia de GalleryGrid en modo lectura): acá solo
-// interesa un preview rápido, no reproducir el formato final (carrusel/grid)
-// elegido, que ya se ve tal cual en modo vista. Máximo 4 miniaturas visibles;
-// si hay más, la última muestra un "+N" superpuesto.
-@Composable
-private fun GalleryEditorPreview(fileNames: List<String>, onImageClick: (Int) -> Unit) {
-    val context = LocalContext.current
-    val maxThumbs = 4
-    val shown = fileNames.take(maxThumbs)
-    val extra = fileNames.size - shown.size
-    Row(modifier = Modifier.fillMaxWidth()) {
-        shown.forEachIndexed { i, fileName ->
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .aspectRatio(1f)
-                    .padding(2.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { onImageClick(i) }
-            ) {
-                AsyncImage(
-                    model = File(ImageStorage.imagesDir(context), fileName),
-                    contentDescription = "Imagen ${i + 1} de ${fileNames.size}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (i == shown.lastIndex && extra > 0) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("+$extra", color = Color.White, style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-        }
-    }
-}

@@ -83,6 +83,7 @@ object BackupManager {
         o.put("deletedAt", note.deletedAt ?: JSONObject.NULL)
         o.put("createdAt", note.createdAt)
         o.put("updatedAt", note.updatedAt)
+        o.put("reminderAt", note.reminderAt ?: JSONObject.NULL)
 
         val labelsArr = JSONArray()
         note.labels.forEach { labelsArr.put(it) }
@@ -125,7 +126,13 @@ object BackupManager {
             isPrivate = o.optBoolean("isPrivate"),
             deletedAt = if (o.isNull("deletedAt")) null else o.optLong("deletedAt"),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
-            updatedAt = o.optLong("updatedAt", System.currentTimeMillis())
+            updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
+            // Nota: al importar, el recordatorio recuperado NO vuelve a programar
+            // su alarma automáticamente acá (BackupManager no tiene Context de
+            // sobra para AlarmManager en este punto); eso se resuelve en
+            // NoteViewModel.importNotes, que sí reprograma cada alarma después
+            // de guardar las notas importadas.
+            reminderAt = if (o.isNull("reminderAt")) null else o.optLong("reminderAt")
         )
     }
 }

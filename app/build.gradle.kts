@@ -83,5 +83,12 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    // Para que los GIF insertados en las notas se vean animados en vez de
+    // quedarse en el primer cuadro como imagen estática.
+    implementation("io.coil-kt:coil-gif:2.6.0")
+    // Para poder reproducir los videos insertados en una nota (en el editor y
+    // en el visor a pantalla completa).
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 }

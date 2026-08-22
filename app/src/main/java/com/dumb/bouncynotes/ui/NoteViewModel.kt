@@ -154,7 +154,16 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     fun importNotes(notes: List<Note>) {
         viewModelScope.launch {
-            notes.forEach { repository.save(it) }
+            notes.forEach { note ->
+                val savedId = repository.save(note)
+                // Las alarmas de AlarmManager no se exportan/importan (no
+                // tendría sentido, son puramente locales a este dispositivo),
+                // así que cualquier nota importada con un recordatorio pendiente
+                // necesita que se le programe la alarma de nuevo acá.
+                if (note.reminderAt != null) {
+                    applyReminderScheduling(note.copy(id = savedId))
+                }
+            }
         }
     }
 

@@ -10,10 +10,12 @@ data class ChecklistItem(
     val checked: Boolean = false
 )
 
-// Representa una imagen ya resuelta a una ruta de archivo real (usado por el visor).
+// Representa un ítem ya resuelto a una ruta de archivo real (usado por el
+// visor a pantalla completa): puede ser una imagen (o gif) o un video.
 data class NoteImage(
     val path: String,
-    val caption: String = ""
+    val caption: String = "",
+    val isVideo: Boolean = false
 )
 
 @Entity(tableName = "notes")

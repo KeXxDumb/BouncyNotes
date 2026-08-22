@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.Settings
@@ -692,60 +693,37 @@ private fun NoteCard(
                 }
             } else {
                 val allParts = parseNoteContent(note.content)
-                // Puede ser una imagen suelta o la primera imagen de un grupo,
-                // lo que aparezca primero en el contenido de la nota.
-                val firstImageFileName = if (showFirstImage) {
-                    allParts.firstNotNullOfOrNull { part ->
-                        when (part) {
-                            is ContentPart.ImagePart -> part.fileName
-                            is ContentPart.GalleryPart -> part.fileNames.firstOrNull()
-                            is ContentPart.TextPart -> null
-                        }
+                // Índice (dentro de allParts) de la parte que contiene la
+                // primera imagen de la nota, sea suelta o el primer archivo de
+                // un grupo. Se usa solo con el ajuste "mostrar primera imagen"
+                // activado, para garantizar que esa parte entre en el recorte
+                // de abajo aunque normalmente hubiera quedado afuera.
+                val firstImagePartIndex = if (showFirstImage) {
+                    allParts.indexOfFirst { part ->
+                        (part is ContentPart.ImagePart) ||
+                            (part is ContentPart.GalleryPart && part.fileNames.isNotEmpty())
                     }
-                } else null
+                } else -1
 
-                if (firstImageFileName != null) {
-                    // El usuario pidió poder forzar que la miniatura de la nota
-                    // sea siempre su primera imagen, incluso si hay mucho texto
-                    // antes que normalmente "gastaría" el presupuesto de la
-                    // tarjeta antes de llegar a ella. La mostramos primero,
-                    // aparte del recorrido de abajo (que se salta esa misma
-                    // imagen para no repetirla).
-                    AsyncImage(
-                        model = File(ImageStorage.imagesDir(context), firstImageFileName),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                    )
-                    Spacer(Modifier.height(6.dp))
+                // Antes esto: (1) sacaba la primera imagen de su posición real y la
+                // ponía siempre arriba de todo (rompiendo el orden real de la nota), y
+                // (2) usaba un "presupuesto" que a veces cortaba el recorrido a mitad
+                // de camino de forma medio arbitraria. Ahora se recorre la nota tal
+                // cual está estructurada, en orden, sin mover nada de lugar: se
+                // muestran hasta maxParts partes (texto/imagen/grupo, cada una tal
+                // cual, sin recortar imágenes) y, si "mostrar primera imagen" está
+                // activo y esa imagen hubiera quedado justo afuera de ese límite, se
+                // extiende el recorrido SOLO hasta incluirla (sin reordenar: si está
+                // después de texto, se sigue viendo después de ese texto).
+                val maxParts = 5
+                val effectiveLimit = if (firstImagePartIndex in maxParts until allParts.size) {
+                    firstImagePartIndex + 1
+                } else {
+                    maxParts
                 }
 
-                // Recorre el contenido en su orden real (texto, imágenes y
-                // grupos intercalados), en vez de agrupar todo el texto junto.
-                var budget = 6
-                var skippedFirstImage = false
-                for (part in allParts) {
-                    if (budget <= 0) break
-                    val partFirstFileName = when (part) {
-                        is ContentPart.ImagePart -> part.fileName
-                        is ContentPart.GalleryPart -> part.fileNames.firstOrNull()
-                        is ContentPart.TextPart -> null
-                    }
-                    if (firstImageFileName != null && !skippedFirstImage &&
-                        partFirstFileName == firstImageFileName && part is ContentPart.ImagePart
-                    ) {
-                        // Solo saltamos por completo la parte si ERA justo una
-                        // imagen suelta igual a la ya mostrada arriba. Si la
-                        // primera imagen vino de un grupo, el grupo entero
-                        // igual se muestra acá abajo (con todas sus imágenes),
-                        // ya que mostrar solo la miniatura de arriba y ocultar
-                        // el resto del grupo sería confuso.
-                        skippedFirstImage = true
-                        continue
-                    }
+                for ((partIndex, part) in allParts.withIndex()) {
+                    if (partIndex >= effectiveLimit) break
                     when (part) {
                         is ContentPart.ImagePart -> {
                             AsyncImage(
@@ -758,7 +736,6 @@ private fun NoteCard(
                                     .clip(RoundedCornerShape(12.dp))
                             )
                             Spacer(Modifier.height(6.dp))
-                            budget -= 3
                         }
                         is ContentPart.GalleryPart -> {
                             // Preview compacto: un par de miniaturas en fila en
@@ -782,7 +759,6 @@ private fun NoteCard(
                                 }
                             }
                             Spacer(Modifier.height(6.dp))
-                            budget -= 3
                         }
                         is ContentPart.TextPart -> {
                             val cleaned = stripFormattingMarkers(part.text).trim()
@@ -793,15 +769,29 @@ private fun NoteCard(
                                     maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                budget -= 3
-                                // Si este bloque de texto tenía más de 3 líneas, ya lo
-                                // cortamos con "...". Mostrar después una imagen que
-                                // está más abajo en la nota (a veces mucho más abajo)
-                                // da la impresión de que la nota "es" esa imagen, cuando
-                                // en realidad la nota es sobre todo texto. Frenamos acá
-                                // en vez de seguir con las partes siguientes.
-                                if (cleaned.lines().size > 3) budget = 0
                             }
+                        }
+                        is ContentPart.VideoPart -> {
+                            // Reproducir video en cada tarjeta de la lista sería carísimo
+                            // (una instancia de ExoPlayer por nota visible), así que acá
+                            // alcanza con un cartel simple indicando que hay un video: se
+                            // reproduce de verdad al abrir la nota.
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.Black.copy(alpha = 0.85f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Filled.PlayCircle,
+                                    contentDescription = "Video",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(40.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(6.dp))
                         }
                     }
                 }

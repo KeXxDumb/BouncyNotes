@@ -2,6 +2,7 @@ package com.dumb.bouncynotes.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -90,6 +91,26 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                         onImageClick = { indexInGroup -> onImageClick(startIndex + indexInGroup) }
                     )
                 }
+                is ContentPart.VideoPart -> {
+                    imageOccurrence++
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        NoteVideoPlayer(
+                            fileName = part.fileName,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                        if (part.caption.isNotBlank()) {
+                            Text(
+                                text = part.caption,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -99,7 +120,7 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
 // (GalleryLayout) se elige al insertar el grupo, o toma el que esté
 // configurado por defecto en Ajustes.
 @Composable
-private fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImageClick: (Int) -> Unit) {
+internal fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImageClick: (Int) -> Unit) {
     val context = LocalContext.current
     when (layout) {
         GalleryLayout.CAROUSEL -> {
