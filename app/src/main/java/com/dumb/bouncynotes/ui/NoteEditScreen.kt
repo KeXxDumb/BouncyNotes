@@ -141,6 +141,7 @@ import com.dumb.bouncynotes.data.NoteImage
 import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.buildGalleryTag
 import com.dumb.bouncynotes.data.buildImageTag
+import com.dumb.bouncynotes.data.buildVideoTag
 import com.dumb.bouncynotes.data.extractImageFileNames
 import com.dumb.bouncynotes.data.extractMediaRefs
 import com.dumb.bouncynotes.data.MediaStorageExporter
