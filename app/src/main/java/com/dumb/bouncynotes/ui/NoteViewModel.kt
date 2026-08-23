@@ -185,7 +185,12 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                 // así que cualquier nota importada con un recordatorio pendiente
                 // necesita que se le programe la alarma de nuevo acá.
                 if (note.reminderAt != null) {
-                    applyReminderScheduling(note.copy(id = savedId))
+                    // previous = null a propósito: al importar no hay un
+                    // estado anterior real con el que comparar, y siempre
+                    // se quiere programar la alarma si la nota importada
+                    // trae un recordatorio (reminderChanged trata previous
+                    // == null como "cambió", así que esto sí programa).
+                    applyReminderScheduling(note.copy(id = savedId), previous = null)
                 }
             }
         }
