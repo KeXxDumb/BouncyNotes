@@ -20,6 +20,7 @@ class ReminderReceiver : BroadcastReceiver() {
     companion object {
         const val EXTRA_NOTE_ID = "note_id"
         const val EXTRA_IS_ADVANCE = "is_advance"
+        const val EXTRA_IS_TEST = "is_test"
         const val CHANNEL_ID = "note_reminders"
 
         fun ensureChannel(context: Context) {
@@ -42,6 +43,22 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
         val isAdvance = intent.getBooleanExtra(EXTRA_IS_ADVANCE, false)
+        val isTest = intent.getBooleanExtra(EXTRA_IS_TEST, false)
+
+        if (isTest) {
+            // La alarma de prueba no tiene una nota real detrás: se muestra
+            // directo, sin ir a la base de datos.
+            ensureChannel(context)
+            showNotificationRaw(
+                context = context,
+                notificationId = noteId.toInt(),
+                title = "Recordatorio de prueba",
+                body = "Si ves esto, la alarma y la notificación funcionan bien en este teléfono.",
+                contentIntentNoteId = null
+            )
+            return
+        }
+
         if (noteId == 0L) return
 
         // Ir a buscar la nota (para título/contenido) es async; usamos goAsync()
@@ -57,6 +74,44 @@ class ReminderReceiver : BroadcastReceiver() {
             } finally {
                 pendingResult.finish()
             }
+        }
+    }
+
+    private fun showNotificationRaw(
+        context: Context,
+        notificationId: Int,
+        title: String,
+        body: String,
+        contentIntentNoteId: Long?
+    ) {
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+
+        if (contentIntentNoteId != null) {
+            val openIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("openNoteId", contentIntentNoteId)
+            }
+            builder.setContentIntent(
+                PendingIntent.getActivity(
+                    context,
+                    contentIntentNoteId.toInt(),
+                    openIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+        }
+
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+        ) {
+            NotificationManagerCompat.from(context).notify(notificationId, builder.build())
         }
     }
 

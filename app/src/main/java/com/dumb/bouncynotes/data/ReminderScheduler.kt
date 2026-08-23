@@ -102,15 +102,18 @@ object ReminderScheduler {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = pendingIntent(context, noteId, isAdvance)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-                // Sin permiso de alarmas exactas: mejor una alarma aproximada
-                // que ninguna. El usuario puede habilitar el permiso desde
-                // Ajustes para que suene puntual (ver requestExactAlarmPermission).
-                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
-            } else if (!isAdvance) {
+            if (!isAdvance) {
                 // La alarma principal: setAlarmClock() en vez de
                 // setExactAndAllowWhileIdle(), para quedar exenta de
                 // Doze/ahorro de batería (ver comentario arriba del objeto).
+                // No hace falta chequear canScheduleExactAlarms() acá: el
+                // manifest ya declara USE_EXACT_ALARM (permiso normal, se
+                // concede solo con instalar, sin que el usuario tenga que
+                // habilitar nada a mano en Ajustes), así que esto debería
+                // funcionar siempre. El try/catch de abajo es una red de
+                // seguridad real por si algo cambia (p. ej. Play Store
+                // exigiendo en algún momento SCHEDULE_EXACT_ALARM en vez de
+                // USE_EXACT_ALARM), no el camino esperado.
                 val info = AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, noteId))
                 alarmManager.setAlarmClock(info, pi)
             } else {
@@ -157,6 +160,37 @@ object ReminderScheduler {
             data = Uri.parse("package:${activity.packageName}")
         }
         activity.startActivity(intent)
+    }
+
+    // ID de nota reservado para el recordatorio de prueba desde Ajustes: no
+    // puede chocar con un ID real de Room (autoGenerate empieza en 1 y
+    // sube), así que se usa uno negativo.
+    private const val TEST_NOTE_ID = -1L
+
+    // Programa una alarma de prueba a `secondsFromNow` segundos, por el
+    // mismo camino (AlarmManager.setAlarmClock + ReminderReceiver) que un
+    // recordatorio real, pero sin pasar por una nota guardada de verdad.
+    // Sirve para confirmar rápido, en un dispositivo real, si el problema
+    // está en la programación de la alarma/permiso de notificaciones (con
+    // esto alcanza) o en otra parte del flujo — si esto suena pero un
+    // recordatorio real no, el problema no es AlarmManager.
+    fun scheduleTest(context: Context, secondsFromNow: Int) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            action = "com.dumb.bouncynotes.REMINDER_TEST"
+            putExtra(ReminderReceiver.EXTRA_NOTE_ID, TEST_NOTE_ID)
+            putExtra(ReminderReceiver.EXTRA_IS_ADVANCE, false)
+            putExtra(ReminderReceiver.EXTRA_IS_TEST, true)
+        }
+        val pi = PendingIntent.getBroadcast(
+            context,
+            TEST_NOTE_ID.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val triggerAt = System.currentTimeMillis() + secondsFromNow * 1000L
+        val info = AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, TEST_NOTE_ID))
+        alarmManager.setAlarmClock(info, pi)
     }
 
     fun cancel(context: Context, noteId: Long) {

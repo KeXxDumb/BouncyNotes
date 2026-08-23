@@ -775,7 +775,23 @@ fun NoteEditScreen(
             initialMillis = current.reminderAt,
             onDismiss = { showReminderSheet = false },
             onConfirm = { millis ->
-                current = current.copy(reminderAt = millis)
+                // Antes esto solo tocaba current.reminderAt en memoria: el
+                // guardado real (y con él, ReminderScheduler.schedule) recién
+                // pasaba al salir de la pantalla con la flecha/back. Si el
+                // usuario confirmaba el recordatorio y después salía por
+                // cualquier otro camino (botón Home, cambiar de app y que
+                // Android mate el proceso, etc.) sin volver a tocar la
+                // flecha, el recordatorio quedaba "puesto" en la UI que veía
+                // el usuario, pero nunca llegaba a programarse a nivel de
+                // AlarmManager. Guardar acá mismo, apenas se confirma,
+                // asegura que quede en la base de datos y programado de una,
+                // sin depender de cómo el usuario termine saliendo de la
+                // pantalla.
+                val updated = current.copy(reminderAt = millis)
+                current = updated
+                viewModel.save(updated) { id ->
+                    if (noteId == 0L) current = current.copy(id = id)
+                }
                 showReminderSheet = false
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
                     androidx.core.content.ContextCompat.checkSelfPermission(
@@ -786,7 +802,15 @@ fun NoteEditScreen(
                 }
             },
             onClear = {
-                current = current.copy(reminderAt = null)
+                // Mismo motivo que en onConfirm: si no se guarda ahora, un
+                // recordatorio que el usuario acaba de "borrar" en la UI
+                // puede seguir sonando igual porque la cancelación real
+                // (ReminderScheduler.cancel) nunca llegó a ejecutarse.
+                val updated = current.copy(reminderAt = null)
+                current = updated
+                viewModel.save(updated) { id ->
+                    if (noteId == 0L) current = current.copy(id = id)
+                }
                 showReminderSheet = false
             }
         )

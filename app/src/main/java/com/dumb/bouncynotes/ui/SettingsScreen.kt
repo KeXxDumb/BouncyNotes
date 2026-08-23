@@ -128,6 +128,14 @@ fun SettingsScreen(
     // botón de "exportar todo" directo).
     var exportSelection by remember { mutableStateOf<Set<Long>?>(null) }
     var showExportPicker by remember { mutableStateOf(false) }
+    // Qué sección expandible está abierta ahora mismo (identificada por su
+    // título, que ya es único entre las secciones). null = ninguna abierta.
+    // Se comparte entre todas las ExpandableSection de esta pantalla para
+    // que abrir una cierre cualquier otra que hubiera quedado abierta, en
+    // vez de que cada una maneje su propio estado sin enterarse de las
+    // demás (que era como quedaba la pantalla llena de cajones abiertos a
+    // la vez).
+    var expandedSectionTitle by remember { mutableStateOf<String?>(null) }
     var notesForExportPicker by remember { mutableStateOf<List<Note>>(emptyList()) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -285,7 +293,12 @@ fun SettingsScreen(
             contentPadding = PaddingValues(16.dp)
         ) {
             item {
-                ExpandableSection(title = "Apariencia", icon = Icons.Filled.Palette) {
+                ExpandableSection(
+                    title = "Apariencia",
+                    icon = Icons.Filled.Palette,
+                    expanded = expandedSectionTitle == "Apariencia",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Apariencia") null else "Apariencia" }
+                ) {
                     ChipSetting(
                         label = "Tema",
                         options = listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro"),
@@ -418,7 +431,12 @@ fun SettingsScreen(
             }
 
             item {
-                ExpandableSection(title = "Comportamiento", icon = Icons.Filled.Tune) {
+                ExpandableSection(
+                    title = "Comportamiento",
+                    icon = Icons.Filled.Tune,
+                    expanded = expandedSectionTitle == "Comportamiento",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Comportamiento") null else "Comportamiento" }
+                ) {
                     ChipSetting(
                         label = "Ordenar notas por",
                         options = listOf(
@@ -492,7 +510,12 @@ fun SettingsScreen(
                 val ignoringBatteryOpt = remember(refreshTick) { ReminderScheduler.isIgnoringBatteryOptimizations(context) }
                 val activity = remember { context.findActivity() }
 
-                ExpandableSection(title = "Recordatorios", icon = Icons.Filled.Alarm) {
+                ExpandableSection(
+                    title = "Recordatorios",
+                    icon = Icons.Filled.Alarm,
+                    expanded = expandedSectionTitle == "Recordatorios",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Recordatorios") null else "Recordatorios" }
+                ) {
                     Text(
                         "Para que un recordatorio suene puntual con la app cerrada o el " +
                             "teléfono en reposo, Android necesita estos dos permisos. Sin " +
@@ -535,11 +558,38 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Para probar de una si los recordatorios andan en este " +
+                            "teléfono, sin tener que crear una nota: programa un " +
+                            "aviso de prueba en 10 segundos. Dejá la pantalla " +
+                            "apagada esos 10 segundos para que la prueba sea real " +
+                            "(con la app abierta y la pantalla prendida, Android no " +
+                            "aplica ninguna restricción de batería, así que ahí " +
+                            "suena siempre igual haya o no un bug real).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            ReminderScheduler.scheduleTest(context, secondsFromNow = 10)
+                            statusMessage = "Recordatorio de prueba en 10 segundos. Apagá la pantalla."
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Probar recordatorio (10s)") }
                 }
             }
 
             item {
-                ExpandableSection(title = "Privacidad y seguridad", icon = Icons.Filled.Security) {
+                ExpandableSection(
+                    title = "Privacidad y seguridad",
+                    icon = Icons.Filled.Security,
+                    expanded = expandedSectionTitle == "Privacidad y seguridad",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Privacidad y seguridad") null else "Privacidad y seguridad" }
+                ) {
                     DiscreteSlider(
                         label = "Recordar desbloqueo biométrico",
                         values = listOf(0, 5, 15, 30, 60, -1),
@@ -561,7 +611,12 @@ fun SettingsScreen(
             }
 
             item {
-                ExpandableSection(title = "Papelera", icon = Icons.Filled.Delete) {
+                ExpandableSection(
+                    title = "Papelera",
+                    icon = Icons.Filled.Delete,
+                    expanded = expandedSectionTitle == "Papelera",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Papelera") null else "Papelera" }
+                ) {
                     SwitchSetting(
                         label = "Usar papelera",
                         checked = settings.useTrash,
@@ -596,7 +651,12 @@ fun SettingsScreen(
             }
 
             item {
-                ExpandableSection(title = "Imágenes", icon = Icons.Filled.Image) {
+                ExpandableSection(
+                    title = "Imágenes",
+                    icon = Icons.Filled.Image,
+                    expanded = expandedSectionTitle == "Imágenes",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Imágenes") null else "Imágenes" }
+                ) {
                     SwitchSetting(
                         label = "Comprimir imágenes al guardar",
                         checked = settings.compressImages,
@@ -615,7 +675,12 @@ fun SettingsScreen(
             }
 
             item {
-                ExpandableSection(title = "Datos", icon = Icons.Filled.CloudUpload) {
+                ExpandableSection(
+                    title = "Datos",
+                    icon = Icons.Filled.CloudUpload,
+                    expanded = expandedSectionTitle == "Datos",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Datos") null else "Datos" }
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -656,9 +721,10 @@ fun SettingsScreen(
 private fun ExpandableSection(
     title: String,
     icon: ImageVector,
+    expanded: Boolean,
+    onToggle: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -671,7 +737,7 @@ private fun ExpandableSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { expanded = !expanded }
+                    .clickable { onToggle() }
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -709,10 +775,18 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
 @Composable
 private fun AppIconSetting() {
     val context = LocalContext.current
+    // Se relee directo de PackageManager (no de un estado propio) cada vez
+    // que cambia `selected`, para que el textito de abajo sea la fuente de
+    // verdad real del sistema y no lo que la UI "cree" que pasó. Si después
+    // de tocar un ícono este texto SÍ cambia al correcto pero la pantalla de
+    // inicio sigue mostrando el viejo, el problema es el refresco del
+    // launcher (no algo que la app pueda forzar); si este texto NO cambia,
+    // ahí sí hay un bug real en AppIconManager.setIcon para reportar.
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
+    var realState by remember { mutableStateOf(AppIconManager.current(context)) }
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(bottom = 8.dp)
+        modifier = Modifier.padding(bottom = 4.dp)
     ) {
         AppIcon.entries.forEach { icon ->
             val isSelected = icon == selected
@@ -732,6 +806,7 @@ private fun AppIconSetting() {
                         // llega a ejecutarse siempre.
                         selected = icon
                         AppIconManager.setIcon(context, icon)
+                        realState = AppIconManager.current(context)
                     }
                     .padding(10.dp)
             ) {
@@ -759,10 +834,15 @@ private fun AppIconSetting() {
         }
     }
     Text(
-        "Al elegir un ícono la app se cerrará y se volverá a abrir sola: es " +
-            "necesario para que el lanzador del teléfono muestre el ícono " +
-            "nuevo de una (antes se quedaba con el viejo en varios teléfonos " +
-            "hasta reiniciar la app manualmente).",
+        "El cambio es inmediato (no hace falta reiniciar la app). Si no se ve " +
+            "reflejado en la pantalla de inicio del teléfono, volvé al inicio o " +
+            "abrí el cajón de apps de nuevo: algunos lanzadores tardan un " +
+            "instante en refrescar el ícono.",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Text(
+        "Estado real del sistema ahora mismo: ${realState.label}",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
