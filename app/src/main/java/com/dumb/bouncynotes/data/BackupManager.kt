@@ -84,6 +84,9 @@ object BackupManager {
         o.put("createdAt", note.createdAt)
         o.put("updatedAt", note.updatedAt)
         o.put("reminderAt", note.reminderAt ?: JSONObject.NULL)
+        val reminderDaysArr = JSONArray()
+        note.reminderDays.forEach { reminderDaysArr.put(it) }
+        o.put("reminderDays", reminderDaysArr)
 
         val labelsArr = JSONArray()
         note.labels.forEach { labelsArr.put(it) }
@@ -132,7 +135,10 @@ object BackupManager {
             // sobra para AlarmManager en este punto); eso se resuelve en
             // NoteViewModel.importNotes, que sí reprograma cada alarma después
             // de guardar las notas importadas.
-            reminderAt = if (o.isNull("reminderAt")) null else o.optLong("reminderAt")
+            reminderAt = if (o.isNull("reminderAt")) null else o.optLong("reminderAt"),
+            reminderDays = o.optJSONArray("reminderDays")?.let { arr ->
+                (0 until arr.length()).map { arr.getInt(it) }.toSet()
+            } ?: emptySet()
         )
     }
 }

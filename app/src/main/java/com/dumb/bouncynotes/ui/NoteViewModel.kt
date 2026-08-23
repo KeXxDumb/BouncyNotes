@@ -112,9 +112,13 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun save(note: Note, onDone: (Long) -> Unit = {}) {
         viewModelScope.launch {
             val toSave = note.copy(updatedAt = System.currentTimeMillis())
+            // Se necesita el estado ANTERIOR (antes de sobreescribirlo) para
+            // saber si el recordatorio realmente cambió — ver el comentario
+            // en applyReminderScheduling.
+            val previous = if (note.id != 0L) repository.getById(note.id) else null
             val id = repository.save(toSave)
             val savedId = if (note.id == 0L) id else note.id
-            applyReminderScheduling(toSave.copy(id = savedId))
+            applyReminderScheduling(toSave.copy(id = savedId), previous)
             onDone(savedId)
         }
     }
@@ -123,8 +127,28 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     // recordatorio de la nota. Se llama cada vez que la nota se guarda o se
     // borra, para que la alarma nunca quede desincronizada de lo que hay en
     // la base de datos.
-    private fun applyReminderScheduling(note: Note) {
+    //
+    // OJO: antes esto se ejecutaba en TODOS los guardados, hubiera cambiado
+    // el recordatorio o no. Eso rompía recordatorios muy cercanos en el
+    // tiempo (1-2 minutos): confirmar el recordatorio guarda y programa bien
+    // la alarma, pero salir de la nota (la flecha de volver también llama a
+    // save()) dispara OTRO guardado unos segundos después, que vuelve a
+    // pasar por acá — y ReminderScheduler.schedule() siempre CANCELA la
+    // alarma ya programada antes de decidir si la vuelve a crear. Con un
+    // recordatorio lejano esos segundos de diferencia no importan; con uno a
+    // 1-2 minutos, alcanzan para que este segundo guardado ya vea la hora
+    // como pasada, cancele la alarma que estaba perfectamente bien programada,
+    // y no la reemplace por ninguna — el recordatorio desaparece en silencio.
+    // Comparar contra el estado anterior evita tocar AlarmManager para nada
+    // cuando el recordatorio no cambió en este guardado en particular.
+    private fun applyReminderScheduling(note: Note, previous: Note?) {
         val app = getApplication<Application>()
+        val reminderChanged = previous == null ||
+            previous.reminderAt != note.reminderAt ||
+            previous.reminderDays != note.reminderDays ||
+            previous.deletedAt != note.deletedAt
+        if (!reminderChanged) return
+
         if (note.reminderAt != null && note.deletedAt == null) {
             ReminderScheduler.schedule(app, note)
         } else {

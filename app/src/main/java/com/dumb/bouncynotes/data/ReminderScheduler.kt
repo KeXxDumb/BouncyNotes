@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import com.dumb.bouncynotes.MainActivity
+import java.util.Calendar
 
 // Centraliza la programación/cancelación de las alarmas de recordatorio de
 // las notas. Usa AlarmManager directamente (no WorkManager) porque
@@ -17,29 +18,50 @@ import com.dumb.bouncynotes.MainActivity
 // con la app cerrada o el teléfono en reposo (Doze).
 //
 // Por cada nota con recordatorio se programan hasta DOS alarmas:
-//  - una "de aviso", 1 hora antes, para avisar con anticipación.
-//  - la principal, exactamente a la hora elegida.
+//  - una "de aviso", 1 hora antes (notificación normal, sin heads-up).
+//  - la principal, exactamente a la hora elegida (heads-up/flotante).
 // Cada una tiene su propio PendingIntent (con un request code distinto), así
 // que son independientes: cancelar/reprogramar una no toca la otra.
 //
-// RAÍZ del bug "los recordatorios no funcionan": la alarma principal se
-// programaba con setExactAndAllowWhileIdle(). Esa API SÍ dispara con Doze
-// activo, pero para el sistema es una alarma "de fondo" cualquiera, así que
-// en la mayoría de los fabricantes (Samsung, Xiaomi/MIUI, etc., y también
-// stock Android con "optimización de batería" activada) el gestor de
-// batería puede demorarla, agruparla con otras, o directamente matarla si
-// la app no está exenta de esas restricciones — sin ningún error visible,
-// simplemente nunca suena. Se comparó contra una app de reloj/alarmas real
-// (ClockYou, github.com/you-apps/ClockYou) para confirmarlo: ese tipo de
-// apps programan la alarma principal con AlarmManager.setAlarmClock() en
-// vez de setExactAndAllowWhileIdle(). setAlarmClock() es la única API que
-// Android trata como una alarma de reloj real (aparece el ícono de alarma
-// en la barra de estado) y por eso queda EXENTA de Doze/App Standby y,
-// en la práctica, de casi todos los "battery savers" de fabricantes — es
-// lo mismo que usa la app nativa de Reloj. Por eso acá la alarma principal
-// pasa a usar setAlarmClock(); el aviso de 1h antes (secundario, no crítico)
-// se deja con setExactAndAllowWhileIdle() como antes, igual que ClockYou
-// separa su "pre-alarm".
+// DOS MODOS, según Note.reminderDays:
+//  - VACÍO: recordatorio de una sola vez, a Note.reminderAt tal cual. Al
+//    sonar, ReminderReceiver lo apaga solo (pone reminderAt = null en la BD).
+//  - NO VACÍO: recordatorio recurrente. Note.reminderAt se usa solo como
+//    "ancla" para sacarle la hora/minuto (el día de esa fecha no importa
+//    para nada); acá se calcula la PRÓXIMA fecha real en la que cae uno de
+//    esos días de la semana. Al sonar, ReminderReceiver vuelve a llamar a
+//    schedule() con la misma nota: como "ahora" ya avanzó más allá de la
+//    ocurrencia de hoy, el cálculo naturalmente da la ocurrencia de la
+//    semana siguiente (o el próximo día elegido más cercano). Sigue así
+//    indefinidamente hasta que el usuario lo apague a mano.
+//
+// RAÍZ del bug "los recordatorios no funcionan" (encontrada en una sesión
+// anterior): la alarma principal se programaba con
+// setExactAndAllowWhileIdle(). Esa API SÍ dispara con Doze activo, pero
+// para el sistema es una alarma "de fondo" cualquiera, así que en la
+// mayoría de los fabricantes (Samsung, Xiaomi/MIUI, etc.) el gestor de
+// batería puede demorarla, agruparla o matarla directamente — sin ningún
+// error visible. Comparado contra ClockYou (github.com/you-apps/ClockYou,
+// una app de alarmas real): usan AlarmManager.setAlarmClock() para la
+// alarma principal, la única API que Android trata como alarma de reloj
+// real (exenta de Doze/App Standby) — es lo que se usa acá también. El
+// aviso de 1h antes (secundario) usa setExactAndAllowWhileIdle(), igual que
+// el "pre-alarm" de ClockYou.
+//
+// Aparte de la API de AlarmManager usada, se encontraron y arreglaron dos
+// bugs bien distintos que hacían que esto pareciera "no funcionar en
+// absoluto" sin que fuera culpa de AlarmManager:
+//  1. Confirmar el recordatorio en el editor solo actualizaba el estado en
+//     memoria; el guardado real (que es lo que llama a este objeto) recién
+//     pasaba al salir de la pantalla con la flecha de volver. Si el
+//     usuario salía de cualquier otra forma (botón Home, etc.), el
+//     recordatorio nunca se llegaba a programar. Arreglado en
+//     NoteEditScreen: ahora se guarda al toque, apenas se confirma.
+//  2. BootReminderReceiver solo escuchaba BOOT_COMPLETED. Instalar una
+//     build nueva de la app (algo muy común en un flujo de desarrollo con
+//     reinstalaciones frecuentes) también le borra las alarmas a
+//     AlarmManager, y sin escuchar también MY_PACKAGE_REPLACED esas alarmas
+//     quedaban perdidas hasta el próximo reinicio real del teléfono.
 object ReminderScheduler {
 
     private const val ADVANCE_MILLIS = 60L * 60L * 1000L // 1 hora
@@ -48,7 +70,7 @@ object ReminderScheduler {
     private fun pendingIntent(context: Context, noteId: Long, isAdvance: Boolean): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             action = if (isAdvance) "com.dumb.bouncynotes.REMINDER_ADVANCE" else "com.dumb.bouncynotes.REMINDER"
-            data = android.net.Uri.parse("bouncynotes://reminder/$noteId${if (isAdvance) "/advance" else ""}")
+            data = Uri.parse("bouncynotes://reminder/$noteId${if (isAdvance) "/advance" else ""}")
             putExtra(ReminderReceiver.EXTRA_NOTE_ID, noteId)
             putExtra(ReminderReceiver.EXTRA_IS_ADVANCE, isAdvance)
         }
@@ -59,21 +81,57 @@ object ReminderScheduler {
 
     // true si el sistema realmente puede disparar una alarma exacta ahora
     // mismo (en Android 12+ el usuario puede haber revocado el permiso desde
-    // Ajustes del sistema).
+    // Ajustes del sistema). USE_EXACT_ALARM (declarado en el manifest) hace
+    // que esto sea true de entrada sin que el usuario tenga que hacer nada,
+    // pero se deja el chequeo real por si algo cambia en el futuro.
     fun canScheduleExact(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         return alarmManager.canScheduleExactAlarms()
     }
 
+    // Calcula el próximo epoch millis, estrictamente en el futuro, que caiga
+    // en uno de `days` (valores de Calendar.DAY_OF_WEEK: SUNDAY=1..SATURDAY=7)
+    // a la hora/minuto de `anchorMillis`. Revisa los próximos 7 días
+    // (hoy incluido) y devuelve el primero que matchee y todavía no haya
+    // pasado; si hoy es un día elegido pero la hora ya pasó, se salta solo
+    // ese día (el bucle sigue y agarra la próxima ocurrencia real).
+    private fun nextOccurrence(anchorMillis: Long, days: Set<Int>): Long? {
+        if (days.isEmpty()) return null
+        val anchor = Calendar.getInstance().apply { timeInMillis = anchorMillis }
+        val hour = anchor.get(Calendar.HOUR_OF_DAY)
+        val minute = anchor.get(Calendar.MINUTE)
+        val now = System.currentTimeMillis()
+
+        for (offset in 0..7) {
+            val candidate = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, offset)
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            if (candidate.get(Calendar.DAY_OF_WEEK) in days && candidate.timeInMillis > now) {
+                return candidate.timeInMillis
+            }
+        }
+        return null // No debería pasar nunca: 7 días cubren toda la semana.
+    }
+
     fun schedule(context: Context, note: Note) {
-        val triggerAt = note.reminderAt ?: return
+        val anchor = note.reminderAt ?: return
         cancel(context, note.id)
 
-        if (triggerAt > System.currentTimeMillis()) {
-            scheduleOne(context, note.id, triggerAt, isAdvance = false)
+        val mainTrigger = if (note.reminderDays.isEmpty()) {
+            anchor
+        } else {
+            nextOccurrence(anchor, note.reminderDays) ?: return
         }
-        val advanceAt = triggerAt - ADVANCE_MILLIS
+
+        if (mainTrigger > System.currentTimeMillis()) {
+            scheduleOne(context, note.id, mainTrigger, isAdvance = false)
+        }
+        val advanceAt = mainTrigger - ADVANCE_MILLIS
         // Si el recordatorio se programó con menos de 1 hora de anticipación,
         // no tiene sentido un aviso "1 hora antes" que ya quedó en el pasado.
         if (advanceAt > System.currentTimeMillis()) {
@@ -103,22 +161,9 @@ object ReminderScheduler {
         val pi = pendingIntent(context, noteId, isAdvance)
         try {
             if (!isAdvance) {
-                // La alarma principal: setAlarmClock() en vez de
-                // setExactAndAllowWhileIdle(), para quedar exenta de
-                // Doze/ahorro de batería (ver comentario arriba del objeto).
-                // No hace falta chequear canScheduleExactAlarms() acá: el
-                // manifest ya declara USE_EXACT_ALARM (permiso normal, se
-                // concede solo con instalar, sin que el usuario tenga que
-                // habilitar nada a mano en Ajustes), así que esto debería
-                // funcionar siempre. El try/catch de abajo es una red de
-                // seguridad real por si algo cambia (p. ej. Play Store
-                // exigiendo en algún momento SCHEDULE_EXACT_ALARM en vez de
-                // USE_EXACT_ALARM), no el camino esperado.
                 val info = AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, noteId))
                 alarmManager.setAlarmClock(info, pi)
             } else {
-                // El aviso de 1h antes es secundario: no hace falta que
-                // aparezca como "próxima alarma" del sistema.
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
             }
         } catch (e: SecurityException) {
@@ -129,19 +174,12 @@ object ReminderScheduler {
     // --- Permisos que, sin bloquear el guardado del recordatorio, afectan a
     // que realmente llegue a sonar en la práctica ------------------------
 
-    // true si Android ya no aplica restricciones de ahorro de batería a esta
-    // app. Sin esto, muchos fabricantes (Samsung, Xiaomi/MIUI, etc.) pueden
-    // matar el proceso o demorar la alarma igual, aunque se haya usado
-    // setAlarmClock().
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
     }
 
-    // Abre el diálogo del sistema para pedir la exención de optimización de
-    // batería. Requiere Activity (no Application) porque es un startActivity
-    // normal, no algo que tenga sentido lanzar sin una pantalla visible.
     fun requestIgnoreBatteryOptimizations(activity: Activity) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
         val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
@@ -150,10 +188,6 @@ object ReminderScheduler {
         activity.startActivity(intent)
     }
 
-    // Abre la pantalla de Ajustes del sistema donde el usuario puede
-    // habilitar "Alarmas y recordatorios" para esta app (Android 12+). Sin
-    // esto, canScheduleExact() puede quedar en false indefinidamente sin que
-    // el usuario tenga forma de arreglarlo desde dentro de la app.
     fun requestExactAlarmPermission(activity: Activity) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
         val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
@@ -162,18 +196,8 @@ object ReminderScheduler {
         activity.startActivity(intent)
     }
 
-    // ID de nota reservado para el recordatorio de prueba desde Ajustes: no
-    // puede chocar con un ID real de Room (autoGenerate empieza en 1 y
-    // sube), así que se usa uno negativo.
     private const val TEST_NOTE_ID = -1L
 
-    // Programa una alarma de prueba a `secondsFromNow` segundos, por el
-    // mismo camino (AlarmManager.setAlarmClock + ReminderReceiver) que un
-    // recordatorio real, pero sin pasar por una nota guardada de verdad.
-    // Sirve para confirmar rápido, en un dispositivo real, si el problema
-    // está en la programación de la alarma/permiso de notificaciones (con
-    // esto alcanza) o en otra parte del flujo — si esto suena pero un
-    // recordatorio real no, el problema no es AlarmManager.
     fun scheduleTest(context: Context, secondsFromNow: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, ReminderReceiver::class.java).apply {
@@ -199,13 +223,19 @@ object ReminderScheduler {
         alarmManager.cancel(pendingIntent(context, noteId, isAdvance = true))
     }
 
-    // Se llama al reiniciar el teléfono: AlarmManager no persiste las alarmas
-    // programadas entre reinicios, así que hay que volver a darlas de alta.
+    // Se llama al reiniciar el teléfono O al actualizar/reinstalar la app
+    // (ver BootReminderReceiver): AlarmManager no persiste las alarmas
+    // programadas en ninguno de los dos casos, así que hay que volver a
+    // darlas de alta. Para recordatorios recurrentes NO se filtra por
+    // "reminderAt en el futuro" (ese valor es solo el ancla de hora/minuto,
+    // puede estar perfectamente en el pasado) — se reprograman siempre,
+    // dejando que schedule() calcule la próxima ocurrencia real.
     suspend fun rescheduleAll(context: Context) {
         val dao = NoteDatabase.getInstance(context).noteDao()
         val repository = NoteRepository(dao)
         repository.getAllWithReminders().forEach { note ->
-            if (note.reminderAt != null && note.reminderAt > System.currentTimeMillis()) {
+            if (note.reminderAt == null) return@forEach
+            if (note.reminderDays.isNotEmpty() || note.reminderAt > System.currentTimeMillis()) {
                 schedule(context, note)
             }
         }

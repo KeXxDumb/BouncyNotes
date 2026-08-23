@@ -12,6 +12,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -89,11 +91,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -291,6 +291,29 @@ fun NoteEditScreen(
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
     var isEditing by remember { mutableStateOf(true) }
+
+    // Destello de feedback al cambiar entre modo edición y modo vista: se
+    // prende apenas isEditing cambia y se apaga solo, rápido, sin que el
+    // usuario tenga que esperarlo (ver el AnimatedVisibility más abajo, y el
+    // IconButton del ojo/lápiz que también dispara este cambio).
+    //
+    // La carga inicial de la nota también reasigna isEditing (ver
+    // LaunchedEffect(noteId) más abajo, que lo fija según
+    // settings.doubleTapToEdit) — eso NO es un cambio de modo real hecho por
+    // el usuario, así que no debe destellar. Comparar contra el valor
+    // anterior y exigir loaded=true evita ambos falsos positivos (el valor
+    // inicial del remember de arriba, y el reajuste que hace la carga),
+    // sin importar en qué orden terminen resolviéndose esos dos efectos.
+    var showModeFlash by remember { mutableStateOf(false) }
+    var previousIsEditingForFlash by remember { mutableStateOf<Boolean?>(null) }
+    LaunchedEffect(isEditing, loaded) {
+        if (loaded && previousIsEditingForFlash != null && previousIsEditingForFlash != isEditing) {
+            showModeFlash = true
+            kotlinx.coroutines.delay(260)
+            showModeFlash = false
+        }
+        previousIsEditingForFlash = isEditing
+    }
 
     // BUG: al abrir el visor de imágenes a pantalla completa, más abajo hay un
     // "return" temprano que hace que todo el Scaffold con el contenido de la
@@ -773,8 +796,9 @@ fun NoteEditScreen(
     if (showReminderSheet) {
         ReminderPickerSheet(
             initialMillis = current.reminderAt,
+            initialDays = current.reminderDays,
             onDismiss = { showReminderSheet = false },
-            onConfirm = { millis ->
+            onConfirm = { millis, days ->
                 // Antes esto solo tocaba current.reminderAt en memoria: el
                 // guardado real (y con él, ReminderScheduler.schedule) recién
                 // pasaba al salir de la pantalla con la flecha/back. Si el
@@ -787,7 +811,7 @@ fun NoteEditScreen(
                 // asegura que quede en la base de datos y programado de una,
                 // sin depender de cómo el usuario termine saliendo de la
                 // pantalla.
-                val updated = current.copy(reminderAt = millis)
+                val updated = current.copy(reminderAt = millis, reminderDays = days)
                 current = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
@@ -806,7 +830,7 @@ fun NoteEditScreen(
                 // recordatorio que el usuario acaba de "borrar" en la UI
                 // puede seguir sonando igual porque la cancelación real
                 // (ReminderScheduler.cancel) nunca llegó a ejecutarse.
-                val updated = current.copy(reminderAt = null)
+                val updated = current.copy(reminderAt = null, reminderDays = emptySet())
                 current = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
@@ -989,6 +1013,7 @@ fun NoteEditScreen(
             }
         } else Modifier
 
+        Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1264,10 +1289,44 @@ fun NoteEditScreen(
                     }
                 }
             }
+            // Cierra el Column original (título + contenido) que envuelve
+            // todo lo de arriba: el destello de abajo tiene que ser HERMANO
+            // de ese Column (ambos hijos directos del Box nuevo), no quedar
+            // anidado adentro de él.
+            }
+
+            // Antes el único indicio de que se había cambiado de modo edición/vista
+            // era el Crossfade del contenido y la pequeña animación del ícono del
+            // botón — ambos sutiles y fáciles de no notar, sobre todo porque pasan
+            // "adentro" de la barra inferior en vez de ocupar la pantalla. Este
+            // destello es mucho más notorio a propósito: el ícono del modo al que
+            // se acaba de entrar, grande, con el fondo oscurecido detrás SOLO
+            // mientras dura el destello (no es un overlay que bloquee nada), y
+            // rápido (no debe sentirse como una carga: aparece y se va solo, sin
+            // que el usuario tenga que esperarlo ni tocar nada).
+            AnimatedVisibility(
+                visible = showModeFlash,
+                enter = fadeIn(animationSpec = tween(90)),
+                exit = fadeOut(animationSpec = tween(200)),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isEditing) Icons.Outlined.EditNote else Icons.Filled.RemoveRedEye,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(96.dp)
+                    )
+                }
+            }
         }
     }
 }
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LabelsEditor(
@@ -1412,15 +1471,24 @@ private fun GlassBottomBar(
     }
 }
 
-// Selector de fecha y hora para el recordatorio de una nota, usando los
-// componentes nativos de Material3 (DatePicker + TimeInput) en vez de traer
-// una librería aparte.
+// Selector de fecha/hora (o días de la semana) para el recordatorio de una
+// nota, usando los componentes nativos de Material3 (DatePicker + TimeInput)
+// en vez de traer una librería aparte.
+//
+// Dos modos, según si hay días de la semana elegidos:
+//  - Sin días elegidos: recordatorio de una sola vez. Se elige fecha Y hora;
+//    se apaga solo la primera vez que suena.
+//  - Con 1+ días elegidos: recordatorio recurrente semanal. Ya no hace falta
+//    elegir una fecha (solo la hora): se repite cada semana en esos días,
+//    indefinidamente, hasta que el usuario lo apague a mano (o borre el
+//    recordatorio con "Quitar").
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderPickerSheet(
     initialMillis: Long?,
+    initialDays: Set<Int>,
     onDismiss: () -> Unit,
-    onConfirm: (Long) -> Unit,
+    onConfirm: (Long, Set<Int>) -> Unit,
     onClear: () -> Unit
 ) {
     val cal = remember {
@@ -1433,6 +1501,9 @@ private fun ReminderPickerSheet(
             }
         }
     }
+    var selectedDays by remember { mutableStateOf(initialDays) }
+    val isRecurring = selectedDays.isNotEmpty()
+
     val datePickerState = rememberDatePickerState(
         // Mismo problema, en sentido inverso: el DatePicker espera recibir
         // "medianoche UTC del día a preseleccionar", no un epoch millis
@@ -1451,16 +1522,29 @@ private fun ReminderPickerSheet(
             utcMidnight.timeInMillis
         }
     )
-    val timePickerState = rememberTimePickerState(
-        initialHour = cal.get(java.util.Calendar.HOUR_OF_DAY),
-        initialMinute = cal.get(java.util.Calendar.MINUTE),
-        // is24Hour = false: TimeInput ya trae, de fábrica, el control AM/PM
-        // cuando esto está en false (no hace falta armarlo a mano). El
-        // Calendar interno (HOUR_OF_DAY 0-23) no cambia en nada: timePickerState
-        // sigue guardando hour/minute en 24h, es solo la UI la que se muestra
-        // en 12h con AM/PM.
-        is24Hour = false
-    )
+    // Estado propio de hora/minuto (reemplaza a TimePickerState/TimeInput):
+    // se guarda en 24h internamente (0-23), igual que el Calendar de siempre,
+    // y se muestra en 12h con AM/PM solo en la UI del disco numérico de más
+    // abajo — mismo criterio que se usaba con TimeInput antes.
+    var hour by remember { mutableStateOf(cal.get(java.util.Calendar.HOUR_OF_DAY)) }
+    var minute by remember { mutableStateOf(cal.get(java.util.Calendar.MINUTE)) }
+    var isPm by remember { mutableStateOf(hour >= 12) }
+
+    // Etiqueta de un carácter + valor de Calendar.DAY_OF_WEEK, mostrados
+    // empezando el lunes (más natural en español) aunque Calendar arranca la
+    // semana en domingo (SUNDAY=1) — es solo el orden de la UI, el valor
+    // guardado es el de Calendar.DAY_OF_WEEK real.
+    val weekDays = remember {
+        listOf(
+            "L" to java.util.Calendar.MONDAY,
+            "M" to java.util.Calendar.TUESDAY,
+            "X" to java.util.Calendar.WEDNESDAY,
+            "J" to java.util.Calendar.THURSDAY,
+            "V" to java.util.Calendar.FRIDAY,
+            "S" to java.util.Calendar.SATURDAY,
+            "D" to java.util.Calendar.SUNDAY
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(
@@ -1468,20 +1552,83 @@ private fun ReminderPickerSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
-                // TimeInput usa campos de texto (para escribir hora/minuto a
-                // mano) que abren el teclado del sistema al tocarlos. Sin
-                // esto, el ModalBottomSheet se queda anclado abajo de la
-                // pantalla y el teclado lo tapa por completo (o lo tapa
-                // parcialmente, dejando los campos justo detrás del teclado).
-                // imePadding() empuja el contenido hacia arriba lo que haga
-                // falta para que quede siempre por encima del teclado.
+                // La hora ya no se elige con teclado (ver TimeWheelPicker,
+                // el "disco numérico" de más abajo), pero se deja
+                // imePadding() igual como red de seguridad: si el sheet
+                // llega a tener algún campo de texto en el futuro, sigue sin
+                // quedar tapado por el teclado.
                 .imePadding()
         ) {
             Text("Recordatorio", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
-            DatePicker(state = datePickerState, showModeToggle = false)
-            Spacer(Modifier.height(8.dp))
-            TimeInput(state = timePickerState)
+
+            Text("Repetir", style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                weekDays.forEach { (label, dayValue) ->
+                    val checked = dayValue in selectedDays
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(CircleShape)
+                            .background(
+                                if (checked) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable {
+                                selectedDays = if (checked) selectedDays - dayValue else selectedDays + dayValue
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            label,
+                            color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (isRecurring) {
+                    "Se repite todas las semanas en los días marcados, a la hora de abajo."
+                } else {
+                    "Sin ningún día marcado: recordatorio de una sola vez (elegí fecha y hora abajo). Se apaga solo apenas suena."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // La fecha solo importa para el modo "una sola vez": en modo
+            // recurrente el día de la semana ya lo eligen los chips de
+            // arriba, así que mostrar un calendario acá sería confuso (¿qué
+            // significaría elegir "15 de agosto" si ya se repite todas las
+            // semanas?).
+            if (!isRecurring) {
+                DatePicker(state = datePickerState, showModeToggle = false)
+                Spacer(Modifier.height(8.dp))
+            }
+            TimeWheelPicker(
+                hour = hour,
+                minute = minute,
+                isPm = isPm,
+                onHourChange = { hour = it },
+                onMinuteChange = { minute = it },
+                onIsPmChange = { pm ->
+                    isPm = pm
+                    // Mantiene hour en 24h consistente con el AM/PM elegido,
+                    // sin cambiar la hora "de reloj de 12h" que se ve (ej.
+                    // "7" con AM pasa a ser 7, con PM pasa a ser 19 — no
+                    // salta a otro número, solo cambia de mitad del día).
+                    val hour12 = if (hour % 12 == 0) 12 else hour % 12
+                    hour = if (pm) (if (hour12 == 12) 12 else hour12 + 12) else (if (hour12 == 12) 0 else hour12)
+                }
+            )
             Spacer(Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 if (initialMillis != null) {
@@ -1495,6 +1642,22 @@ private fun ReminderPickerSheet(
                 TextButton(onClick = onDismiss) { Text("Cancelar") }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = {
+                    if (isRecurring) {
+                        // Modo recurrente: no depende de una fecha elegida en
+                        // el DatePicker (no se muestra), solo de la hora. El
+                        // "ancla" que se guarda es HOY a la hora elegida;
+                        // ReminderScheduler la usa solo para sacarle
+                        // hora/minuto y calcula la próxima ocurrencia real.
+                        val target = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.HOUR_OF_DAY, hour)
+                            set(java.util.Calendar.MINUTE, minute)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        onConfirm(target.timeInMillis, selectedDays)
+                        return@Button
+                    }
+
                     val selectedDateMillis = datePickerState.selectedDateMillis
                     if (selectedDateMillis != null) {
                         // BUG: el DatePicker de Compose siempre entrega
@@ -1523,23 +1686,24 @@ private fun ReminderPickerSheet(
                                 utcCal.get(java.util.Calendar.YEAR),
                                 utcCal.get(java.util.Calendar.MONTH),
                                 utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-                                timePickerState.hour,
-                                timePickerState.minute,
+                                hour,
+                                minute,
                                 0
                             )
                             set(java.util.Calendar.MILLISECOND, 0)
                         }
-                        onConfirm(target.timeInMillis)
+                        onConfirm(target.timeInMillis, emptySet())
                     }
                 }) {
                     Text("Guardar")
                 }
             }
             Text(
-                "Se envían dos avisos: uno 1 hora antes y otro justo a la hora " +
-                    "elegida. Necesitan el permiso de notificaciones y, en " +
-                    "Android 12+, el de \"alarmas exactas\" en Ajustes del " +
-                    "sistema para sonar puntual.",
+                "Se envían dos avisos: uno 1 hora antes (notificación normal, " +
+                    "sin interrumpir) y otro justo a la hora elegida (flotante). " +
+                    "Necesitan el permiso de notificaciones y, en Android 12+, " +
+                    "el de \"alarmas exactas\" en Ajustes del sistema para sonar " +
+                    "puntual.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
@@ -1548,3 +1712,151 @@ private fun ReminderPickerSheet(
     }
 }
 
+// "Disco numérico" para elegir hora y minuto arrastrando el dedo, en vez del
+// TimeInput de Material3 (que usa dos campos de texto y abre el teclado del
+// sistema al tocarlos). Deslizar hacia ARRIBA sube el número (como si se
+// "empujaran" los números de abajo hacia el centro); deslizar hacia ABAJO
+// lo baja. También se puede tocar el número chico de arriba/abajo para
+// sumar/restar de a uno, para quien prefiera tocar en vez de arrastrar.
+@Composable
+private fun TimeWheelPicker(
+    hour: Int,
+    minute: Int,
+    isPm: Boolean,
+    onHourChange: (Int) -> Unit,
+    onMinuteChange: (Int) -> Unit,
+    onIsPmChange: (Boolean) -> Unit
+) {
+    val hour12 = if (hour % 12 == 0) 12 else hour % 12
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        NumberWheel(
+            value = hour12,
+            range = 1..12,
+            label = { it.toString() },
+            onValueChange = { newHour12 ->
+                val newHour24 = if (isPm) (if (newHour12 == 12) 12 else newHour12 + 12) else (if (newHour12 == 12) 0 else newHour12)
+                onHourChange(newHour24)
+            }
+        )
+        Text(
+            ":",
+            style = MaterialTheme.typography.displaySmall,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+        NumberWheel(
+            value = minute,
+            range = 0..59,
+            label = { it.toString().padStart(2, '0') },
+            onValueChange = onMinuteChange
+        )
+        Spacer(Modifier.width(16.dp))
+        Column {
+            listOf(false, true).forEach { pm ->
+                val selected = isPm == pm
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
+                        )
+                        .clickable { onIsPmChange(pm) }
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        if (pm) "PM" else "AM",
+                        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+// Siguiente/anterior valor dentro de range, dando la vuelta al llegar a una
+// punta (23 -> 0, 0 -> 23, etc. según el range que se le pase).
+private fun wheelStep(value: Int, delta: Int, range: IntRange): Int {
+    val span = range.last - range.first + 1
+    val idx = ((value - range.first + delta) % span + span) % span
+    return range.first + idx
+}
+
+@Composable
+private fun NumberWheel(
+    value: Int,
+    range: IntRange,
+    label: (Int) -> String,
+    onValueChange: (Int) -> Unit
+) {
+    // Cuántos dp hay que arrastrar para que el número cambie en 1. Se
+    // guarda el arrastre "sobrante" (lo que no alcanzó todavía para un paso
+    // completo) en dragAccum, para que arrastres lentos y rápidos se
+    // sientan proporcionales en vez de saltar de a pasos fijos por gesto.
+    val stepDp = 42.dp
+    val density = LocalDensity.current
+    val stepPx = with(density) { stepDp.toPx() }
+    var dragAccum by remember { mutableStateOf(0f) }
+
+    val prevValue = wheelStep(value, -1, range)
+    val nextValue = wheelStep(value, 1, range)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(64.dp)
+            .pointerInput(range) {
+                detectVerticalDragGestures(
+                    onDragEnd = { dragAccum = 0f },
+                    onDragCancel = { dragAccum = 0f },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        // Arrastrar hacia ARRIBA es dragAmount negativo en
+                        // coordenadas de pantalla; queremos que eso SUBA el
+                        // número, así que se resta (no se suma) del acumulado.
+                        dragAccum -= dragAmount
+                        while (dragAccum >= stepPx) {
+                            dragAccum -= stepPx
+                            onValueChange(wheelStep(value, 1, range))
+                        }
+                        while (dragAccum <= -stepPx) {
+                            dragAccum += stepPx
+                            onValueChange(wheelStep(value, -1, range))
+                        }
+                    }
+                )
+            }
+    ) {
+        Text(
+            label(prevValue),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier
+                .clickable { onValueChange(prevValue) }
+                .padding(vertical = 4.dp)
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(label(value), style = MaterialTheme.typography.displaySmall)
+        }
+        Text(
+            label(nextValue),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+            modifier = Modifier
+                .clickable { onValueChange(nextValue) }
+                .padding(vertical = 4.dp)
+        )
+    }
+}

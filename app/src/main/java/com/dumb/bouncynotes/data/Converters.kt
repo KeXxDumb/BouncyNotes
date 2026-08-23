@@ -56,4 +56,15 @@ class Converters {
             emptyList()
         }
     }
+
+    // Días de la semana del recordatorio recurrente, guardados como
+    // "1,3,5" (valores de Calendar.DAY_OF_WEEK separados por coma).
+    @TypeConverter
+    fun fromReminderDays(days: Set<Int>): String = days.sorted().joinToString(",")
+
+    @TypeConverter
+    fun toReminderDays(value: String): Set<Int> {
+        if (value.isBlank()) return emptySet()
+        return value.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
+    }
 }

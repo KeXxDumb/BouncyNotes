@@ -37,6 +37,15 @@ data class Note(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
     // Fecha/hora (epoch millis) en la que debe sonar el recordatorio de esta
-    // nota, o null si no tiene ninguno programado.
-    val reminderAt: Long? = null
+    // nota, o null si no tiene ninguno programado. Con reminderDays vacío,
+    // esto es la hora EXACTA en la que suena (una sola vez); con
+    // reminderDays no vacío, solo se usa la hora/minuto de este valor (el
+    // día se ignora) para calcular la próxima ocurrencia en esos días.
+    val reminderAt: Long? = null,
+    // Días de la semana en los que se repite el recordatorio, usando la
+    // convención de java.util.Calendar (Calendar.SUNDAY=1 .. Calendar.SATURDAY=7).
+    // Vacío = recordatorio de una sola vez (se apaga solo al sonar, borrando
+    // reminderAt). No vacío = se repite cada semana en esos días, indefinidamente,
+    // hasta que el usuario lo apague a mano.
+    val reminderDays: Set<Int> = emptySet()
 )
