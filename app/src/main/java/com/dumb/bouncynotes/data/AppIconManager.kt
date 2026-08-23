@@ -1,13 +1,8 @@
 package com.dumb.bouncynotes.data
 
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Process
-import com.dumb.bouncynotes.MainActivity
 
 // Cambiar el ícono de la app en Android se hace con "activity-alias": varios
 // alias en el manifiesto apuntan a la misma MainActivity, cada uno con su
@@ -32,21 +27,40 @@ object AppIconManager {
         }
     }
 
-    // OJO: la primera implementación cambiaba el estado de los alias con
-    // PackageManager.DONT_KILL_APP (a propósito, para no cerrar la app) y ahí
-    // quedaba: en el emulador/algunos Pixel se veía andar, pero en launchers
-    // como los de Samsung (One UI), Xiaomi (MIUI) y varios otros, el ícono
-    // mostrado queda cacheado mientras el proceso de la app sigue vivo, y
-    // recién se refresca la próxima vez que el proceso arranca de cero. El
-    // cambio en PackageManager era correcto (currentComponentEnabledSetting
-    // ya reportaba el nuevo valor), pero visualmente "no hacía nada" en esos
-    // teléfonos porque el launcher nunca se enteraba.
+    // HISTORIAL de este método, porque ya se rompió de dos formas distintas:
     //
-    // Esta versión, en cambio, mata y reinicia el proceso de la app justo
-    // después de cambiar el alias: eso fuerza a que TODOS los launchers
-    // vuelvan a leer los metadatos del paquete (íconos incluidos) al
-    // relanzarla, en vez de depender de que cada launcher decida refrescar su
-    // caché por su cuenta.
+    // v1: cambiaba el alias con PackageManager.DONT_KILL_APP y no tocaba el
+    // proceso para nada. Diagnóstico en su momento (sin poder probar en un
+    // dispositivo real): que el ícono quedaba cacheado en algunos launchers
+    // (Samsung One UI, Xiaomi MIUI) mientras el proceso siguiera vivo.
+    //
+    // v2 (la anterior a esta): para "forzar" el refresco en esos launchers,
+    // mataba el proceso con Process.killProcess() y programaba una alarma de
+    // AlarmManager ~300ms después para relanzar MainActivity. Probado en un
+    // dispositivo real, el resultado fue PEOR: el cambio de ícono dejó de
+    // andar por completo. La causa es una restricción de Android bastante
+    // más nueva que ese truco: desde Android 10, el sistema bloquea que un
+    // PendingIntent.getActivity() abra una Activity si el proceso que lo
+    // programó ya no tiene ninguna ventana/actividad visible en ese momento
+    // ("restricciones de inicio de actividades en segundo plano"). Como acá
+    // el proceso ya estaba MUERTO (por el killProcess de antes) cuando la
+    // alarma disparaba, Android simplemente descartaba el intento de abrir
+    // MainActivity sin ningún error visible: la app quedaba cerrada y no
+    // volvía a abrirse sola. Es decir, el "arreglo" para el problema de
+    // cacheo en Samsung/MIUI terminó rompiendo la función en TODOS los
+    // teléfonos modernos.
+    //
+    // v3 (esta versión): volver al cambio de componente simple con
+    // DONT_KILL_APP, sin matar ni relanzar nada — el mismo mecanismo que usa
+    // Goodwy Messages (github.com/Goodwy/Messages, ver
+    // toggleAppIconColor()/checkAppIconColor() en su librería Goodwy-Commons,
+    // github.com/Goodwy/Goodwy-Commons), confirmado funcionando en un
+    // dispositivo real. Si en algún launcher puntual el ícono tarda en
+    // refrescarse mientras la app sigue abierta, es una limitación normal de
+    // ESE launcher (decide cuándo releer los metadatos del paquete) y no algo
+    // que la app pueda forzar sin volver a romper lo de arriba; basta con
+    // cerrar y reabrir la app (no hace falta reiniciar el teléfono) para que
+    // se vea actualizado.
     fun setIcon(context: Context, icon: AppIcon) {
         val pm = context.packageManager
         try {
@@ -66,32 +80,8 @@ object AppIconManager {
                 PackageManager.DONT_KILL_APP
             )
         } catch (_: Exception) {
-            // Si ni siquiera pudimos cambiar el estado del componente, no
-            // tiene sentido reiniciar la app para nada: mejor dejarla como
-            // estaba y que el usuario simplemente vea que no cambió.
-            return
+            // Si ni siquiera pudimos cambiar el estado del componente, no hay
+            // nada más que hacer acá.
         }
-
-        restartToApplyIcon(context)
-    }
-
-    // Reinicia la app un instante después de matarla, usando una alarma casi
-    // inmediata: es la forma estándar de "reiniciar la app" en Android (no
-    // existe una API directa para eso). Sin esto, el cambio de ícono queda
-    // aplicado a nivel de PackageManager pero invisible en varios launchers
-    // hasta que el usuario cierre la app manualmente por su cuenta.
-    private fun restartToApplyIcon(context: Context) {
-        val restartIntent = Intent(context, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            0,
-            restartIntent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + 300, pendingIntent)
-        Process.killProcess(Process.myPid())
     }
 }

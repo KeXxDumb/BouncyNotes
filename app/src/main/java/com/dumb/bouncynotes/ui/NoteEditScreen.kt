@@ -1430,7 +1430,12 @@ private fun ReminderPickerSheet(
     val timePickerState = rememberTimePickerState(
         initialHour = cal.get(java.util.Calendar.HOUR_OF_DAY),
         initialMinute = cal.get(java.util.Calendar.MINUTE),
-        is24Hour = true
+        // is24Hour = false: TimeInput ya trae, de fábrica, el control AM/PM
+        // cuando esto está en false (no hace falta armarlo a mano). El
+        // Calendar interno (HOUR_OF_DAY 0-23) no cambia en nada: timePickerState
+        // sigue guardando hour/minute en 24h, es solo la UI la que se muestra
+        // en 12h con AM/PM.
+        is24Hour = false
     )
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
@@ -1439,6 +1444,14 @@ private fun ReminderPickerSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
+                // TimeInput usa campos de texto (para escribir hora/minuto a
+                // mano) que abren el teclado del sistema al tocarlos. Sin
+                // esto, el ModalBottomSheet se queda anclado abajo de la
+                // pantalla y el teclado lo tapa por completo (o lo tapa
+                // parcialmente, dejando los campos justo detrás del teclado).
+                // imePadding() empuja el contenido hacia arriba lo que haga
+                // falta para que quede siempre por encima del teclado.
+                .imePadding()
         ) {
             Text("Recordatorio", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))

@@ -726,11 +726,10 @@ private fun AppIconSetting() {
                         shape = RoundedCornerShape(14.dp)
                     )
                     .clickable {
-                        // El cambio de ícono ahora reinicia la app (ver el
-                        // comentario en AppIconManager.setIcon): actualizamos
-                        // el estado ANTES de llamar, porque el proceso puede
-                        // morir dentro de esa llamada y esta línea de acá
-                        // abajo nunca llegaría a ejecutarse.
+                        // Ya no reinicia la app (ver el historial en
+                        // AppIconManager.setIcon): solo cambia el componente
+                        // habilitado con DONT_KILL_APP, así que esta línea sí
+                        // llega a ejecutarse siempre.
                         selected = icon
                         AppIconManager.setIcon(context, icon)
                     }

@@ -80,6 +80,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -484,6 +485,13 @@ fun NoteListScreen(
                                     selected = note.id in selectedIds,
                                     selectionMode = selectionMode,
                                     showFirstImage = settings.showFirstImage,
+                                    // Modo Lista: tarjetas de ancho completo, una
+                                    // abajo de otra. Mostrar miniaturas de imagen
+                                    // acá compite en alto con lo que en realidad
+                                    // se quiere ver rápido en este modo (texto,
+                                    // muchas notas en pantalla a la vez); el
+                                    // preview queda solo texto.
+                                    showMedia = false,
                                     onClick = {
                                         if (selectionMode) {
                                             selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
@@ -513,6 +521,7 @@ fun NoteListScreen(
                                     selected = note.id in selectedIds,
                                     selectionMode = selectionMode,
                                     showFirstImage = settings.showFirstImage,
+                                    showMedia = true,
                                     onClick = {
                                         if (selectionMode) {
                                             selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
@@ -611,104 +620,184 @@ private fun BouncyPeach() {
 
 // --- Presupuesto de líneas para la preview de la tarjeta ---------------
 //
-// Antes, la preview recortaba por "partes" (hasta 5 ContentPart, cada una
-// tal cual: un ImagePart entero, un TextPart con maxLines=3, etc.). Eso
-// tenía dos problemas: (1) una imagen y tres líneas de texto "pesaban"
-// igual (1 parte cada una) aunque una imagen ocupa muchísimo más espacio
-// visual, y (2) cuánto texto se terminaba viendo dependía del ANCHO real
-// de la tarjeta al momento de wrapear (maxLines corta líneas YA
-// renderizadas/wrapeadas): en modo Lista (tarjeta a ancho completo) el
-// mismo texto wrapea en menos líneas visuales que en modo Grid (columnas
-// angostas), así que con maxLines=3 el modo Lista terminaba mostrando
-// mucho menos contenido "de verdad" (a veces lo que cabía en 1-2 líneas
-// wrapeadas) que el modo Grid con el mismo texto.
+// v1: recortaba por "partes" (hasta 5 ContentPart, cada una tal cual, con
+// maxLines=3 fijo en el texto). Problema: cuánto texto se veía dependía del
+// ANCHO real de la tarjeta al wrapear (maxLines corta líneas YA
+// renderizadas): en modo Lista (ancho completo) el mismo texto wrapeaba en
+// menos líneas visuales que en Grid, así que terminaba mostrando mucho
+// menos contenido "de verdad".
 //
-// Ahora la preview usa un presupuesto FIJO de 5 "líneas" que no depende
-// del ancho de la tarjeta: cada línea real del texto (separada por \n en
-// el contenido guardado) cuenta 1, y cada imagen/grupo/video cuenta 3
-// (por el espacio vertical que ocupan). Se recorre la nota en su orden
-// real sin reordenar nada, gastando el presupuesto a medida que se
-// avanza, y se corta apenas se acaba. Con esto la cantidad de contenido
-// mostrado es la misma en Lista y en Grid.
+// v2 (la anterior a esta): presupuesto fijo de 5 "líneas", pero contando
+// como "línea" cada segmento separado por \n en el string guardado. Se
+// probó en un dispositivo real y se rompió apenas el texto tenía una
+// oración larga sin saltos de línea explícitos: esa oración cuenta como
+// UNA sola "línea" en el string, así que se le daba maxLines=1 al Text,
+// aunque en pantalla esa oración wrapeara en 2 o 3 líneas — el resultado
+// era un corte mucho antes de lo esperado ("...mientras ha" en vez del
+// texto completo hasta "Kriss en bikini").
+//
+// v3 (esta versión): ya no se cuenta \n del string, se MIDE la cantidad
+// real de líneas visuales que Compose termina usando después de wrapear,
+// vía el callback onTextLayout de Text. Como esa medición solo se conoce
+// después de que Compose layoutea el texto (no al momento de decidir qué
+// mostrar), cada bloque de texto se compone primero con un límite
+// "optimista" (todo el presupuesto que quede) y, en cuanto onTextLayout
+// informa cuántas líneas usó de verdad, se actualiza el presupuesto
+// restante — lo que puede hacer aparecer/ajustarse el contenido siguiente
+// (imagen, más texto) un frame después del primero. Con esto, "5 líneas"
+// significa 5 líneas tal como se ven en la tarjeta, no 5 fragmentos del
+// string guardado.
 private const val PREVIEW_LINE_BUDGET = 5
 private const val PREVIEW_MEDIA_LINE_COST = 3
 
-private sealed class PreviewElement {
-    data class TextLines(val lines: List<String>) : PreviewElement()
-    data class Image(val fileName: String) : PreviewElement()
-    data class Gallery(val fileNames: List<String>) : PreviewElement()
-    data class Video(val fileName: String) : PreviewElement()
-}
-
-// Arma la lista de elementos a mostrar en la tarjeta respetando el
-// presupuesto de 5 líneas descripto arriba.
+// Recorre la nota en orden real (sin reordenar nada) y va mostrando texto e
+// imágenes hasta agotar el presupuesto de 5 líneas (imagen/grupo/video =
+// 3 líneas). Si showMedia es false (modo Lista), las imágenes/grupos/video
+// no se muestran EN ABSOLUTO — ni consumen presupuesto ni dejan un hueco:
+// se saltean como si no estuvieran, y el texto usa las 5 líneas enteras.
 //
-// Con "mostrar primera imagen" activado, el recorrido normal gasta solo 4
-// líneas del presupuesto (en vez de 5) y la 5ta línea queda SIEMPRE
-// reservada para la primera imagen/grupo de la nota: si esa imagen ya
-// había entrado dentro de esas 4 líneas no se duplica, pero si el
-// recorrido no llegó a alcanzarla (porque hay más de 4 líneas de texto
-// antes, por ejemplo), se agrega igual al final, sin mover el resto de
-// contenido de lugar (sigue viéndose después del texto que la precede en
-// la nota real, tal como se venía haciendo).
-private fun buildNotePreviewElements(content: String, showFirstImage: Boolean): List<PreviewElement> {
-    val allParts = parseNoteContent(content)
+// Con showFirstImage activo (y showMedia=true): el recorrido normal gasta
+// solo 4 líneas y la 5ta queda reservada para la primera imagen/grupo de
+// la nota, agregándola al final si no había entrado ya dentro de esas 4
+// (sin mover el resto de contenido de lugar).
+@Composable
+private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: Boolean, context: android.content.Context) {
+    val allParts = remember(note.content) { parseNoteContent(note.content) }
 
-    val firstImagePartIndex = if (showFirstImage) {
-        allParts.indexOfFirst { part ->
-            (part is ContentPart.ImagePart) ||
-                (part is ContentPart.GalleryPart && part.fileNames.isNotEmpty())
+    val firstImagePartIndex = remember(allParts, showFirstImage, showMedia) {
+        if (!showMedia || !showFirstImage) {
+            -1
+        } else {
+            allParts.indexOfFirst { part ->
+                (part is ContentPart.ImagePart) ||
+                    (part is ContentPart.GalleryPart && part.fileNames.isNotEmpty())
+            }
         }
-    } else -1
-
-    val walkBudget = if (firstImagePartIndex >= 0) {
-        PREVIEW_LINE_BUDGET - 1
-    } else {
-        PREVIEW_LINE_BUDGET
     }
 
-    var remaining = walkBudget
+    // Línea reales medidas por Compose para cada TextPart (clave = índice
+    // dentro de allParts). Ausente = todavía no se midió esa parte (recién
+    // compuesta); se le supone el presupuesto entero como cota superior
+    // hasta tener el dato real.
+    val measuredLines = remember(note.id, note.content) { mutableStateMapOf<Int, Int>() }
+
+    var remaining = if (firstImagePartIndex >= 0) PREVIEW_LINE_BUDGET - 1 else PREVIEW_LINE_BUDGET
     var firstImageAlreadyShown = false
-    val elements = mutableListOf<PreviewElement>()
 
     for ((partIndex, part) in allParts.withIndex()) {
         if (remaining <= 0) break
         when (part) {
             is ContentPart.TextPart -> {
-                val rawLines = stripFormattingMarkers(part.text).split("\n")
-                val takeCount = minOf(rawLines.size, remaining)
-                val takenLines = rawLines.take(takeCount).map { it.trim() }
-                if (takenLines.any { it.isNotEmpty() }) {
-                    elements.add(PreviewElement.TextLines(takenLines))
-                }
-                remaining -= takeCount
+                val cleaned = stripFormattingMarkers(part.text).trim()
+                if (cleaned.isEmpty()) continue
+                val maxLinesGuess = remaining
+                Text(
+                    text = cleaned,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = maxLinesGuess,
+                    overflow = TextOverflow.Ellipsis,
+                    onTextLayout = { result ->
+                        if (measuredLines[partIndex] != result.lineCount) {
+                            measuredLines[partIndex] = result.lineCount
+                        }
+                    }
+                )
+                remaining -= (measuredLines[partIndex] ?: maxLinesGuess)
             }
             is ContentPart.ImagePart -> {
-                elements.add(PreviewElement.Image(part.fileName))
+                if (!showMedia) continue
+                AsyncImage(
+                    model = File(ImageStorage.imagesDir(context), part.fileName),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                )
+                Spacer(Modifier.height(6.dp))
                 remaining -= PREVIEW_MEDIA_LINE_COST
                 if (partIndex == firstImagePartIndex) firstImageAlreadyShown = true
             }
             is ContentPart.GalleryPart -> {
-                elements.add(PreviewElement.Gallery(part.fileNames))
+                if (!showMedia) continue
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    part.fileNames.take(2).forEach { fileName ->
+                        AsyncImage(
+                            model = File(ImageStorage.imagesDir(context), fileName),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(90.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
                 remaining -= PREVIEW_MEDIA_LINE_COST
                 if (partIndex == firstImagePartIndex) firstImageAlreadyShown = true
             }
             is ContentPart.VideoPart -> {
-                elements.add(PreviewElement.Video(part.fileName))
+                if (!showMedia) continue
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.PlayCircle,
+                        contentDescription = "Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
                 remaining -= PREVIEW_MEDIA_LINE_COST
             }
         }
     }
 
-    if (showFirstImage && firstImagePartIndex >= 0 && !firstImageAlreadyShown) {
+    if (showMedia && showFirstImage && firstImagePartIndex >= 0 && !firstImageAlreadyShown) {
         when (val forced = allParts[firstImagePartIndex]) {
-            is ContentPart.ImagePart -> elements.add(PreviewElement.Image(forced.fileName))
-            is ContentPart.GalleryPart -> elements.add(PreviewElement.Gallery(forced.fileNames))
+            is ContentPart.ImagePart -> {
+                AsyncImage(
+                    model = File(ImageStorage.imagesDir(context), forced.fileName),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(110.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                )
+            }
+            is ContentPart.GalleryPart -> {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    forced.fileNames.take(2).forEach { fileName ->
+                        AsyncImage(
+                            model = File(ImageStorage.imagesDir(context), fileName),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(90.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                }
+            }
             else -> Unit
         }
     }
-
-    return elements
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -719,6 +808,7 @@ private fun NoteCard(
     selected: Boolean,
     selectionMode: Boolean,
     showFirstImage: Boolean,
+    showMedia: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onTogglePin: () -> Unit
@@ -794,76 +884,12 @@ private fun NoteCard(
                     Text("+${note.checklistItems.size - 4} más", style = MaterialTheme.typography.bodySmall)
                 }
             } else {
-                val previewElements = buildNotePreviewElements(note.content, showFirstImage)
-                for (element in previewElements) {
-                    when (element) {
-                        is PreviewElement.Image -> {
-                            AsyncImage(
-                                model = File(ImageStorage.imagesDir(context), element.fileName),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(110.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                            )
-                            Spacer(Modifier.height(6.dp))
-                        }
-                        is PreviewElement.Gallery -> {
-                            // Preview compacto: un par de miniaturas en fila en
-                            // vez de reproducir el formato completo del grupo
-                            // (eso ya se ve al abrir la nota); acá solo interesa
-                            // dar la idea de "esto es un grupo de fotos".
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                element.fileNames.take(2).forEach { fileName ->
-                                    AsyncImage(
-                                        model = File(ImageStorage.imagesDir(context), fileName),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(90.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(6.dp))
-                        }
-                        is PreviewElement.TextLines -> {
-                            Text(
-                                text = element.lines.joinToString("\n"),
-                                style = MaterialTheme.typography.bodySmall,
-                                maxLines = element.lines.size,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        is PreviewElement.Video -> {
-                            // Reproducir video en cada tarjeta de la lista sería carísimo
-                            // (una instancia de ExoPlayer por nota visible), así que acá
-                            // alcanza con un cartel simple indicando que hay un video: se
-                            // reproduce de verdad al abrir la nota.
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(110.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.Black.copy(alpha = 0.85f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.PlayCircle,
-                                    contentDescription = "Video",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(40.dp)
-                                )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                        }
-                    }
-                }
+                NotePreviewContent(
+                    note = note,
+                    showFirstImage = showFirstImage,
+                    showMedia = showMedia,
+                    context = context
+                )
             }
             if (note.labels.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
