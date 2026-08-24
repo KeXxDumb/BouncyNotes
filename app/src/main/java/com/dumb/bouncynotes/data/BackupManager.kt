@@ -87,6 +87,10 @@ object BackupManager {
         val reminderDaysArr = JSONArray()
         note.reminderDays.forEach { reminderDaysArr.put(it) }
         o.put("reminderDays", reminderDaysArr)
+        val reminderCalendarDatesArr = JSONArray()
+        note.reminderCalendarDates.forEach { reminderCalendarDatesArr.put(it) }
+        o.put("reminderCalendarDates", reminderCalendarDatesArr)
+        o.put("reminderCalendarRecurring", note.reminderCalendarRecurring)
 
         val labelsArr = JSONArray()
         note.labels.forEach { labelsArr.put(it) }
@@ -138,7 +142,11 @@ object BackupManager {
             reminderAt = if (o.isNull("reminderAt")) null else o.optLong("reminderAt"),
             reminderDays = o.optJSONArray("reminderDays")?.let { arr ->
                 (0 until arr.length()).map { arr.getInt(it) }.toSet()
-            } ?: emptySet()
+            } ?: emptySet(),
+            reminderCalendarDates = o.optJSONArray("reminderCalendarDates")?.let { arr ->
+                (0 until arr.length()).map { arr.getLong(it) }.toSet()
+            } ?: emptySet(),
+            reminderCalendarRecurring = o.optBoolean("reminderCalendarRecurring")
         )
     }
 }

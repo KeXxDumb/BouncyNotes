@@ -27,6 +27,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -52,6 +54,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.filled.AlarmOff
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
@@ -100,6 +103,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -797,8 +801,10 @@ fun NoteEditScreen(
         ReminderPickerSheet(
             initialMillis = current.reminderAt,
             initialDays = current.reminderDays,
+            initialCalendarDates = current.reminderCalendarDates,
+            initialCalendarRecurring = current.reminderCalendarRecurring,
             onDismiss = { showReminderSheet = false },
-            onConfirm = { millis, days ->
+            onConfirm = { millis, days, calendarDates, calendarRecurring ->
                 // Antes esto solo tocaba current.reminderAt en memoria: el
                 // guardado real (y con él, ReminderScheduler.schedule) recién
                 // pasaba al salir de la pantalla con la flecha/back. Si el
@@ -811,7 +817,12 @@ fun NoteEditScreen(
                 // asegura que quede en la base de datos y programado de una,
                 // sin depender de cómo el usuario termine saliendo de la
                 // pantalla.
-                val updated = current.copy(reminderAt = millis, reminderDays = days)
+                val updated = current.copy(
+                    reminderAt = millis,
+                    reminderDays = days,
+                    reminderCalendarDates = calendarDates,
+                    reminderCalendarRecurring = calendarRecurring
+                )
                 current = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
@@ -830,7 +841,12 @@ fun NoteEditScreen(
                 // recordatorio que el usuario acaba de "borrar" en la UI
                 // puede seguir sonando igual porque la cancelación real
                 // (ReminderScheduler.cancel) nunca llegó a ejecutarse.
-                val updated = current.copy(reminderAt = null, reminderDays = emptySet())
+                val updated = current.copy(
+                    reminderAt = null,
+                    reminderDays = emptySet(),
+                    reminderCalendarDates = emptySet(),
+                    reminderCalendarRecurring = false
+                )
                 current = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
@@ -839,6 +855,7 @@ fun NoteEditScreen(
             }
         )
     }
+
 
     val contentLayer = rememberGraphicsLayer()
     val bottomBarHeight = 56.dp
@@ -1471,24 +1488,38 @@ private fun GlassBottomBar(
     }
 }
 
-// Selector de fecha/hora (o días de la semana) para el recordatorio de una
-// nota, usando los componentes nativos de Material3 (DatePicker + TimeInput)
-// en vez de traer una librería aparte.
-//
-// Dos modos, según si hay días de la semana elegidos:
-//  - Sin días elegidos: recordatorio de una sola vez. Se elige fecha Y hora;
-//    se apaga solo la primera vez que suena.
-//  - Con 1+ días elegidos: recordatorio recurrente semanal. Ya no hace falta
-//    elegir una fecha (solo la hora): se repite cada semana en esos días,
-//    indefinidamente, hasta que el usuario lo apague a mano (o borre el
-//    recordatorio con "Quitar").
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class ReminderMode { WEEKDAYS, CALENDAR }
+
+// Formatea una fecha del modo calendario: con año para "una vez" (importa
+// cuál año exacto), sin año para "cada año" (el año no significa nada ahí,
+// se recalcula solo cada vez que pasa).
+private fun formatCalendarDate(millis: Long, includeYear: Boolean): String {
+    val pattern = if (includeYear) "d MMM yyyy" else "d MMM"
+    return java.text.SimpleDateFormat(pattern, java.util.Locale("es")).format(java.util.Date(millis))
+}
+
+// Selector de recordatorio para una nota, con dos modos MUTUAMENTE
+// EXCLUYENTES (no se puede tener los dos a la vez — guardar en un modo
+// vacía al otro):
+//  - "Días de la semana": recordatorio recurrente semanal (necesita al
+//    menos un día marcado). Usa los componentes nativos de Material3
+//    (TimeWheelPicker propio en vez de TimeInput, que usa teclado).
+//  - "Calendario": una o más fechas específicas (ej. cumpleaños de varias
+//    personas en la misma nota), cada una con su propio "quitar". Con
+//    "Una vez", cada fecha suena una sola vez y se descarta sola; con
+//    "Cada año", se repiten indefinidamente (el año elegido no importa,
+//    solo mes/día).
+// Ambos modos comparten el mismo selector de hora (TimeWheelPicker) al
+// final.
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ReminderPickerSheet(
     initialMillis: Long?,
     initialDays: Set<Int>,
+    initialCalendarDates: Set<Long>,
+    initialCalendarRecurring: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (Long, Set<Int>) -> Unit,
+    onConfirm: (millis: Long, days: Set<Int>, calendarDates: Set<Long>, calendarRecurring: Boolean) -> Unit,
     onClear: () -> Unit
 ) {
     val cal = remember {
@@ -1502,7 +1533,24 @@ private fun ReminderPickerSheet(
         }
     }
     var selectedDays by remember { mutableStateOf(initialDays) }
-    val isRecurring = selectedDays.isNotEmpty()
+    // Migración suave de notas viejas (de antes de que existiera el modo
+    // calendario): si no tienen fechas de calendario guardadas pero sí un
+    // reminderAt "simple" (sin días de la semana), se muestran acá como una
+    // única fecha en modo calendario "una vez" — mismo comportamiento que
+    // tenían antes, ahora expresado con el modelo nuevo.
+    var calendarDates by remember {
+        mutableStateOf(
+            when {
+                initialCalendarDates.isNotEmpty() -> initialCalendarDates
+                initialDays.isEmpty() && initialMillis != null -> setOf(initialMillis)
+                else -> emptySet()
+            }
+        )
+    }
+    var calendarRecurring by remember { mutableStateOf(initialCalendarRecurring) }
+    var mode by remember {
+        mutableStateOf(if (initialDays.isNotEmpty()) ReminderMode.WEEKDAYS else ReminderMode.CALENDAR)
+    }
 
     val datePickerState = rememberDatePickerState(
         // Mismo problema, en sentido inverso: el DatePicker espera recibir
@@ -1525,7 +1573,9 @@ private fun ReminderPickerSheet(
     // Estado propio de hora/minuto (reemplaza a TimePickerState/TimeInput):
     // se guarda en 24h internamente (0-23), igual que el Calendar de siempre,
     // y se muestra en 12h con AM/PM solo en la UI del disco numérico de más
-    // abajo — mismo criterio que se usaba con TimeInput antes.
+    // abajo — mismo criterio que se usaba con TimeInput antes. Se comparte
+    // entre los dos modos y entre todas las fechas del modo calendario (cada
+    // fecha que se agrega usa la hora que esté elegida en ese momento).
     var hour by remember { mutableStateOf(cal.get(java.util.Calendar.HOUR_OF_DAY)) }
     var minute by remember { mutableStateOf(cal.get(java.util.Calendar.MINUTE)) }
     var isPm by remember { mutableStateOf(hour >= 12) }
@@ -1546,6 +1596,29 @@ private fun ReminderPickerSheet(
         )
     }
 
+    // Convierte lo elegido en el DatePicker (medianoche UTC del día, ver el
+    // comentario de más abajo sobre el bug de zona horaria) + la hora/minuto
+    // actual del disco numérico, a un epoch millis real en hora local. Se
+    // reusa tanto para "Agregar fecha" en modo calendario.
+    fun selectedDateAsMillis(): Long? {
+        val selectedDateMillis = datePickerState.selectedDateMillis ?: return null
+        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+            timeInMillis = selectedDateMillis
+        }
+        val target = java.util.Calendar.getInstance().apply {
+            set(
+                utcCal.get(java.util.Calendar.YEAR),
+                utcCal.get(java.util.Calendar.MONTH),
+                utcCal.get(java.util.Calendar.DAY_OF_MONTH),
+                hour,
+                minute,
+                0
+            )
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return target.timeInMillis
+    }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(
             modifier = Modifier
@@ -1562,57 +1635,175 @@ private fun ReminderPickerSheet(
             Text("Recordatorio", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
 
-            Text("Repetir", style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(4.dp))
+            // Toggle de modo: los dos son mutuamente excluyentes (no se
+            // guarda nunca los dos a la vez, ver el botón "Guardar" más
+            // abajo), así que es un selector de a uno, no checkboxes.
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(3.dp)
             ) {
-                weekDays.forEach { (label, dayValue) ->
-                    val checked = dayValue in selectedDays
+                listOf(
+                    ReminderMode.WEEKDAYS to "Días de la semana",
+                    ReminderMode.CALENDAR to "Calendario"
+                ).forEach { (m, label) ->
+                    val selected = mode == m
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(CircleShape)
-                            .background(
-                                if (checked) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            .clickable {
-                                selectedDays = if (checked) selectedDays - dayValue else selectedDays + dayValue
-                            },
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                            .clickable { mode = m }
+                            .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             label,
-                            color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelMedium
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (isRecurring) {
-                    "Se repite todas las semanas en los días marcados, a la hora de abajo."
-                } else {
-                    "Sin ningún día marcado: recordatorio de una sola vez (elegí fecha y hora abajo). Se apaga solo apenas suena."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
 
-            // La fecha solo importa para el modo "una sola vez": en modo
-            // recurrente el día de la semana ya lo eligen los chips de
-            // arriba, así que mostrar un calendario acá sería confuso (¿qué
-            // significaría elegir "15 de agosto" si ya se repite todas las
-            // semanas?).
-            if (!isRecurring) {
-                DatePicker(state = datePickerState, showModeToggle = false)
-                Spacer(Modifier.height(8.dp))
+            when (mode) {
+                ReminderMode.WEEKDAYS -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        weekDays.forEach { (label, dayValue) ->
+                            val checked = dayValue in selectedDays
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (checked) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                    .clickable {
+                                        selectedDays = if (checked) selectedDays - dayValue else selectedDays + dayValue
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    color = if (checked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (selectedDays.isEmpty()) {
+                            "Marcá al menos un día. Se repite todas las semanas en los días marcados, a la hora de abajo."
+                        } else {
+                            "Se repite todas las semanas en los días marcados, a la hora de abajo."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                ReminderMode.CALENDAR -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(3.dp)
+                    ) {
+                        listOf(false to "Una vez", true to "Cada año").forEach { (rec, label) ->
+                            val selected = calendarRecurring == rec
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                    .clickable { calendarRecurring = rec }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (calendarRecurring) {
+                            "Cada fecha suena todos los años en ese mes/día, indefinidamente."
+                        } else {
+                            "Cada fecha suena una sola vez y se quita sola de la lista; cuando no queda ninguna, el recordatorio se apaga."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+
+                    if (calendarDates.isNotEmpty()) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            calendarDates.sorted().forEach { d ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                                        .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+                                ) {
+                                    Text(
+                                        formatCalendarDate(d, includeYear = !calendarRecurring),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                    IconButton(
+                                        onClick = { calendarDates = calendarDates - d },
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Quitar fecha",
+                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+
+                    DatePicker(state = datePickerState, showModeToggle = false)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            selectedDateAsMillis()?.let { millis ->
+                                calendarDates = calendarDates + millis
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Agregar esta fecha a la lista")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
             }
+
+            Spacer(Modifier.height(12.dp))
             TimeWheelPicker(
                 hour = hour,
                 minute = minute,
@@ -1641,60 +1832,51 @@ private fun ReminderPickerSheet(
                 }
                 TextButton(onClick = onDismiss) { Text("Cancelar") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = {
-                    if (isRecurring) {
-                        // Modo recurrente: no depende de una fecha elegida en
-                        // el DatePicker (no se muestra), solo de la hora. El
-                        // "ancla" que se guarda es HOY a la hora elegida;
-                        // ReminderScheduler la usa solo para sacarle
-                        // hora/minuto y calcula la próxima ocurrencia real.
-                        val target = java.util.Calendar.getInstance().apply {
-                            set(java.util.Calendar.HOUR_OF_DAY, hour)
-                            set(java.util.Calendar.MINUTE, minute)
-                            set(java.util.Calendar.SECOND, 0)
-                            set(java.util.Calendar.MILLISECOND, 0)
+                val canSave = when (mode) {
+                    ReminderMode.WEEKDAYS -> selectedDays.isNotEmpty()
+                    ReminderMode.CALENDAR -> calendarDates.isNotEmpty()
+                }
+                Button(
+                    enabled = canSave,
+                    onClick = {
+                        when (mode) {
+                            ReminderMode.WEEKDAYS -> {
+                                // Modo días de la semana: no depende de una
+                                // fecha elegida en el DatePicker (no se
+                                // muestra en este modo), solo de la hora. El
+                                // "ancla" que se guarda es HOY a la hora
+                                // elegida; ReminderScheduler la usa solo para
+                                // sacarle hora/minuto y calcula la próxima
+                                // ocurrencia real.
+                                val target = java.util.Calendar.getInstance().apply {
+                                    set(java.util.Calendar.HOUR_OF_DAY, hour)
+                                    set(java.util.Calendar.MINUTE, minute)
+                                    set(java.util.Calendar.SECOND, 0)
+                                    set(java.util.Calendar.MILLISECOND, 0)
+                                }
+                                // Guardar en este modo vacía el de calendario
+                                // (mutuamente excluyentes): se pasa
+                                // calendarDates = emptySet() a propósito.
+                                onConfirm(target.timeInMillis, selectedDays, emptySet(), false)
+                            }
+                            ReminderMode.CALENDAR -> {
+                                // reminderAt acá es solo un resumen (para que
+                                // el resto de la app, que chequea
+                                // "reminderAt != null" para saber si la nota
+                                // tiene un recordatorio activo, siga
+                                // funcionando); el que realmente manda es el
+                                // conjunto de fechas. Cualquiera de las
+                                // fechas sirve como resumen, se usa la más
+                                // próxima nada más por prolijidad.
+                                val summary = calendarDates.min()
+                                // Guardar en este modo vacía el de días de la
+                                // semana (mutuamente excluyentes): se pasa
+                                // selectedDays = emptySet() a propósito.
+                                onConfirm(summary, emptySet(), calendarDates, calendarRecurring)
+                            }
                         }
-                        onConfirm(target.timeInMillis, selectedDays)
-                        return@Button
                     }
-
-                    val selectedDateMillis = datePickerState.selectedDateMillis
-                    if (selectedDateMillis != null) {
-                        // BUG: el DatePicker de Compose siempre entrega
-                        // selectedDateMillis como medianoche en UTC del día
-                        // elegido, sin importar la zona horaria del teléfono.
-                        // Antes leíamos ese valor directo con
-                        // Calendar.getInstance() (zona horaria LOCAL): en
-                        // cualquier huso horario detrás de UTC (por ejemplo
-                        // Colombia/México, UTC-5), esa medianoche UTC cae en
-                        // la TARDE-NOCHE del día anterior en hora local, así
-                        // que year/month/day quedaban un día antes de lo que
-                        // el usuario realmente tocó en el calendario. Por eso
-                        // el recordatorio terminaba programado (y sonando) un
-                        // día antes de la fecha seleccionada.
-                        //
-                        // La forma correcta: leer año/mes/día usando un
-                        // Calendar en UTC (así se obtiene la fecha que
-                        // realmente se ve marcada en el widget), y recién ahí
-                        // combinarlos con la hora elegida en un Calendar en
-                        // horario LOCAL.
-                        val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
-                            timeInMillis = selectedDateMillis
-                        }
-                        val target = java.util.Calendar.getInstance().apply {
-                            set(
-                                utcCal.get(java.util.Calendar.YEAR),
-                                utcCal.get(java.util.Calendar.MONTH),
-                                utcCal.get(java.util.Calendar.DAY_OF_MONTH),
-                                hour,
-                                minute,
-                                0
-                            )
-                            set(java.util.Calendar.MILLISECOND, 0)
-                        }
-                        onConfirm(target.timeInMillis, emptySet())
-                    }
-                }) {
+                ) {
                     Text("Guardar")
                 }
             }
@@ -1803,8 +1985,37 @@ private fun NumberWheel(
     val stepPx = with(density) { stepDp.toPx() }
     var dragAccum by remember { mutableStateOf(0f) }
 
+    // BUG (encontrado con el disco ya en uso): pointerInput(range) solo
+    // reinicia su corrutina cuando CAMBIA la key (acá, `range`, que nunca
+    // cambia en la vida de este composable). Compose sí vuelve a crear el
+    // lambda de detectVerticalDragGestures en cada recomposición, pero como
+    // la corrutina de pointerInput nunca se reinicia, se queda corriendo
+    // para siempre con el PRIMER lambda que se le dio — el que tenía
+    // "value" y "onValueChange" de la composición inicial, congelados. Con
+    // eso, cada paso del arrastre volvía a calcular "siguiente número" a
+    // partir de ese valor viejo en vez del actual, así que un arrastre
+    // continuo podía terminar salteando números (ej. 2 -> 4 en vez de
+    // 2 -> 3 -> 4). rememberUpdatedState mantiene una referencia que sí se
+    // actualiza sola en cada recomposición, sin necesidad de reiniciar la
+    // corrutina del gesto para leer el valor más reciente.
+    val currentValue = rememberUpdatedState(value)
+    val currentOnValueChange = rememberUpdatedState(onValueChange)
+
     val prevValue = wheelStep(value, -1, range)
     val nextValue = wheelStep(value, 1, range)
+
+    // Para que la animación de abajo deslice en la dirección correcta
+    // (números subiendo = el nuevo entra por abajo empujando hacia arriba,
+    // como en una rueda real) hace falta saber si el último cambio fue "+1"
+    // o "-1" — sign(value - anterior) no alcanza solo porque también hay
+    // que resolver el caso de dar la vuelta (ej. de 23 a 0 es "+1", no un
+    // salto para atrás).
+    var lastValueForDirection by remember { mutableStateOf(value) }
+    val goingUp = remember(value) {
+        val up = lastValueForDirection == value || wheelStep(lastValueForDirection, 1, range) == value
+        lastValueForDirection = value
+        up
+    }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1822,11 +2033,11 @@ private fun NumberWheel(
                         dragAccum -= dragAmount
                         while (dragAccum >= stepPx) {
                             dragAccum -= stepPx
-                            onValueChange(wheelStep(value, 1, range))
+                            currentOnValueChange.value(wheelStep(currentValue.value, 1, range))
                         }
                         while (dragAccum <= -stepPx) {
                             dragAccum += stepPx
-                            onValueChange(wheelStep(value, -1, range))
+                            currentOnValueChange.value(wheelStep(currentValue.value, -1, range))
                         }
                     }
                 )
@@ -1848,7 +2059,25 @@ private fun NumberWheel(
                 .padding(vertical = 8.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(label(value), style = MaterialTheme.typography.displaySmall)
+            // AnimatedContent con slide vertical: antes el número cambiaba
+            // de golpe, sin transición ninguna, así que el disco no se
+            // sentía como algo que gira sino como un contador que salta.
+            AnimatedContent(
+                targetState = value,
+                transitionSpec = {
+                    val height = 40
+                    if (goingUp) {
+                        (slideInVertically(tween(150)) { height } + fadeIn(tween(150)))
+                            .togetherWith(slideOutVertically(tween(150)) { -height } + fadeOut(tween(150)))
+                    } else {
+                        (slideInVertically(tween(150)) { -height } + fadeIn(tween(150)))
+                            .togetherWith(slideOutVertically(tween(150)) { height } + fadeOut(tween(150)))
+                    }
+                },
+                label = "wheel-value"
+            ) { v ->
+                Text(label(v), style = MaterialTheme.typography.displaySmall)
+            }
         }
         Text(
             label(nextValue),

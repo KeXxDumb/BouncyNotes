@@ -146,6 +146,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         val reminderChanged = previous == null ||
             previous.reminderAt != note.reminderAt ||
             previous.reminderDays != note.reminderDays ||
+            previous.reminderCalendarDates != note.reminderCalendarDates ||
+            previous.reminderCalendarRecurring != note.reminderCalendarRecurring ||
             previous.deletedAt != note.deletedAt
         if (!reminderChanged) return
 

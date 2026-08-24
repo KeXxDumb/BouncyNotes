@@ -23,17 +23,26 @@ import java.util.Calendar
 // Cada una tiene su propio PendingIntent (con un request code distinto), así
 // que son independientes: cancelar/reprogramar una no toca la otra.
 //
-// DOS MODOS, según Note.reminderDays:
-//  - VACÍO: recordatorio de una sola vez, a Note.reminderAt tal cual. Al
-//    sonar, ReminderReceiver lo apaga solo (pone reminderAt = null en la BD).
-//  - NO VACÍO: recordatorio recurrente. Note.reminderAt se usa solo como
-//    "ancla" para sacarle la hora/minuto (el día de esa fecha no importa
-//    para nada); acá se calcula la PRÓXIMA fecha real en la que cae uno de
-//    esos días de la semana. Al sonar, ReminderReceiver vuelve a llamar a
-//    schedule() con la misma nota: como "ahora" ya avanzó más allá de la
-//    ocurrencia de hoy, el cálculo naturalmente da la ocurrencia de la
-//    semana siguiente (o el próximo día elegido más cercano). Sigue así
-//    indefinidamente hasta que el usuario lo apague a mano.
+// TRES MODOS, mutuamente excluyentes (ver Note.kt para el detalle de cada
+// campo):
+//  - Note.reminderDays no vacío: "días de la semana". Note.reminderAt solo
+//    aporta la hora/minuto; se repite cada semana en esos días,
+//    indefinidamente.
+//  - Note.reminderCalendarDates no vacío: "calendario". Un conjunto de
+//    fechas+hora, pensado para varias fechas a la vez (ej. cumpleaños de
+//    varias personas en la misma nota). Con reminderCalendarRecurring=false
+//    cada fecha suena una sola vez y se descarta del set al sonar (cuando
+//    el set queda vacío, el recordatorio se apaga solo); con =true, el año
+//    de cada fecha se ignora al calcular cuándo suena y, al sonar, esa
+//    fecha se reemplaza por la misma un año después (nunca se descarta).
+//  - Ninguno de los dos (pero reminderAt no nulo): modo simple de una sola
+//    vez a reminderAt tal cual — el modo original, se mantiene por
+//    compatibilidad con notas creadas antes de que existiera el modo
+//    calendario. Se apaga solo al sonar.
+// Solo puede estar activo UN modo a la vez: la UI (ReminderPickerSheet) ya
+// se encarga de vaciar reminderDays al guardar en modo calendario y
+// viceversa, así que acá no hace falta validar la exclusión mutua, alcanza
+// con revisarlos en orden de prioridad.
 //
 // RAÍZ del bug "los recordatorios no funcionan" (encontrada en una sesión
 // anterior): la alarma principal se programaba con
@@ -62,17 +71,30 @@ import java.util.Calendar
 //     reinstalaciones frecuentes) también le borra las alarmas a
 //     AlarmManager, y sin escuchar también MY_PACKAGE_REPLACED esas alarmas
 //     quedaban perdidas hasta el próximo reinicio real del teléfono.
+//  3. save() reprogramaba la alarma en TODOS los guardados, hubiera
+//     cambiado el recordatorio o no — con un recordatorio a 1-2 minutos de
+//     distancia, un segundo guardado (ej. al salir de la nota) podía
+//     cancelar la alarma ya programada sin reemplazarla, porque para
+//     entonces ya la veía en el pasado. Arreglado en NoteViewModel: solo se
+//     toca AlarmManager cuando el recordatorio realmente cambió.
 object ReminderScheduler {
 
     private const val ADVANCE_MILLIS = 60L * 60L * 1000L // 1 hora
     private const val ADVANCE_REQUEST_CODE_OFFSET = 1_000_000
+    const val EXTRA_CALENDAR_ANCHOR = "calendar_anchor"
 
-    private fun pendingIntent(context: Context, noteId: Long, isAdvance: Boolean): PendingIntent {
+    private fun pendingIntent(
+        context: Context,
+        noteId: Long,
+        isAdvance: Boolean,
+        calendarAnchor: Long? = null
+    ): PendingIntent {
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             action = if (isAdvance) "com.dumb.bouncynotes.REMINDER_ADVANCE" else "com.dumb.bouncynotes.REMINDER"
             data = Uri.parse("bouncynotes://reminder/$noteId${if (isAdvance) "/advance" else ""}")
             putExtra(ReminderReceiver.EXTRA_NOTE_ID, noteId)
             putExtra(ReminderReceiver.EXTRA_IS_ADVANCE, isAdvance)
+            if (calendarAnchor != null) putExtra(EXTRA_CALENDAR_ANCHOR, calendarAnchor)
         }
         val requestCode = if (isAdvance) ADVANCE_REQUEST_CODE_OFFSET + noteId.toInt() else noteId.toInt()
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -118,18 +140,76 @@ object ReminderScheduler {
         return null // No debería pasar nunca: 7 días cubren toda la semana.
     }
 
+    // Modo calendario: de todas las fechas en `dates`, busca cuál dispara
+    // MÁS PRONTO a partir de ahora, y devuelve el par (esa fecha "ancla" tal
+    // cual está guardada en el set, el epoch millis real en el que va a
+    // sonar). El "ancla" se necesita después para saber, cuando suene, cuál
+    // entrada del set hay que descartar o avanzar un año (ver
+    // ReminderReceiver) — en modo recurrente el trigger real casi nunca es
+    // igual al ancla guardada (que puede ser de un año pasado), así que no
+    // alcanza con guardar solo el trigger.
+    private fun nextCalendarTrigger(dates: Set<Long>, recurring: Boolean): Pair<Long, Long>? {
+        if (dates.isEmpty()) return null
+        val now = System.currentTimeMillis()
+        var best: Pair<Long, Long>? = null
+        for (anchor in dates) {
+            val trigger = if (!recurring) {
+                if (anchor > now) anchor else null
+            } else {
+                val anchorCal = Calendar.getInstance().apply { timeInMillis = anchor }
+                val candidate = Calendar.getInstance().apply {
+                    set(Calendar.MONTH, anchorCal.get(Calendar.MONTH))
+                    set(Calendar.DAY_OF_MONTH, anchorCal.get(Calendar.DAY_OF_MONTH))
+                    set(Calendar.HOUR_OF_DAY, anchorCal.get(Calendar.HOUR_OF_DAY))
+                    set(Calendar.MINUTE, anchorCal.get(Calendar.MINUTE))
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                if (candidate.timeInMillis <= now) candidate.add(Calendar.YEAR, 1)
+                candidate.timeInMillis
+            }
+            if (trigger != null && (best == null || trigger < best!!.second)) {
+                best = anchor to trigger
+            }
+        }
+        return best
+    }
+
+    // Dada una fecha "ancla" del modo calendario recurrente que ya sonó,
+    // calcula la misma fecha (mes/día/hora/minuto) un año después — para
+    // reemplazarla en el set en vez de descartarla.
+    fun advanceCalendarAnchorByOneYear(anchor: Long): Long {
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = anchor
+            add(Calendar.YEAR, 1)
+        }
+        return cal.timeInMillis
+    }
+
     fun schedule(context: Context, note: Note) {
-        val anchor = note.reminderAt ?: return
         cancel(context, note.id)
 
-        val mainTrigger = if (note.reminderDays.isEmpty()) {
-            anchor
-        } else {
-            nextOccurrence(anchor, note.reminderDays) ?: return
+        val mainTrigger: Long
+        val calendarAnchor: Long?
+        when {
+            note.reminderDays.isNotEmpty() -> {
+                val anchor = note.reminderAt ?: return
+                mainTrigger = nextOccurrence(anchor, note.reminderDays) ?: return
+                calendarAnchor = null
+            }
+            note.reminderCalendarDates.isNotEmpty() -> {
+                val (anchor, trigger) = nextCalendarTrigger(note.reminderCalendarDates, note.reminderCalendarRecurring) ?: return
+                mainTrigger = trigger
+                calendarAnchor = anchor
+            }
+            else -> {
+                mainTrigger = note.reminderAt ?: return
+                calendarAnchor = null
+            }
         }
 
         if (mainTrigger > System.currentTimeMillis()) {
-            scheduleOne(context, note.id, mainTrigger, isAdvance = false)
+            scheduleOne(context, note.id, mainTrigger, isAdvance = false, calendarAnchor = calendarAnchor)
         }
         val advanceAt = mainTrigger - ADVANCE_MILLIS
         // Si el recordatorio se programó con menos de 1 hora de anticipación,
@@ -156,9 +236,15 @@ object ReminderScheduler {
         )
     }
 
-    private fun scheduleOne(context: Context, noteId: Long, triggerAt: Long, isAdvance: Boolean) {
+    private fun scheduleOne(
+        context: Context,
+        noteId: Long,
+        triggerAt: Long,
+        isAdvance: Boolean,
+        calendarAnchor: Long? = null
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val pi = pendingIntent(context, noteId, isAdvance)
+        val pi = pendingIntent(context, noteId, isAdvance, calendarAnchor)
         try {
             if (!isAdvance) {
                 val info = AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, noteId))
@@ -226,16 +312,18 @@ object ReminderScheduler {
     // Se llama al reiniciar el teléfono O al actualizar/reinstalar la app
     // (ver BootReminderReceiver): AlarmManager no persiste las alarmas
     // programadas en ninguno de los dos casos, así que hay que volver a
-    // darlas de alta. Para recordatorios recurrentes NO se filtra por
-    // "reminderAt en el futuro" (ese valor es solo el ancla de hora/minuto,
-    // puede estar perfectamente en el pasado) — se reprograman siempre,
-    // dejando que schedule() calcule la próxima ocurrencia real.
+    // darlas de alta. Para recordatorios recurrentes (días de la semana o
+    // calendario recurrente) NO se filtra por "reminderAt en el futuro" (en
+    // esos modos ese valor puede no representar la próxima ocurrencia real)
+    // — se reprograman siempre, dejando que schedule() calcule la fecha real.
     suspend fun rescheduleAll(context: Context) {
         val dao = NoteDatabase.getInstance(context).noteDao()
         val repository = NoteRepository(dao)
         repository.getAllWithReminders().forEach { note ->
             if (note.reminderAt == null) return@forEach
-            if (note.reminderDays.isNotEmpty() || note.reminderAt > System.currentTimeMillis()) {
+            val isRecurringMode = note.reminderDays.isNotEmpty() ||
+                (note.reminderCalendarDates.isNotEmpty() && note.reminderCalendarRecurring)
+            if (isRecurringMode || note.reminderCalendarDates.isNotEmpty() || note.reminderAt > System.currentTimeMillis()) {
                 schedule(context, note)
             }
         }

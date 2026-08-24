@@ -67,4 +67,15 @@ class Converters {
         if (value.isBlank()) return emptySet()
         return value.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
     }
+
+    // Fechas del modo "calendario" (cada una, un epoch millis completo),
+    // guardadas separadas por coma igual que reminderDays.
+    @TypeConverter
+    fun fromReminderCalendarDates(dates: Set<Long>): String = dates.sorted().joinToString(",")
+
+    @TypeConverter
+    fun toReminderCalendarDates(value: String): Set<Long> {
+        if (value.isBlank()) return emptySet()
+        return value.split(",").mapNotNull { it.trim().toLongOrNull() }.toSet()
+    }
 }

@@ -97,15 +97,46 @@ class ReminderReceiver : BroadcastReceiver() {
                     // 1h antes no apaga ni reprograma nada, es puramente
                     // informativo.
                     if (!isAdvance) {
-                        if (note.reminderDays.isEmpty()) {
-                            // Una sola vez: se apaga solo al sonar.
-                            dao.upsert(note.copy(reminderAt = null))
-                        } else {
-                            // Recurrente: "ahora" ya pasó la ocurrencia de
-                            // hoy, así que programar de nuevo con la misma
-                            // nota calcula naturalmente la próxima (semana
-                            // que viene, o el próximo día elegido).
-                            ReminderScheduler.schedule(context, note)
+                        when {
+                            note.reminderDays.isNotEmpty() -> {
+                                // Días de la semana: "ahora" ya pasó la
+                                // ocurrencia de hoy, así que programar de
+                                // nuevo con la misma nota calcula
+                                // naturalmente la próxima (semana que viene,
+                                // o el próximo día elegido).
+                                ReminderScheduler.schedule(context, note)
+                            }
+                            note.reminderCalendarDates.isNotEmpty() -> {
+                                val anchor = intent.getLongExtra(ReminderScheduler.EXTRA_CALENDAR_ANCHOR, -1L)
+                                val updatedDates = if (anchor == -1L || anchor !in note.reminderCalendarDates) {
+                                    // No debería pasar, pero por las dudas: si
+                                    // no se sabe qué fecha sonó, no se toca el
+                                    // set (mejor dejarlo como estaba que
+                                    // borrar la fecha equivocada).
+                                    note.reminderCalendarDates
+                                } else if (note.reminderCalendarRecurring) {
+                                    // Recurrente: se reemplaza por la misma
+                                    // fecha un año después, nunca se descarta.
+                                    (note.reminderCalendarDates - anchor) + ReminderScheduler.advanceCalendarAnchorByOneYear(anchor)
+                                } else {
+                                    // Una sola vez: se descarta esa fecha.
+                                    note.reminderCalendarDates - anchor
+                                }
+                                val updatedNote = if (updatedDates.isEmpty()) {
+                                    // Ya sonaron todas: se apaga el recordatorio.
+                                    note.copy(reminderCalendarDates = emptySet(), reminderAt = null)
+                                } else {
+                                    note.copy(reminderCalendarDates = updatedDates)
+                                }
+                                dao.upsert(updatedNote)
+                                if (updatedDates.isNotEmpty()) {
+                                    ReminderScheduler.schedule(context, updatedNote)
+                                }
+                            }
+                            else -> {
+                                // Modo simple de una sola vez: se apaga solo al sonar.
+                                dao.upsert(note.copy(reminderAt = null))
+                            }
                         }
                     }
                 }
