@@ -55,9 +55,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     buildFeatures {
         compose = true
     }
@@ -70,6 +67,18 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+// El DSL viejo (android { kotlinOptions { jvmTarget = "17" } }) que usaba
+// este proyecto pasó de "deprecado" a directamente ERROR de compilación del
+// script en Kotlin 2.3.x — no compila el build.gradle.kts en absoluto, ni
+// siquiera llega a compilar código de la app. El reemplazo es este bloque
+// kotlin { compilerOptions { ... } } aparte, a nivel del archivo (no
+// adentro de android {}).
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
