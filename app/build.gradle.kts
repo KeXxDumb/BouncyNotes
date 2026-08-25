@@ -102,9 +102,15 @@ kotlin {
 //     no solo un número de versión. Se actualiza Coil dentro de la serie 2.x
 //     (2.6.0 -> 2.7.0, la última de esa serie) en vez de saltar a 3.x.
 dependencies {
-    implementation("androidx.core:core-ktx:1.19.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    // OJO: 1.19.0/2.11.0 (lo que había puesto antes acá) ya exigen
+    // compileSdk 37 + AGP 9.1/9.2 según el propio chequeo de metadata de
+    // Gradle (checkReleaseAarMetadata) — no son compatibles con quedarse en
+    // AGP 8.13/compileSdk 36 a propósito (ver la nota grande más abajo
+    // sobre por qué no se salta a AGP 9.x). Estas son las últimas versiones
+    // confirmadas compatibles con compileSdk 36.
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.12.3")
     implementation("androidx.fragment:fragment-ktx:1.9.0")
 
