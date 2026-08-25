@@ -115,7 +115,12 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    implementation("androidx.navigation:navigation-compose:2.10.0")
+    // OJO: 2.10.0 (lo que había puesto antes acá) nunca llegó a estable —
+    // solo llegó a alpha06. Las release notes oficiales de Navigation
+    // avisan que la librería está "en mantenimiento" (solo fixes críticos,
+    // sin funcionalidad nueva planeada), así que 2.9.7 es la última
+    // realmente estable confirmada.
+    implementation("androidx.navigation:navigation-compose:2.9.7")
 
     implementation("androidx.room:room-runtime:2.8.4")
     implementation("androidx.room:room-ktx:2.8.4")
