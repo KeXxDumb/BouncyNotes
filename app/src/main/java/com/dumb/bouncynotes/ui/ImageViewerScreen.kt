@@ -63,6 +63,13 @@ fun ImageViewerScreen(
     startIndex: Int,
     onBack: () -> Unit,
     onDelete: (Int) -> Unit,
+    // Antes el botón de eliminar estaba siempre visible acá, sin importar
+    // desde dónde se hubiera abierto el visor — incluido modo VISTA (no
+    // edición), donde tocar una imagen para verla más grande terminaba
+    // dejando borrarla igual, cosa que no debería ser posible sin entrar a
+    // editar primero. canDelete=false oculta el botón por completo (no solo
+    // lo deshabilita) para que quede claro que acá no se puede borrar.
+    canDelete: Boolean = true,
     // Pide el permiso de almacenamiento (solo hace falta en Android 9 o
     // anterior) y, una vez concedido (o si ya no hace falta), guarda el
     // archivo de esa posición en el dispositivo. Se resuelve así, en vez de
@@ -112,8 +119,10 @@ fun ImageViewerScreen(
                     }) {
                         Icon(Icons.Filled.Download, contentDescription = "Guardar en el dispositivo", tint = Color.White)
                     }
-                    IconButton(onClick = { onDelete(pagerState.currentPage) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = Color.White)
+                    if (canDelete) {
+                        IconButton(onClick = { onDelete(pagerState.currentPage) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = Color.White)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)

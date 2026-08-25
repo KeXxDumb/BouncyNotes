@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Ícono de prueba: a diferencia de ic_launcher.xml (fondo = @color, un
+    color plano, sin ningún archivo de imagen) y de ic_launcher_notegirl.xml
+    (fondo = PNG + foreground = vector con dibujo real), este es el único de
+    los tres donde TANTO el fondo COMO el foreground son recursos "vacíos de
+    contenido propio" salvo por el PNG — foreground es un vector sin paths
+    (no dibuja nada), así que el resultado final es 100% el PNG de fondo.
+    Sirve para aislar, en un dispositivo real, si el problema de refresco de
+    ícono en MIUI tiene que ver específicamente con que el fondo sea un PNG
+    (como notegirl) contra un fondo que sea un color plano (como el default).
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_purple_note_background" />
+    <foreground android:drawable="@drawable/ic_purple_note_foreground" />
+</adaptive-icon>

@@ -11,20 +11,27 @@ import android.content.pm.PackageManager
 // decidir qué ícono mostrar.
 enum class AppIcon(val alias: String, val label: String) {
     DEFAULT("com.dumb.bouncynotes.DefaultIconAlias", "Por defecto"),
-    NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl")
+    NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl"),
+    // Ícono de prueba: ver el comentario en el activity-alias
+    // PurpleNoteIconAlias del manifest y en
+    // mipmap-anydpi-v26/ic_launcher_purple_note.xml — sirve para aislar si
+    // el problema de refresco de ícono en MIUI depende de que el ícono sea
+    // un PNG (a diferencia de DEFAULT, que es un color plano sin ningún
+    // archivo de imagen).
+    PURPLE_NOTE("com.dumb.bouncynotes.PurpleNoteIconAlias", "Morado (prueba PNG)")
 }
 
 object AppIconManager {
     fun current(context: Context): AppIcon {
         val pm = context.packageManager
-        val noteGirlState = pm.getComponentEnabledSetting(
-            ComponentName(context, AppIcon.NOTE_GIRL.alias)
-        )
-        return if (noteGirlState == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-            AppIcon.NOTE_GIRL
-        } else {
-            AppIcon.DEFAULT
-        }
+        // Antes esto solo miraba si NOTE_GIRL estaba habilitado y, si no,
+        // asumía DEFAULT directo — con un tercer ícono eso hubiera
+        // reportado mal el morado como si fuera el default. Ahora se busca
+        // cuál de los tres alias está realmente habilitado.
+        return AppIcon.entries.firstOrNull { icon ->
+            pm.getComponentEnabledSetting(ComponentName(context, icon.alias)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } ?: AppIcon.DEFAULT
     }
 
     // HISTORIAL de este método, porque ya se rompió de dos formas distintas:

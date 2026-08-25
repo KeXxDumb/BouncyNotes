@@ -810,22 +810,33 @@ private fun AppIconSetting() {
                     }
                     .padding(10.dp)
             ) {
-                if (icon == AppIcon.NOTE_GIRL) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_notegirl_background),
-                        contentDescription = icon.label,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFFFFB74D)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("🍑", style = MaterialTheme.typography.headlineMedium)
+                when (icon) {
+                    AppIcon.NOTE_GIRL -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_notegirl_background),
+                            contentDescription = icon.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                    AppIcon.PURPLE_NOTE -> {
+                        Image(
+                            painter = painterResource(R.drawable.ic_purple_note_background),
+                            contentDescription = icon.label,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                        )
+                    }
+                    else -> {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFFFFB74D)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🍑", style = MaterialTheme.typography.headlineMedium)
+                        }
                     }
                 }
                 Spacer(Modifier.height(4.dp))

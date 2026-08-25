@@ -75,6 +75,24 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Ícono morado de prueba (100% PNG, ver el comentario en
+             mipmap-anydpi-v26/ic_launcher_purple_note.xml): para aislar si el
+             refresco de ícono en MIUI depende de que el ícono use un PNG.
+             Deshabilitado al principio; se activa desde Ajustes. -->
+        <activity-alias
+            android:name=".PurpleNoteIconAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_purple_note"
+            android:roundIcon="@mipmap/ic_launcher_purple_note"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <receiver
             android:name=".data.ReminderReceiver"
             android:exported="false" />

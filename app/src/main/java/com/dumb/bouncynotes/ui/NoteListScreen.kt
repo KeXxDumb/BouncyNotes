@@ -563,11 +563,9 @@ private fun BouncyPeach() {
     val scaleXAnim = remember { Animatable(1f) }
     val scaleYAnim = remember { Animatable(1f) }
     val skewDegAnim = remember { Animatable(0f) }
-    // Stiffness bien baja + damping bien "bouncy" = el spring no se asienta
-    // de una, sino que overshootea varias veces de forma visible antes de
-    // parar: eso es lo que da la sensación de "que rebote mucho" en vez de
-    // una única sacudida.
-    val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessVeryLow)
+    // Solo se usa para el aplastado inicial (el bamboleo de abajo ya no
+    // depende de un spring "rebotón": ver el comentario en el click).
+    val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
     Text(
         text = "\uD83C\uDF51",
         fontSize = 28.sp,
@@ -588,29 +586,35 @@ private fun BouncyPeach() {
                 indication = null
             ) {
                 scope.launch {
-                    // Aplastar bien fuerte (más que antes: 1.55/0.5 en vez de
-                    // 1.35/0.65) y soltar con un spring bien rebotón: como el
-                    // pivote está abajo, esto se ve como que la parte de
-                    // arriba de la fruta rebota y ondula varias veces antes
-                    // de asentarse, en vez de un solo salto uniforme.
+                    // Aplastado más suave que antes (1.25/0.8 en vez de
+                    // 1.55/0.5): en el video de referencia el aplastado es
+                    // secundario, lo que más se nota es el bamboleo lado a
+                    // lado (ver abajo) — con el aplastado tan marcado como
+                    // antes, competía visualmente y tapaba ese bamboleo.
                     launch {
-                        scaleXAnim.animateTo(1.55f, animationSpec = tween(65))
+                        scaleXAnim.animateTo(1.25f, animationSpec = tween(65))
                         scaleXAnim.animateTo(1f, animationSpec = jellySpring)
                     }
                     launch {
-                        scaleYAnim.animateTo(0.5f, animationSpec = tween(65))
+                        scaleYAnim.animateTo(0.8f, animationSpec = tween(65))
                         scaleYAnim.animateTo(1f, animationSpec = jellySpring)
                     }
-                    // Un ligero balanceo (rotación) desfasado le suma la
-                    // sensación de "gelatina", como si la parte de arriba se
-                    // tambaleara de lado a lado mientras rebota.
+                    // Antes esto era UN solo swing (0 -> 7 -> 0) confiando en
+                    // que el spring "rebotón" overshooteara solo al volver a
+                    // 0 para dar la sensación de bamboleo — en la práctica se
+                    // sentía como un solo tirón, no como un vaivén. En el
+                    // video de referencia (peach-slap.mp4, mirando solo la
+                    // fruta, sin la mano) el bamboleo es una secuencia bien
+                    // marcada de varios lado-a-lado con amplitud decreciente:
+                    // ahora se arma esa secuencia a mano, alternando de signo
+                    // explícitamente en vez de depender del overshoot de un
+                    // spring.
                     launch {
                         skewDegAnim.snapTo(0f)
-                        skewDegAnim.animateTo(7f, animationSpec = tween(65))
-                        skewDegAnim.animateTo(
-                            0f,
-                            animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy, stiffness = Spring.StiffnessLow)
-                        )
+                        val angles = listOf(9f, -7f, 5f, -3f, 1.5f, 0f)
+                        angles.forEachIndexed { i, deg ->
+                            skewDegAnim.animateTo(deg, animationSpec = tween(if (i == 0) 60 else 85))
+                        }
                     }
                 }
             }

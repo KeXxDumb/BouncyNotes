@@ -609,6 +609,12 @@ fun NoteEditScreen(
             images = images,
             startIndex = viewerStartPos ?: 0,
             onBack = { viewerStartPos = null },
+            // Solo se puede borrar una imagen desde acá si el visor se abrió
+            // en modo edición. Antes esto no se chequeaba: tocar una imagen
+            // en modo VISTA para verla más grande abría el mismo visor con
+            // el botón de borrar siempre visible, permitiendo borrarla sin
+            // haber entrado a editar la nota para nada.
+            canDelete = isEditing,
             onDelete = { pos ->
                 if (pos < fileNames.size) ImageStorage.deleteFile(context, fileNames[pos])
                 applyViewerContentChange(removeImageOccurrence(current.content, pos))
@@ -1324,7 +1330,11 @@ fun NoteEditScreen(
             // que el usuario tenga que esperarlo ni tocar nada).
             AnimatedVisibility(
                 visible = showModeFlash,
-                enter = fadeIn(animationSpec = tween(90)),
+                // Antes entraba en 90ms, muy repentino comparado con lo
+                // suave que ya se sentía el fadeOut (200ms) — se pareja a
+                // una duración similar, para que aparecer y desaparecer se
+                // sientan igual de naturales.
+                enter = fadeIn(animationSpec = tween(180)),
                 exit = fadeOut(animationSpec = tween(200)),
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -1626,6 +1636,16 @@ private fun ReminderPickerSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
+                // Cambiar entre modo "días de la semana" (chips, sin
+                // DatePicker) y "calendario" (toggle + lista de fechas +
+                // DatePicker completo) cambia mucho el alto del contenido de
+                // golpe. Sin animateContentSize(), el ModalBottomSheet no se
+                // reacomodaba solo a ese nuevo alto — quedaba con el tamaño
+                // viejo (recortando contenido nuevo, o dejando un hueco de
+                // más) hasta que el usuario lo arrastraba a mano para que
+                // Compose volviera a medirlo. Con esto, el cambio de alto se
+                // anima solo, sin intervención del usuario.
+                .animateContentSize()
                 // La hora ya no se elige con teclado (ver TimeWheelPicker,
                 // el "disco numérico" de más abajo), pero se deja
                 // imePadding() igual como red de seguridad: si el sheet
