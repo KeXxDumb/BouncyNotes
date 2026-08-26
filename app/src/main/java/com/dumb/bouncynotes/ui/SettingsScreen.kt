@@ -290,7 +290,7 @@ fun SettingsScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxWidth().padding(padding),
-            contentPadding = PaddingValues(16.dp)
+            contentPadding = PaddingValues(12.dp)
         ) {
             item {
                 ExpandableSection(
@@ -311,8 +311,8 @@ fun SettingsScreen(
                         onCheckedChange = { v -> onUpdate { it.copy(dynamicColor = v) } }
                     )
                     if (!settings.dynamicColor) {
-                        Text("Color del tema", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 8.dp)) {
+                        Text("Color del tema", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
                             ThemeSeedColors.forEach { hex ->
                                 val c = runCatching { Color(android.graphics.Color.parseColor(hex)) }
                                     .getOrDefault(MaterialTheme.colorScheme.primary)
@@ -352,14 +352,14 @@ fun SettingsScreen(
                         onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
                     )
 
-                    Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
-                    Spacer(Modifier.height(6.dp))
+                    Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Spacer(Modifier.height(4.dp))
                     AppIconSetting()
 
-                    Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
-                    Spacer(Modifier.height(6.dp))
+                    Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Spacer(Modifier.height(4.dp))
                     if (settings.backgroundImagePath != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                             AsyncImage(
                                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
                                 contentDescription = null,
@@ -376,7 +376,7 @@ fun SettingsScreen(
                             checked = settings.backgroundMonochrome,
                             onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
                         )
-                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
                             Text(
                                 "Opacidad de la imagen: ${(settings.backgroundImageOpacity * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelLarge
@@ -393,7 +393,7 @@ fun SettingsScreen(
                             onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
                         )
                         if (settings.backgroundFade) {
-                            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
                                 Text(
                                     "Opacidad del desvanecido: ${(settings.backgroundFadeOpacity * 100).toInt()}%",
                                     style = MaterialTheme.typography.labelLarge
@@ -409,7 +409,7 @@ fun SettingsScreen(
                         // la imagen y desentonaba con el resto de la pantalla (que sí
                         // deja ver el fondo). La hacemos semitransparente para que
                         // combine, con opacidad ajustable.
-                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
                             Text(
                                 "Opacidad de la barra de título: ${(settings.topBarOpacity * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelLarge
@@ -525,7 +525,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     if (!canScheduleExact) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -537,7 +537,7 @@ fun SettingsScreen(
                                 activity?.let { ReminderScheduler.requestExactAlarmPermission(it) }
                             }) { Text("Permitir") }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                     }
                     if (!ignoringBatteryOpt) {
                         Row(
@@ -558,9 +558,9 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     HorizontalDivider()
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         "Para probar de una si los recordatorios andan en este " +
                             "teléfono, sin tener que crear una nota: programa un " +
@@ -572,7 +572,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     OutlinedButton(
                         onClick = {
                             ReminderScheduler.scheduleTest(context, secondsFromNow = 10)
@@ -682,7 +682,7 @@ fun SettingsScreen(
                     onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Datos") null else "Datos" }
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         OutlinedButton(onClick = {
@@ -703,13 +703,13 @@ fun SettingsScreen(
                 }
             }
 
-            item { Spacer(Modifier.height(24.dp)) }
+            item { Spacer(Modifier.height(12.dp)) }
             item {
                 Text(
                     text = "Bouncy Notes 🍑 — hecho por KeXxDumb",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     textAlign = TextAlign.Center
                 )
             }
@@ -728,7 +728,7 @@ private fun ExpandableSection(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 3.dp)
             .animateContentSize(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
@@ -738,10 +738,10 @@ private fun ExpandableSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onToggle() }
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Icon(
@@ -750,7 +750,7 @@ private fun ExpandableSection(
                 )
             }
             if (expanded) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp)) {
                     content()
                 }
             }
@@ -761,7 +761,7 @@ private fun ExpandableSection(
 @Composable
 private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(label, modifier = Modifier.weight(1f))
@@ -862,15 +862,15 @@ private fun AppIconSetting() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun <T> ChipSetting(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(4.dp))
         // Antes era un Row: con 4 opciones ("Ordenar notas por") no entraban en el
         // ancho de la pantalla y el último chip ("Color") se comprimía hasta quedar
         // angosto y con el texto vertical. FlowRow los pasa a una segunda línea.
         FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             options.forEach { (value, text) ->
                 FilterChip(
@@ -892,7 +892,7 @@ private fun DiscreteSlider(
     onSelect: (Int) -> Unit
 ) {
     val index = values.indexOf(selected).let { if (it == -1) 0 else it }
-    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
         Text("$label: ${valueLabels.getOrElse(index) { "" }}", style = MaterialTheme.typography.labelLarge)
         Slider(
             value = index.toFloat(),
