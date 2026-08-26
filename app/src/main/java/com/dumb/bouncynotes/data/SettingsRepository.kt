@@ -20,6 +20,13 @@ enum class CheckboxPosition { START, END }
 enum class StartView { ALL, LAST_USED }
 enum class FontScale { SMALL, MEDIUM, LARGE }
 enum class NoteLayout { GRID, LIST }
+// Qué mostrar en el título de la barra superior cuando NO se está mostrando
+// un mensaje de bienvenida (ver WelcomeMessages.kt): el nombre de la app fijo,
+// un texto elegido por el usuario, o el nombre de la pestaña actual (Todas
+// las notas / Privadas / Papelera), que cambia solo al cambiar de pestaña.
+enum class TitleMode { APP_NAME, CUSTOM_TEXT, CURRENT_TAB }
+// Qué hace deslizar desde el borde derecho de la pantalla de notas.
+enum class RightEdgeSwipeAction { SETTINGS, NOTHING, SIDEBAR }
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -57,7 +64,13 @@ data class AppSettings(
     // Formato por defecto para las imágenes agrupadas (ver GalleryLayout en
     // MarkdownContent.kt). Se puede elegir uno distinto cada vez desde el
     // popup al insertar el grupo, pero este es el que aparece preseleccionado.
-    val defaultGalleryLayout: GalleryLayout = GalleryLayout.GRID_2
+    val defaultGalleryLayout: GalleryLayout = GalleryLayout.GRID_2,
+    // Título "regular" de la barra superior (el que se ve fuera de los
+    // mensajes de bienvenida al abrir la app): nombre fijo de la app, un
+    // texto elegido por el usuario, o el nombre de la pestaña actual.
+    val titleMode: TitleMode = TitleMode.APP_NAME,
+    val customTitleText: String = "",
+    val rightEdgeSwipeAction: RightEdgeSwipeAction = RightEdgeSwipeAction.SETTINGS
 )
 
 class SettingsRepository(private val context: Context) {
@@ -91,6 +104,9 @@ class SettingsRepository(private val context: Context) {
         val BACKGROUND_IMAGE_OPACITY = intPreferencesKey("background_image_opacity")
         val SHOW_FIRST_IMAGE = booleanPreferencesKey("show_first_image")
         val DEFAULT_GALLERY_LAYOUT = stringPreferencesKey("default_gallery_layout")
+        val TITLE_MODE = stringPreferencesKey("title_mode")
+        val CUSTOM_TITLE_TEXT = stringPreferencesKey("custom_title_text")
+        val RIGHT_EDGE_SWIPE_ACTION = stringPreferencesKey("right_edge_swipe_action")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -124,7 +140,12 @@ class SettingsRepository(private val context: Context) {
             showFirstImage = prefs[Keys.SHOW_FIRST_IMAGE] ?: false,
             defaultGalleryLayout = runCatching {
                 GalleryLayout.valueOf(prefs[Keys.DEFAULT_GALLERY_LAYOUT] ?: GalleryLayout.GRID_2.name)
-            }.getOrDefault(GalleryLayout.GRID_2)
+            }.getOrDefault(GalleryLayout.GRID_2),
+            titleMode = runCatching { TitleMode.valueOf(prefs[Keys.TITLE_MODE] ?: "APP_NAME") }.getOrDefault(TitleMode.APP_NAME),
+            customTitleText = prefs[Keys.CUSTOM_TITLE_TEXT] ?: "",
+            rightEdgeSwipeAction = runCatching {
+                RightEdgeSwipeAction.valueOf(prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] ?: "SETTINGS")
+            }.getOrDefault(RightEdgeSwipeAction.SETTINGS)
         )
     }
 
@@ -160,6 +181,9 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.BACKGROUND_IMAGE_OPACITY] = (updated.backgroundImageOpacity * 100).toInt()
             prefs[Keys.SHOW_FIRST_IMAGE] = updated.showFirstImage
             prefs[Keys.DEFAULT_GALLERY_LAYOUT] = updated.defaultGalleryLayout.name
+            prefs[Keys.TITLE_MODE] = updated.titleMode.name
+            prefs[Keys.CUSTOM_TITLE_TEXT] = updated.customTitleText
+            prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] = updated.rightEdgeSwipeAction.name
         }
     }
 

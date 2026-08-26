@@ -6,8 +6,11 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
@@ -76,6 +79,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -88,6 +92,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -106,6 +111,10 @@ import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteLayout
 import com.dumb.bouncynotes.data.NoteType
+import com.dumb.bouncynotes.data.PeachSoundPlayer
+import com.dumb.bouncynotes.data.RightEdgeSwipeAction
+import com.dumb.bouncynotes.data.TitleMode
+import com.dumb.bouncynotes.data.WelcomeMessages
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.stripFormattingMarkers
 import kotlinx.coroutines.launch
@@ -160,7 +169,51 @@ fun NoteListScreen(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            // Deslizar desde el borde derecho: acción configurable en Ajustes
+            // (abrir Ajustes, no hacer nada, o abrir la barra lateral). Se
+            // vuelve a armar el detector de gesto cada vez que cambia la
+            // acción elegida (pointerInput queda "atado" a esa key), así
+            // siempre usa la más reciente sin quedar con una copia vieja.
+            .pointerInput(settings.rightEdgeSwipeAction) {
+                if (settings.rightEdgeSwipeAction == RightEdgeSwipeAction.NOTHING) return@pointerInput
+                val edgeWidthPx = 32.dp.toPx()
+                var startedNearRightEdge = false
+                var totalDragX = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        startedNearRightEdge = offset.x >= size.width - edgeWidthPx
+                        totalDragX = 0f
+                    },
+                    onDragEnd = {
+                        // Deslizar hacia la IZQUIERDA desde el borde derecho es
+                        // dragAmount negativo acumulado; un umbral de -100px
+                        // evita que un toque casi quieto cerca del borde
+                        // dispare la acción por error.
+                        if (startedNearRightEdge && totalDragX < -100f) {
+                            when (settings.rightEdgeSwipeAction) {
+                                RightEdgeSwipeAction.SETTINGS -> onOpenSettings()
+                                RightEdgeSwipeAction.SIDEBAR -> {
+                                    if (!drawerState.isAnimationRunning) {
+                                        scope.launch { drawerState.open() }
+                                    }
+                                }
+                                RightEdgeSwipeAction.NOTHING -> Unit
+                            }
+                        }
+                        startedNearRightEdge = false
+                    },
+                    onDragCancel = { startedNearRightEdge = false }
+                ) { change, dragAmount ->
+                    if (startedNearRightEdge) {
+                        totalDragX += dragAmount
+                        change.consume()
+                    }
+                }
+            }
+    ) {
         if (settings.backgroundImagePath != null) {
             AsyncImage(
                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
@@ -383,7 +436,7 @@ fun NoteListScreen(
                     )
                 } else {
                     TopAppBar(
-                        title = { BouncyPeach() },
+                        title = { SmartTitle(settings = settings, viewMode = viewMode) },
                         navigationIcon = {
                             IconButton(
                                 onClick = {
@@ -401,6 +454,7 @@ fun NoteListScreen(
                                 Icon(Icons.Filled.Menu, contentDescription = "Menú")
                             }
                         },
+                        actions = { BouncyPeach() },
                         colors = if (settings.backgroundImagePath != null) {
                             TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity)
@@ -544,9 +598,71 @@ fun NoteListScreen(
     }
 }
 
+// Título de la barra superior, a la izquierda del 🍑. Dos capas:
+//  - Al abrir la app de verdad (proceso recién arrancado): un mensaje de
+//    bienvenida al azar (ver WelcomeMessages), que se ve un rato y pasa
+//    solo al título regular.
+//  - El resto del tiempo (y apenas se cambia de pestaña, lo que corta el
+//    mensaje de bienvenida antes de tiempo si todavía se estaba viendo):
+//    el título "regular" que se eligió en Ajustes — nombre de la app, un
+//    texto propio, o el nombre de la pestaña actual.
+@Composable
+private fun SmartTitle(settings: AppSettings, viewMode: ViewMode) {
+    var welcomeText by remember { mutableStateOf(WelcomeMessages.consumeIfFirstOpenThisSession()) }
+
+    val regularTitle = when (settings.titleMode) {
+        TitleMode.APP_NAME -> "Bouncy Notes"
+        TitleMode.CUSTOM_TEXT -> settings.customTitleText.ifBlank { "Bouncy Notes" }
+        TitleMode.CURRENT_TAB -> when (viewMode) {
+            ViewMode.ALL -> "Todas las notas"
+            ViewMode.PRIVATE -> "Privadas"
+            ViewMode.TRASH -> "Papelera"
+        }
+    }
+
+    // El mensaje de bienvenida se apaga solo después de un rato...
+    LaunchedEffect(welcomeText) {
+        if (welcomeText != null) {
+            kotlinx.coroutines.delay(2500)
+            welcomeText = null
+        }
+    }
+    // ...o antes, si se cambia de pestaña ("cambiar de enfoque") mientras
+    // todavía se estaba mostrando. El chequeo de "valor anterior no nulo"
+    // evita que esto dispare en la primera composición (cuando viewMode
+    // recién toma su valor inicial, que no es un cambio real hecho por el
+    // usuario) y corte el mensaje de bienvenida antes de que llegue a verse.
+    var previousViewMode by remember { mutableStateOf<ViewMode?>(null) }
+    LaunchedEffect(viewMode) {
+        if (previousViewMode != null && previousViewMode != viewMode) {
+            welcomeText = null
+        }
+        previousViewMode = viewMode
+    }
+
+    AnimatedContent(
+        targetState = welcomeText ?: regularTitle,
+        transitionSpec = { fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(180)) },
+        label = "smart-title"
+    ) { text ->
+        Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 @Composable
 private fun BouncyPeach() {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    // Un solo PeachSoundPlayer por composición de este botón (no uno nuevo
+    // por toque): SoundPool ya está pensado para reproducir el mismo sonido
+    // muchas veces seguidas, así que alcanza con cargarlo una vez y listo.
+    // Se libera con DisposableEffect para no dejar el SoundPool (y la
+    // memoria de los 3 audios decodificados) vivo si esta pantalla se
+    // destruye.
+    val soundPlayer = remember { PeachSoundPlayer(context) }
+    DisposableEffect(Unit) {
+        onDispose { soundPlayer.release() }
+    }
     // La 🍑 tiene la hendidura/las "hojas" arriba y es más redondeada abajo.
     // Antes el rebote deformaba la fruta entera por igual desde el centro,
     // lo cual se sentía parejo/soso. Fijando el pivote de la transformación
@@ -585,6 +701,7 @@ private fun BouncyPeach() {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {
+                soundPlayer.playRandom()
                 scope.launch {
                     // Aplastado más suave que antes (1.25/0.8 en vez de
                     // 1.55/0.5): en el video de referencia el aplastado es

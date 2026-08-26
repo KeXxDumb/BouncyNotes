@@ -52,6 +52,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -92,6 +93,8 @@ import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteLayout
 import com.dumb.bouncynotes.data.ReminderScheduler
 import com.dumb.bouncynotes.data.SortOrder
+import com.dumb.bouncynotes.data.TitleMode
+import com.dumb.bouncynotes.data.RightEdgeSwipeAction
 import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
 import com.dumb.bouncynotes.ui.theme.ThemeSeedColors
@@ -359,6 +362,8 @@ fun SettingsScreen(
                     Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(4.dp))
                     if (settings.backgroundImagePath != null) {
+                        BackgroundPreviewMockup(settings = settings, context = context)
+                        Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                             AsyncImage(
                                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
@@ -485,6 +490,40 @@ fun SettingsScreen(
                         options = listOf(StartView.ALL to "Todas las notas", StartView.LAST_USED to "Última vista usada"),
                         selected = settings.startView,
                         onSelect = { v -> onUpdate { it.copy(startView = v) } }
+                    )
+                    ChipSetting(
+                        label = "Título de la barra superior",
+                        options = listOf(
+                            TitleMode.APP_NAME to "Nombre de la app",
+                            TitleMode.CUSTOM_TEXT to "Texto propio",
+                            TitleMode.CURRENT_TAB to "Pestaña actual"
+                        ),
+                        selected = settings.titleMode,
+                        onSelect = { v -> onUpdate { it.copy(titleMode = v) } }
+                    )
+                    if (settings.titleMode == TitleMode.CUSTOM_TEXT) {
+                        OutlinedTextField(
+                            value = settings.customTitleText,
+                            onValueChange = { v -> onUpdate { it.copy(customTitleText = v) } },
+                            label = { Text("Texto para la barra superior") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        )
+                    }
+                    Text(
+                        "Esto no afecta a los mensajes de bienvenida al abrir la app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ChipSetting(
+                        label = "Deslizar desde el borde derecho",
+                        options = listOf(
+                            RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
+                            RightEdgeSwipeAction.SIDEBAR to "Barra lateral",
+                            RightEdgeSwipeAction.NOTHING to "Nada"
+                        ),
+                        selected = settings.rightEdgeSwipeAction,
+                        onSelect = { v -> onUpdate { it.copy(rightEdgeSwipeAction = v) } }
                     )
                 }
             }
@@ -882,6 +921,113 @@ private fun <T> ChipSetting(label: String, options: List<Pair<T, String>>, selec
         }
     }
 }
+
+
+// Vista previa en vivo de "Imagen de fondo": se pidió algo como desvanecer
+// Ajustes y dejar ver la lista de notas real detrás mientras se arrastra un
+// slider, pero eso implica que Ajustes y la lista convivan en la misma
+// pantalla (hoy son rutas separadas de navegación) — un cambio bastante más
+// grande. Esta es la versión barata: una maqueta chica, ACÁ MISMO en
+// Ajustes, que reproduce exactamente el mismo renderizado que usa la lista
+// real (imagen + opacidad + monocromo + desvanecido + barra superior) leyendo
+// el mismo `settings` que ya están tocando los sliders de abajo — como ese
+// estado se actualiza al toque (no hay que "guardar" para verlo), la maqueta
+// también se actualiza en vivo, sin necesidad de superponer nada sobre la
+// pantalla de verdad.
+@Composable
+private fun BackgroundPreviewMockup(settings: AppSettings, context: android.content.Context) {
+    Text(
+        "Vista previa en vivo",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(4.dp))
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(130.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        settings.backgroundImagePath?.let { path ->
+            AsyncImage(
+                model = File(ImageStorage.imagesDir(context), path),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                alpha = settings.backgroundImageOpacity,
+                colorFilter = if (settings.backgroundMonochrome) {
+                    ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
+                } else null,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (settings.backgroundFade) {
+                val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawWithCache {
+                            val fadeWidth = size.width * 0.35f
+                            val fadeHeight = size.height * 0.35f
+                            onDrawBehind {
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
+                                        startX = 0f,
+                                        endX = fadeWidth
+                                    )
+                                )
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
+                                        startX = size.width - fadeWidth,
+                                        endX = size.width
+                                    )
+                                )
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
+                                        startY = 0f,
+                                        endY = fadeHeight
+                                    )
+                                )
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
+                                        startY = size.height - fadeHeight,
+                                        endY = size.height
+                                    )
+                                )
+                            }
+                        }
+                )
+            }
+        }
+        // Franja arriba simulando la barra de título con su opacidad real.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .align(Alignment.TopCenter)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity))
+        )
+        // Un par de "tarjetas" de ejemplo, nada más para dar contexto de cómo
+        // se va a ver el fondo con contenido real encima.
+        Row(
+            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            repeat(2) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 64.dp, height = 44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
+                )
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun DiscreteSlider(
