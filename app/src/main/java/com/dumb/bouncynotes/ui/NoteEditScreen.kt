@@ -16,6 +16,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -891,11 +892,27 @@ fun NoteEditScreen(
             // desenfoca lo que hay detrás (el contenido de la nota, que se deja
             // scrollear por debajo de la barra) para un efecto "vidrio
             // esmerilado" en vez de un panel sólido.
-            GlassBottomBar(
-                contentLayer = contentLayer,
-                height = bottomBarHeight,
-                centered = isEditing
-            ) {
+            //
+            // BUG reportado por un usuario en otro dispositivo (a mí no me
+            // pasaba): la barra terminaba DETRÁS de la barra de navegación
+            // del sistema en vez de arriba. Causa: con targetSdk 36
+            // (Android 15+), el sistema fuerza edge-to-edge sin importar lo
+            // que haga la app — el contenido puede dibujarse por detrás de
+            // las barras del sistema, y ya no hay un "acomodo automático"
+            // como en versiones viejas de Android. GlassBottomBar es una Box
+            // propia con altura FIJA que nunca pedía el inset de la barra de
+            // navegación, así que en un teléfono con edge-to-edge forzado
+            // quedaba tapada por ella. navigationBarsPadding() en un Box que
+            // ENVUELVE a GlassBottomBar (no adentro de ella, que le comería
+            // altura útil a los botones) empuja toda la barra hacia arriba
+            // lo que haga falta; en un teléfono donde el sistema ya la
+            // acomodaba solo, ese padding termina siendo 0 y no cambia nada.
+            Box(modifier = Modifier.navigationBarsPadding()) {
+                GlassBottomBar(
+                    contentLayer = contentLayer,
+                    height = bottomBarHeight,
+                    centered = isEditing
+                ) {
                 if (current.deletedAt != null) {
                     IconButton(onClick = {
                         extractImageFileNames(current.content).forEach { ImageStorage.deleteFile(context, it) }
@@ -1026,6 +1043,7 @@ fun NoteEditScreen(
                         )
                     }
                 }
+            }
             }
         }
     ) { padding ->
