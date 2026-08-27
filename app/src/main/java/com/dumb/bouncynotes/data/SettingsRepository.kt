@@ -25,7 +25,7 @@ enum class NoteLayout { GRID, LIST }
 // un texto elegido por el usuario, o el nombre de la pestaña actual (Todas
 // las notas / Privadas / Papelera), que cambia solo al cambiar de pestaña.
 enum class TitleMode { APP_NAME, CUSTOM_TEXT, CURRENT_TAB }
-// Qué hace deslizar desde el borde derecho de la pantalla de notas.
+// Qué hace deslizar desde el borde izquierdo de la pantalla de notas.
 enum class RightEdgeSwipeAction { SETTINGS, NOTHING, SIDEBAR }
 
 data class AppSettings(

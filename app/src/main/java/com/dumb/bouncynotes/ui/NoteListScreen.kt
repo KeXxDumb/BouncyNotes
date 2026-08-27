@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -172,27 +174,37 @@ fun NoteListScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // Deslizar desde el borde derecho: acción configurable en Ajustes
-            // (abrir Ajustes, no hacer nada, o abrir la barra lateral). Se
-            // vuelve a armar el detector de gesto cada vez que cambia la
-            // acción elegida (pointerInput queda "atado" a esa key), así
-            // siempre usa la más reciente sin quedar con una copia vieja.
-            .pointerInput(settings.rightEdgeSwipeAction) {
+            // Deslizar desde el borde IZQUIERDO: acción configurable en
+            // Ajustes (abrir Ajustes, no hacer nada, o abrir la barra
+            // lateral). Se vuelve a armar el detector de gesto cada vez que
+            // cambia la acción elegida O el estado del drawer (pointerInput
+            // queda "atado" a esas keys), así siempre usa la más reciente
+            // sin quedar con una copia vieja.
+            //
+            // A propósito el gesto queda DESACTIVADO mientras el drawer ya
+            // está abierto o animando: ese es el mismo borde que usa el
+            // propio drawer para su gesto nativo de "deslizar para cerrar"
+            // (ver gesturesEnabled = drawerState.isOpen más abajo), así que
+            // sin este chequeo los dos detectores de gesto podrían terminar
+            // compitiendo por el mismo toque mientras el drawer está
+            // abriéndose o cerrándose.
+            .pointerInput(settings.rightEdgeSwipeAction, drawerState.isOpen, drawerState.isAnimationRunning) {
                 if (settings.rightEdgeSwipeAction == RightEdgeSwipeAction.NOTHING) return@pointerInput
+                if (drawerState.isOpen || drawerState.isAnimationRunning) return@pointerInput
                 val edgeWidthPx = 32.dp.toPx()
-                var startedNearRightEdge = false
+                var startedNearLeftEdge = false
                 var totalDragX = 0f
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
-                        startedNearRightEdge = offset.x >= size.width - edgeWidthPx
+                        startedNearLeftEdge = offset.x <= edgeWidthPx
                         totalDragX = 0f
                     },
                     onDragEnd = {
-                        // Deslizar hacia la IZQUIERDA desde el borde derecho es
-                        // dragAmount negativo acumulado; un umbral de -100px
+                        // Deslizar hacia la DERECHA desde el borde izquierdo es
+                        // dragAmount positivo acumulado; un umbral de 100px
                         // evita que un toque casi quieto cerca del borde
                         // dispare la acción por error.
-                        if (startedNearRightEdge && totalDragX < -100f) {
+                        if (startedNearLeftEdge && totalDragX > 100f) {
                             when (settings.rightEdgeSwipeAction) {
                                 RightEdgeSwipeAction.SETTINGS -> onOpenSettings()
                                 RightEdgeSwipeAction.SIDEBAR -> {
@@ -203,11 +215,11 @@ fun NoteListScreen(
                                 RightEdgeSwipeAction.NOTHING -> Unit
                             }
                         }
-                        startedNearRightEdge = false
+                        startedNearLeftEdge = false
                     },
-                    onDragCancel = { startedNearRightEdge = false }
+                    onDragCancel = { startedNearLeftEdge = false }
                 ) { change, dragAmount ->
-                    if (startedNearRightEdge) {
+                    if (startedNearLeftEdge) {
                         totalDragX += dragAmount
                         change.consume()
                     }
@@ -219,11 +231,27 @@ fun NoteListScreen(
                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                alpha = settings.backgroundImageOpacity,
                 colorFilter = if (settings.backgroundMonochrome) {
                     ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
                 } else null,
-                modifier = Modifier.fillMaxSize()
+                // BUG encontrado: antes esto usaba el parámetro `alpha` propio
+                // de AsyncImage (alpha = settings.backgroundImageOpacity) para
+                // desvanecer. Con "usar color del tema" desactivado se veía
+                // bien, pero activado, el resultado era raro: a 0% no se veía
+                // nada (bien) pero a un 1% ya se veía el color del tema a
+                // pleno brillo. La causa es cómo Skia combina, en un mismo
+                // draw, el colorFilter de tinte (BlendMode.Color) con el
+                // parámetro de alpha del Paint — la imagen de base sí se
+                // desvanecía, pero el tinte de color no lo hacía en la misma
+                // proporción. La solución es no depender de esa combinación:
+                // graphicsLayer aplica el alpha como una capa de composición
+                // APARTE, después de que la imagen (ya teñida o no) esté
+                // completamente dibujada — ahí sí desvanece parejo tanto la
+                // imagen como el tinte, porque para ese punto ya son un solo
+                // resultado final, no dos operaciones combinándose en un draw.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = settings.backgroundImageOpacity)
             )
             if (settings.backgroundFade) {
                 // Un radialGradient dibuja un círculo, así que en una imagen
@@ -473,12 +501,20 @@ fun NoteListScreen(
                         label = "fabRotation"
                     )
                     Column(horizontalAlignment = Alignment.End) {
+                        // Antes las dos opciones aparecían/desaparecían juntas,
+                        // de golpe, en un solo AnimatedVisibility compartido.
+                        // Ahora cada una tiene el suyo, con un pequeño delay
+                        // escalonado entre una y otra (70ms) y un
+                        // deslizamiento desde la derecha en vez de solo
+                        // escala+desvanecido — se sigue viendo (y sintiendo)
+                        // como un menú que se despliega en cascada, no como
+                        // un solo bloque que aparece entero.
                         AnimatedVisibility(
                             visible = fabExpanded,
-                            enter = fadeIn(animationSpec = tween(150)) +
-                                scaleIn(animationSpec = tween(150), transformOrigin = TransformOrigin(1f, 1f)),
-                            exit = fadeOut(animationSpec = tween(120)) +
-                                scaleOut(animationSpec = tween(120), transformOrigin = TransformOrigin(1f, 1f))
+                            enter = fadeIn(animationSpec = tween(150, delayMillis = 0)) +
+                                slideInHorizontally(animationSpec = tween(150, delayMillis = 0)) { it / 2 },
+                            exit = fadeOut(animationSpec = tween(120, delayMillis = 70)) +
+                                slideOutHorizontally(animationSpec = tween(120, delayMillis = 70)) { it / 2 }
                         ) {
                             Column(horizontalAlignment = Alignment.End) {
                                 ExtendedFloatingActionButton(
@@ -487,6 +523,16 @@ fun NoteListScreen(
                                     text = { Text("Checklist") }
                                 )
                                 Spacer(Modifier.height(8.dp))
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = fabExpanded,
+                            enter = fadeIn(animationSpec = tween(150, delayMillis = 70)) +
+                                slideInHorizontally(animationSpec = tween(150, delayMillis = 70)) { it / 2 },
+                            exit = fadeOut(animationSpec = tween(120, delayMillis = 0)) +
+                                slideOutHorizontally(animationSpec = tween(120, delayMillis = 0)) { it / 2 }
+                        ) {
+                            Column(horizontalAlignment = Alignment.End) {
                                 ExtendedFloatingActionButton(
                                     onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) },
                                     icon = { Icon(Icons.Filled.Edit, contentDescription = null) },

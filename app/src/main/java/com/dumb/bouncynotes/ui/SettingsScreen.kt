@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -521,7 +522,7 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     ChipSetting(
-                        label = "Deslizar desde el borde derecho",
+                        label = "Deslizar desde el borde izquierdo",
                         options = listOf(
                             RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
                             RightEdgeSwipeAction.SIDEBAR to "Barra lateral",
@@ -959,11 +960,15 @@ private fun BackgroundPreviewMockup(settings: AppSettings, context: android.cont
                 model = File(ImageStorage.imagesDir(context), path),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                alpha = settings.backgroundImageOpacity,
                 colorFilter = if (settings.backgroundMonochrome) {
                     ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
                 } else null,
-                modifier = Modifier.fillMaxSize()
+                // Mismo arreglo que en NoteListScreen: graphicsLayer en vez de
+                // alpha propio de AsyncImage, para que el tinte de color
+                // también se desvanezca (ver el comentario largo allá).
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer(alpha = settings.backgroundImageOpacity)
             )
             if (settings.backgroundFade) {
                 val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)

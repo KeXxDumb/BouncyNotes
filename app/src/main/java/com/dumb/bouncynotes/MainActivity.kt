@@ -63,7 +63,22 @@ class MainActivity : FragmentActivity() {
         val openNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
-            val settings by settingsViewModel.settings.collectAsState()
+            // BUG del parpadeo negro al abrir la app: antes settings nunca
+            // era null (su semilla era AppSettings() con valores por
+            // defecto), así que esta pantalla se armaba primero con esos
+            // valores por defecto y un instante después "saltaba" a los
+            // valores reales guardados apenas terminaba la lectura real de
+            // DataStore (asíncrona). Ahora settings SÍ puede ser null
+            // mientras esa lectura real no haya terminado (ver el
+            // comentario en SettingsViewModel), y accá se corta temprano
+            // mostrando una superficie neutra (ni fondo negro ni con
+            // colores que después haya que corregir de golpe) hasta tener
+            // el valor de verdad.
+            val settings = settingsViewModel.settings.collectAsState().value
+                ?: run {
+                    NotesTheme { Surface(modifier = Modifier.fillMaxSize()) {} }
+                    return@setContent
+                }
 
             LaunchedEffect(settings.hideFromRecents) {
                 if (settings.hideFromRecents) {
