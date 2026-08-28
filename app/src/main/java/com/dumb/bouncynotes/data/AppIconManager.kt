@@ -46,73 +46,82 @@ object AppIconManager {
     //
     // v2: para "forzar" el refresco, mataba el proceso con
     // Process.killProcess() y programaba una alarma de AlarmManager ~300ms
-    // después para relanzar MainActivity con un PendingIntent. Probado en un
-    // dispositivo real, el resultado fue PEOR: el cambio de ícono dejó de
-    // andar por completo. La causa es una restricción de Android más nueva
-    // que ese truco: desde Android 10, el sistema bloquea que un
-    // PendingIntent.getActivity() abra una Activity si el proceso que lo
-    // programó ya no tiene ninguna ventana/actividad visible en ese momento
-    // ("restricciones de inicio de actividades en segundo plano"). Como acá
-    // el proceso ya estaba MUERTO (por el killProcess de antes) cuando la
-    // alarma disparaba, Android simplemente descartaba el intento de abrir
-    // MainActivity sin ningún error visible: la app quedaba cerrada y no
-    // volvía a abrirse sola.
+    // después para relanzar MainActivity con un PendingIntent. Se rompió en
+    // Android 10+: el sistema bloquea que un PendingIntent.getActivity()
+    // abra una Activity si, para cuando la alarma dispara, el proceso que la
+    // programó ya no tiene ninguna ventana visible ("restricciones de inicio
+    // de actividades en segundo plano"). La app quedaba cerrada y no volvía
+    // a abrirse sola.
     //
-    // v3 (la anterior a esta): volver al cambio de componente simple con
-    // DONT_KILL_APP, sin matar ni relanzar nada — el mismo mecanismo que usa
-    // Goodwy Messages. El comentario de esa versión decía "confirmado
-    // funcionando en un dispositivo real", pero al probarlo en varios
-    // dispositivos reales distintos el ícono NUNCA se actualizaba en
-    // ninguno — exactamente el problema que v1 ya había diagnosticado
-    // (el launcher cachea el ícono mientras el proceso sigue vivo, y ese
-    // cacheo resultó ser la norma, no la excepción, en los dispositivos
-    // probados esta vez).
+    // v3/v4: volvieron al cambio de alias simple (v3 sin matar nada, v4
+    // matando el proceso después sin relanzarlo). Probadas en varios
+    // dispositivos reales, el ícono NUNCA se actualizaba — ni con el
+    // proceso vivo (v3) ni matándolo después (v4). La razón, encontrada
+    // investigando cómo lo resuelven apps como Telegram (que usa este mismo
+    // mecanismo de activity-alias, ver su AndroidManifest.xml en GitHub):
+    // el bug real no era CUÁNDO matar el proceso, sino CÓMO se apagaban los
+    // alias. v3/v4 deshabilitaban los TRES alias con
+    // COMPONENT_ENABLED_STATE_DISABLED explícito, EN UN LOOP, y recién
+    // después habilitaban el elegido. Android trata un DISABLED explícito
+    // como un cambio real del "contrato" del paquete y puede matar el
+    // proceso en cualquier punto de esa operación pase lo que pase
+    // (DONT_KILL_APP se ignora en ese caso) — si el proceso moría a mitad
+    // del loop, la app podía quedar sin NINGÚN alias habilitado.
     //
-    // v4 (esta versión): cambia el alias Y mata el proceso, pero — a
-    // diferencia de v2 — SIN intentar relanzarlo. Evita el problema de v2
-    // (la restricción de Android 10+ bloqueaba el relanzamiento) sin volver
-    // a caer en el problema de v1/v3 (dejar el proceso vivo, que es lo que
-    // impedía el refresco del ícono). El costo es que el usuario tiene que
-    // volver a abrir la app a mano después del cambio; a cambio, el ícono
-    // se actualiza de forma confiable en cualquier launcher, porque ya no
-    // depende de que ESE launcher decida refrescar sus metadatos mientras
-    // la app sigue corriendo — simplemente ya no está corriendo.
+    // v5 (esta versión): dos cambios.
+    //  1. Se habilita el elegido PRIMERO (antes que nada se toque otro
+    //     alias): si Android mata el proceso en algún punto de esta
+    //     operación, que sea DESPUÉS de que el ícono elegido ya haya
+    //     quedado activo, nunca antes.
+    //  2. Los demás alias ya NO se deshabilitan a mano con DISABLED: se
+    //     resetean a COMPONENT_ENABLED_STATE_DEFAULT (volver al valor
+    //     declarado en el manifiesto), que Android trata como un cambio
+    //     mucho más liviano y en la práctica no dispara el mismo
+    //     force-kill. La única excepción es DEFAULT: su valor "de fábrica"
+    //     en el manifiesto es enabled=true, así que resetearlo a DEFAULT lo
+    //     dejaría prendido de nuevo (dos íconos habilitados a la vez); para
+    //     ese caso puntual (dejar el ícono "Por defecto" por otro) no queda
+    //     otra que un DISABLED explícito, y ahí sí Android podría llegar a
+    //     matar el proceso — por eso queda un reinicio manual opcional más
+    //     abajo, ya no uno forzado automáticamente como en v4.
     fun setIcon(context: Context, icon: AppIcon): Boolean {
         val pm = context.packageManager
         return try {
-            // Deshabilitar TODOS primero y recién en un segundo paso habilitar
-            // el elegido (en dos pasadas separadas) evita que, por un instante,
-            // haya dos alias habilitados a la vez o ninguno.
-            AppIcon.entries.forEach { candidate ->
-                pm.setComponentEnabledSetting(
-                    ComponentName(context, candidate.alias),
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP
-                )
-            }
             pm.setComponentEnabledSetting(
                 ComponentName(context, icon.alias),
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
                 PackageManager.DONT_KILL_APP
             )
+            AppIcon.entries.forEach { other ->
+                if (other != icon) {
+                    val state = if (other == AppIcon.DEFAULT) {
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    } else {
+                        PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
+                    }
+                    pm.setComponentEnabledSetting(
+                        ComponentName(context, other.alias),
+                        state,
+                        PackageManager.DONT_KILL_APP
+                    )
+                }
+            }
             true
         } catch (_: Exception) {
-            // Si ni siquiera pudimos cambiar el estado del componente, no
-            // tiene sentido matar el proceso después: la llamante (ver
-            // SettingsScreen) solo reinicia si esto devuelve true.
             false
         }
     }
 
     /**
-     * Mata el proceso de la app a propósito, SIN relanzarlo, para forzar que
-     * todos los launchers relean el ícono la próxima vez que el usuario
-     * vuelva a abrir la app. Debe llamarse DESPUÉS de un setIcon() exitoso,
-     * y solo una vez que cualquier mensaje para el usuario (Toast/Snackbar
-     * avisando que la app se va a cerrar) ya se alcanzó a mostrar — esta
-     * función no espera nada, mata el proceso ya mismo.
+     * Reinicio MANUAL y OPCIONAL: el usuario lo dispara a mano desde
+     * Ajustes si, después de cambiar el ícono, su launcher (algunos, como
+     * Samsung One UI o MIUI, cachean el ícono mientras el proceso de la app
+     * sigue vivo) no lo refleja solo. A diferencia de v2/v4, esto nunca se
+     * dispara automáticamente ni intenta relanzar la app por su cuenta —
+     * mata el proceso y listo; reabrirla queda en manos del usuario,
+     * tocando su ícono como de costumbre.
      */
-    fun restartProcessToApplyIcon() {
+    fun restartProcess() {
         Process.killProcess(Process.myPid())
         exitProcess(0)
     }

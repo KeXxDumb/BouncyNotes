@@ -822,11 +822,11 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
 @Composable
 private fun AppIconSetting() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
-    // Ícono tocado, pendiente de que el usuario confirme el reinicio en el
-    // diálogo de abajo (null = no hay ningún diálogo abierto).
-    var pendingIcon by remember { mutableStateOf<AppIcon?>(null) }
+    // Se pone en true la primera vez que se cambia de ícono en esta sesión,
+    // para recién ahí mostrar la opción de reiniciar manualmente (antes de
+    // tocar nada no tiene sentido ofrecerla).
+    var changedThisSession by remember { mutableStateOf(false) }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -844,11 +844,14 @@ private fun AppIconSetting() {
                         shape = RoundedCornerShape(14.dp)
                     )
                     .clickable {
-                        // Tocar el que ya está elegido no hace nada: no tiene
-                        // sentido reiniciar la app para "cambiar" a un ícono
-                        // que ya es el actual.
                         if (icon != selected) {
-                            pendingIcon = icon
+                            val applied = AppIconManager.setIcon(context, icon)
+                            if (applied) {
+                                selected = icon
+                                changedThisSession = true
+                            } else {
+                                Toast.makeText(context, "No se pudo cambiar el ícono", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
                     .padding(10.dp)
@@ -888,43 +891,32 @@ private fun AppIconSetting() {
         }
     }
     Text(
-        "Cambiar de ícono cierra la app: algunos teléfonos (Samsung, Xiaomi) " +
-            "no actualizan el ícono de la pantalla de inicio mientras la app " +
-            "sigue abierta. Después de cerrarse, volvé a abrirla tocando el " +
-            "ícono como de costumbre — ya se va a ver el nuevo.",
+        "El cambio se aplica al toque. Si no se ve reflejado en la pantalla " +
+            "de inicio, volvé al inicio o abrí el cajón de apps de nuevo — " +
+            "algunos teléfonos (Samsung, Xiaomi) tardan un poco en refrescar " +
+            "el ícono mientras la app sigue abierta.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
-    val iconToConfirm = pendingIcon
-    if (iconToConfirm != null) {
-        AlertDialog(
-            onDismissRequest = { pendingIcon = null },
-            title = { Text("¿Cambiar a \"${iconToConfirm.label}\"?") },
-            text = { Text("La app se va a cerrar para aplicar el cambio. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingIcon = null
-                    val applied = AppIconManager.setIcon(context, iconToConfirm)
-                    if (applied) {
-                        selected = iconToConfirm
-                        Toast.makeText(context, "Cerrando para aplicar el ícono nuevo…", Toast.LENGTH_SHORT).show()
-                        // Un pequeño margen para que el Toast de arriba
-                        // alcance a mostrarse antes de que el proceso muera
-                        // (ver AppIconManager.restartProcessToApplyIcon).
-                        scope.launch {
-                            delay(600)
-                            AppIconManager.restartProcessToApplyIcon()
-                        }
-                    } else {
-                        Toast.makeText(context, "No se pudo cambiar el ícono", Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("Cambiar y cerrar") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingIcon = null }) { Text("Cancelar") }
-            }
-        )
+    if (changedThisSession) {
+        var showRestartConfirm by remember { mutableStateOf(false) }
+        TextButton(onClick = { showRestartConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
+            Text("¿Sigue sin verse? Reiniciar la app ahora")
+        }
+        if (showRestartConfirm) {
+            AlertDialog(
+                onDismissRequest = { showRestartConfirm = false },
+                title = { Text("¿Reiniciar la app?") },
+                text = { Text("La app se va a cerrar. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
+                confirmButton = {
+                    TextButton(onClick = { AppIconManager.restartProcess() }) { Text("Reiniciar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRestartConfirm = false }) { Text("Cancelar") }
+                }
+            )
+        }
     }
 }
 
