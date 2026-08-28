@@ -415,7 +415,7 @@ fun NoteListScreen(
                         },
                         actions = {
                             if (viewMode != ViewMode.TRASH) {
-                                val selectedNotes = notes.filter { it.id in selectedIds }
+                                val selectedNotes = notes.orEmpty().filter { it.id in selectedIds }
                                 val anyUnpinned = selectedNotes.any { !it.pinned }
                                 val anyPinned = selectedNotes.any { it.pinned }
                                 if (anyUnpinned) {
@@ -552,6 +552,10 @@ fun NoteListScreen(
                 }
             }
         ) { padding ->
+            // Val local explícito (no la propiedad delegada `notes` de más
+            // arriba) para que el smart-cast de null -> List<Note> entre las
+            // ramas del when de abajo sea inequívoco.
+            val currentNotes = notes
             when {
                 viewMode == ViewMode.PRIVATE && !biometricUnlockedForPrivate -> {
                     Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -564,7 +568,15 @@ fun NoteListScreen(
                         }
                     }
                 }
-                notes.isEmpty() -> {
+                currentNotes == null -> {
+                    // Todavía no llegó la primera consulta real a Room (es
+                    // asíncrona, tarda al menos una corrutina): no mostramos
+                    // nada acá — ni la lista ni "No hay notas aquí todavía" —
+                    // para no mentirle al usuario por una fracción de
+                    // segundo justo al abrir la app.
+                    Box(modifier = Modifier.fillMaxSize().padding(padding))
+                }
+                currentNotes.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                         Text("No hay notas aquí todavía", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -578,7 +590,7 @@ fun NoteListScreen(
                             contentPadding = PaddingValues(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(notes, key = { it.id }) { note ->
+                            items(currentNotes, key = { it.id }) { note ->
                                 NoteCard(
                                     note = note,
                                     checkboxPosition = settings.checkboxPosition,
@@ -614,7 +626,7 @@ fun NoteListScreen(
                             verticalItemSpacing = 8.dp,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(notes, key = { it.id }) { note ->
+                            items(currentNotes, key = { it.id }) { note ->
                                 NoteCard(
                                     note = note,
                                     checkboxPosition = settings.checkboxPosition,

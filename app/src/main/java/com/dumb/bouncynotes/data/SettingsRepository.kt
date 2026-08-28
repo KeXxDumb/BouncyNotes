@@ -11,6 +11,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "app_settings")
 
@@ -147,6 +148,16 @@ class SettingsRepository(private val context: Context) {
                 RightEdgeSwipeAction.valueOf(prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] ?: "SETTINGS")
             }.getOrDefault(RightEdgeSwipeAction.SETTINGS)
         )
+    }.onEach { real ->
+        // Cada vez que llega un valor REAL desde DataStore (la fuente de
+        // verdad), lo espejamos en el caché sincrónico (ver SettingsCache):
+        // así, la PRÓXIMA vez que arranque la app en frío, MainActivity ya
+        // puede leer estos mismos valores de forma sincrónica antes de
+        // pintar el primer frame, en vez de tener que esperar a que este
+        // Flow entregue su primer valor (lo que siempre tarda al menos una
+        // corrutina, un frame entero de Compose) — eso es lo que eliminaba
+        // el parpadeo de fondo negro / valores de fábrica al abrir la app.
+        SettingsCache.save(context, real)
     }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) {

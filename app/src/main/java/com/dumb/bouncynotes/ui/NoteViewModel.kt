@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -46,9 +47,29 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         notes.flatMap { it.labels }.distinct().sorted()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val notes: StateFlow<List<Note>> = combine(
-        allNotes, _query, _viewMode, _labelFilter, settingsRepository.settings
-    ) { list, q, mode, label, settings ->
+    // Antes esto combinaba directo contra settingsRepository.settings
+    // completo, así que CUALQUIER cambio de ajuste (aunque no tuviera nada
+    // que ver con el orden, ej. cambiar el tamaño de fuente) volvía a armar
+    // y ordenar esta lista entera de nuevo. Nos quedamos solo con el campo
+    // que en verdad se usa acá (sortOrder) y con distinctUntilChanged, así
+    // este combine solo se vuelve a evaluar cuando el orden de verdad
+    // cambió — evita trabajo (y recomposición de la UI de la lista) de
+    // sobra en el resto de los casos.
+    private val sortOrderOnly = settingsRepository.settings
+        .map { it.sortOrder }
+        .distinctUntilChanged()
+
+    // BUG del parpadeo "No hay notas": antes esto arrancaba en emptyList(),
+    // que es indistinguible de "ya se consultó Room y de verdad no hay
+    // notas". Como la primera consulta real a Room (dao.getAll(), un Flow
+    // asíncrono) siempre tarda al menos una corrutina en entregar su primer
+    // valor, la UI mostraba brevemente "No hay notas aquí todavía" incluso
+    // con notas guardadas, hasta que esa primera consulta terminaba. Ahora
+    // la semilla es null ("todavía no sé"), y NoteListScreen no debe tratar
+    // null igual que una lista vacía real (ver el `when` en esa pantalla).
+    val notes: StateFlow<List<Note>?> = combine(
+        allNotes, _query, _viewMode, _labelFilter, sortOrderOnly
+    ) { list, q, mode, label, sortOrder ->
         var filtered = when (mode) {
             ViewMode.ALL -> list.filter { it.deletedAt == null && !it.isPrivate }
             ViewMode.TRASH -> list.filter { it.deletedAt != null }
@@ -64,14 +85,14 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     note.checklistItems.any { it.text.contains(q, ignoreCase = true) }
             }
         }
-        val secondary: Comparator<Note> = when (settings.sortOrder) {
+        val secondary: Comparator<Note> = when (sortOrder) {
             SortOrder.UPDATED -> compareByDescending { it.updatedAt }
             SortOrder.CREATED -> compareByDescending { it.createdAt }
             SortOrder.ALPHABETICAL -> compareBy { it.title.lowercase() }
             SortOrder.COLOR -> compareBy { it.color ?: "zzzzzz" }
         }
         filtered.sortedWith(compareByDescending<Note> { it.pinned }.then(secondary))
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
         viewModelScope.launch {
@@ -81,12 +102,22 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            settingsRepository.settings.collect { settings ->
-                if (settings.trashPurgeDays > 0) {
-                    val threshold = System.currentTimeMillis() - (settings.trashPurgeDays.toLong() * 24 * 60 * 60 * 1000)
-                    repository.purgeOldTrash(threshold)
+            // Antes esto era settingsRepository.settings.collect { ... }
+            // directo: se ejecutaba una consulta DELETE contra Room cada vez
+            // que CUALQUIER ajuste cambiaba (tema, tamaño de fuente, etc.),
+            // no solo cuando trashPurgeDays cambiaba de verdad. map +
+            // distinctUntilChanged acá evita ese trabajo de sobra: la purga
+            // solo vuelve a correr cuando ese valor puntual es distinto al
+            // anterior.
+            settingsRepository.settings
+                .map { it.trashPurgeDays }
+                .distinctUntilChanged()
+                .collect { trashPurgeDays ->
+                    if (trashPurgeDays > 0) {
+                        val threshold = System.currentTimeMillis() - (trashPurgeDays.toLong() * 24 * 60 * 60 * 1000)
+                        repository.purgeOldTrash(threshold)
+                    }
                 }
-            }
         }
     }
 
