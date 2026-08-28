@@ -952,25 +952,6 @@ private fun AppIconSetting() {
         }
     }
 }
-        var showRestartConfirm by remember { mutableStateOf(false) }
-        TextButton(onClick = { showRestartConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
-            Text("¿Sigue sin verse? Reiniciar la app ahora")
-        }
-        if (showRestartConfirm) {
-            AlertDialog(
-                onDismissRequest = { showRestartConfirm = false },
-                title = { Text("¿Reiniciar la app?") },
-                text = { Text("La app se va a cerrar. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
-                confirmButton = {
-                    TextButton(onClick = { AppIconManager.restartProcess() }) { Text("Reiniciar") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showRestartConfirm = false }) { Text("Cancelar") }
-                }
-            )
-        }
-    }
-}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
