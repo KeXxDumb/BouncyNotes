@@ -827,6 +827,13 @@ private fun AppIconSetting() {
     // para recién ahí mostrar la opción de reiniciar manualmente (antes de
     // tocar nada no tiene sentido ofrecerla).
     var changedThisSession by remember { mutableStateOf(false) }
+    // Diagnóstico: estado REAL que devuelve PackageManager para cada alias,
+    // recién leído después del último intento de cambio. Si esto no
+    // refleja el ícono elegido, el problema es que PackageManager rechaza
+    // el cambio (algo que se puede arreglar en la app); si SÍ lo refleja
+    // pero la pantalla de inicio no cambia, el problema es 100% del
+    // launcher del teléfono (algo que la app no puede forzar).
+    var rawStates by remember { mutableStateOf<List<Pair<AppIcon, String>>?>(null) }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -845,13 +852,23 @@ private fun AppIconSetting() {
                     )
                     .clickable {
                         if (icon != selected) {
-                            val applied = AppIconManager.setIcon(context, icon)
-                            if (applied) {
-                                selected = icon
-                                changedThisSession = true
-                            } else {
-                                Toast.makeText(context, "No se pudo cambiar el ícono", Toast.LENGTH_SHORT).show()
-                            }
+                            AppIconManager.setIcon(context, icon)
+                                .onSuccess {
+                                    selected = AppIconManager.current(context)
+                                    changedThisSession = true
+                                }
+                                .onFailure { e ->
+                                    // Antes esto se tragaba en silencio (v1-v5):
+                                    // si PackageManager rechaza el cambio, ahora
+                                    // se ve el motivo real en vez de que
+                                    // simplemente "no pase nada".
+                                    Toast.makeText(
+                                        context,
+                                        "No se pudo cambiar el ícono: ${e.javaClass.simpleName}: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            rawStates = AppIconManager.rawStates(context)
                         }
                     }
                     .padding(10.dp)
@@ -899,7 +916,42 @@ private fun AppIconSetting() {
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
 
+    // Diagnóstico visible (sin necesitar adb/logcat): si esto muestra el
+    // estado correcto (el elegido en ENABLED, los otros en DISABLED/DEFAULT)
+    // pero el ícono real de la pantalla de inicio nunca cambia, el problema
+    // es 100% del launcher — no hay nada más para arreglar del lado de la
+    // app. Si en cambio esto NO refleja el cambio, hay un problema real de
+    // PackageManager para reportar (con el mensaje de error de arriba).
+    rawStates?.let { states ->
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Diagnóstico (estado real de PackageManager): " +
+                states.joinToString("  •  ") { (icon, state) -> "${icon.label}: $state" },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+
     if (changedThisSession) {
+        var showRestartConfirm by remember { mutableStateOf(false) }
+        TextButton(onClick = { showRestartConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
+            Text("¿Sigue sin verse? Reiniciar la app ahora")
+        }
+        if (showRestartConfirm) {
+            AlertDialog(
+                onDismissRequest = { showRestartConfirm = false },
+                title = { Text("¿Reiniciar la app?") },
+                text = { Text("La app se va a cerrar. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
+                confirmButton = {
+                    TextButton(onClick = { AppIconManager.restartProcess() }) { Text("Reiniciar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRestartConfirm = false }) { Text("Cancelar") }
+                }
+            )
+        }
+    }
+}
         var showRestartConfirm by remember { mutableStateOf(false) }
         TextButton(onClick = { showRestartConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
             Text("¿Sigue sin verse? Reiniciar la app ahora")
