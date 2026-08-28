@@ -3,6 +3,7 @@ package com.dumb.bouncynotes.ui
 import android.app.Activity
 import android.content.ContextWrapper
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -104,6 +105,7 @@ import com.dumb.bouncynotes.data.RightEdgeSwipeAction
 import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
 import com.dumb.bouncynotes.ui.theme.ThemeSeedColors
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -820,15 +822,12 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
 @Composable
 private fun AppIconSetting() {
     val context = LocalContext.current
-    // Se relee directo de PackageManager (no de un estado propio) cada vez
-    // que cambia `selected`, para que el textito de abajo sea la fuente de
-    // verdad real del sistema y no lo que la UI "cree" que pasó. Si después
-    // de tocar un ícono este texto SÍ cambia al correcto pero la pantalla de
-    // inicio sigue mostrando el viejo, el problema es el refresco del
-    // launcher (no algo que la app pueda forzar); si este texto NO cambia,
-    // ahí sí hay un bug real en AppIconManager.setIcon para reportar.
+    val scope = rememberCoroutineScope()
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
-    var realState by remember { mutableStateOf(AppIconManager.current(context)) }
+    // Ícono tocado, pendiente de que el usuario confirme el reinicio en el
+    // diálogo de abajo (null = no hay ningún diálogo abierto).
+    var pendingIcon by remember { mutableStateOf<AppIcon?>(null) }
+
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.padding(bottom = 4.dp)
@@ -845,13 +844,12 @@ private fun AppIconSetting() {
                         shape = RoundedCornerShape(14.dp)
                     )
                     .clickable {
-                        // Ya no reinicia la app (ver el historial en
-                        // AppIconManager.setIcon): solo cambia el componente
-                        // habilitado con DONT_KILL_APP, así que esta línea sí
-                        // llega a ejecutarse siempre.
-                        selected = icon
-                        AppIconManager.setIcon(context, icon)
-                        realState = AppIconManager.current(context)
+                        // Tocar el que ya está elegido no hace nada: no tiene
+                        // sentido reiniciar la app para "cambiar" a un ícono
+                        // que ya es el actual.
+                        if (icon != selected) {
+                            pendingIcon = icon
+                        }
                     }
                     .padding(10.dp)
             ) {
@@ -890,18 +888,44 @@ private fun AppIconSetting() {
         }
     }
     Text(
-        "El cambio es inmediato (no hace falta reiniciar la app). Si no se ve " +
-            "reflejado en la pantalla de inicio del teléfono, volvé al inicio o " +
-            "abrí el cajón de apps de nuevo: algunos lanzadores tardan un " +
-            "instante en refrescar el ícono.",
+        "Cambiar de ícono cierra la app: algunos teléfonos (Samsung, Xiaomi) " +
+            "no actualizan el ícono de la pantalla de inicio mientras la app " +
+            "sigue abierta. Después de cerrarse, volvé a abrirla tocando el " +
+            "ícono como de costumbre — ya se va a ver el nuevo.",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Text(
-        "Estado real del sistema ahora mismo: ${realState.label}",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
+
+    val iconToConfirm = pendingIcon
+    if (iconToConfirm != null) {
+        AlertDialog(
+            onDismissRequest = { pendingIcon = null },
+            title = { Text("¿Cambiar a \"${iconToConfirm.label}\"?") },
+            text = { Text("La app se va a cerrar para aplicar el cambio. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingIcon = null
+                    val applied = AppIconManager.setIcon(context, iconToConfirm)
+                    if (applied) {
+                        selected = iconToConfirm
+                        Toast.makeText(context, "Cerrando para aplicar el ícono nuevo…", Toast.LENGTH_SHORT).show()
+                        // Un pequeño margen para que el Toast de arriba
+                        // alcance a mostrarse antes de que el proceso muera
+                        // (ver AppIconManager.restartProcessToApplyIcon).
+                        scope.launch {
+                            delay(600)
+                            AppIconManager.restartProcessToApplyIcon()
+                        }
+                    } else {
+                        Toast.makeText(context, "No se pudo cambiar el ícono", Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("Cambiar y cerrar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingIcon = null }) { Text("Cancelar") }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -956,6 +980,11 @@ private fun BackgroundPreviewMockup(settings: AppSettings, context: android.cont
             .background(MaterialTheme.colorScheme.background)
     ) {
         settings.backgroundImagePath?.let { path ->
+            if (settings.backgroundMonochrome) {
+                // Mismo arreglo que en NoteListScreen: fondo negro plano de
+                // respaldo en modo monocromático, no el color del tema.
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+            }
             AsyncImage(
                 model = File(ImageStorage.imagesDir(context), path),
                 contentDescription = null,

@@ -227,6 +227,21 @@ fun NoteListScreen(
             }
     ) {
         if (settings.backgroundImagePath != null) {
+            if (settings.backgroundMonochrome) {
+                // BUG reportado: con el modo monocromático activo, mientras la
+                // imagen todavía no terminó de cargar (o si algún borde
+                // quedara sin cubrir) se veía el color "surface" de la
+                // paleta del tema — es el color de la Surface base de
+                // MainActivity, que se ve A TRAVÉS mientras no hay nada más
+                // pintado encima todavía. En modo monocromático la idea es
+                // una foto en blanco y negro sobre un fondo oscuro parejo,
+                // así que ese respaldo tiene que ser negro plano siempre,
+                // no un color que cambia según el color semilla elegido en
+                // Ajustes (en modo normal esto no se notaba tanto porque,
+                // con tema oscuro, esa "surface" ya se ve parecida a negro
+                // de casualidad).
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
+            }
             AsyncImage(
                 model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
                 contentDescription = null,
