@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,7 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -884,9 +884,9 @@ private fun AppIconSetting() {
                         )
                     }
                     AppIcon.VECTOR_TEST -> {
-                        // Sin recurso de imagen: este ícono es 100% vectorial
-                        // (a propósito, para la comparación PNG vs vector),
-                        // así que el preview también se arma sin ningún PNG.
+                        // Preview simplificado del diseño real (nota +
+                        // 2 melones superpuestos): dos círculos en los
+                        // mismos verdes, sin necesidad de ningún PNG.
                         Box(
                             modifier = Modifier
                                 .size(56.dp)
@@ -894,10 +894,19 @@ private fun AppIconSetting() {
                                 .background(Color(0xFF26A69A)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Bookmark,
-                                contentDescription = icon.label,
-                                tint = Color.White
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = (-6).dp, y = 6.dp)
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFAED581))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 6.dp, y = 8.dp)
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFC5E1A5))
                             )
                         }
                     }
