@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Vector vacío (sin paths), igual que ic_notegirl_foreground.xml: deja que
-     la capa de fondo (el PNG morado con la notita) se vea completa en el
-     ícono adaptativo, sin ningún dibujo encima. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108" />
