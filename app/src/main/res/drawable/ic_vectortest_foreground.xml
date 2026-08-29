@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono de prueba NUEVO (reemplaza a PurpleNote, que era una prueba
+     fallida: su foreground estaba vacío a propósito y dependía 100% de un
+     PNG). Este es el opuesto: 100% vectorial, sin ningún PNG de por medio,
+     para comparar contra "Por defecto" (también vector, ya rediseñado) y
+     contra "Note Girl" (PNG). Diseño simple: una etiqueta/tag, sin relación
+     con el durazno, para poder confirmar a simple vista cuál ícono está
+     activo. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,26 L68,26 L68,74 L54,88 L40,74 Z" />
+    <path
+        android:fillColor="#26A69A"
+        android:pathData="M54,44 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z" />
+</vector>

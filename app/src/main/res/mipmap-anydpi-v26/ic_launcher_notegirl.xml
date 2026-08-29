@@ -2,4 +2,14 @@
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_notegirl_background" />
     <foreground android:drawable="@drawable/ic_notegirl_foreground" />
+    <!-- A diferencia de los otros dos íconos (vectoriales, donde se puede
+         reusar el foreground tal cual como monochrome), acá el foreground
+         está vacío (todo el dibujo vive en el PNG de fondo). No hay forma
+         de derivar una silueta real sin volver a dibujar el personaje a
+         mano, así que esta silueta (ic_notegirl_monochrome.png) se generó
+         automáticamente a partir del PNG original (umbral de brillo +
+         canal alfa) solo para tener ALGO no vacío que el launcher pueda
+         cachear correctamente — no es arte pulido, es una aproximación
+         para la prueba. -->
+    <monochrome android:drawable="@drawable/ic_notegirl_monochrome" />
 </adaptive-icon>

@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -882,13 +883,23 @@ private fun AppIconSetting() {
                             modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
                         )
                     }
-                    AppIcon.PURPLE_NOTE -> {
-                        Image(
-                            painter = painterResource(R.drawable.ic_purple_note_background),
-                            contentDescription = icon.label,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                        )
+                    AppIcon.VECTOR_TEST -> {
+                        // Sin recurso de imagen: este ícono es 100% vectorial
+                        // (a propósito, para la comparación PNG vs vector),
+                        // así que el preview también se arma sin ningún PNG.
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF26A69A)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Bookmark,
+                                contentDescription = icon.label,
+                                tint = Color.White
+                            )
+                        }
                     }
                     else -> {
                         Box(

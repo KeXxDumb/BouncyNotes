@@ -1,3 +1,5 @@
 <resources>
     <color name="ic_launcher_background">#FFB74D</color>
+    <!-- Fondo del ícono de prueba vectorial (VectorTestIconAlias). -->
+    <color name="ic_launcher_vectortest_background">#26A69A</color>
 </resources>
