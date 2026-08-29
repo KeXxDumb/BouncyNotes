@@ -4,43 +4,27 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Process
+import com.dumb.bouncynotes.R
 import kotlin.system.exitProcess
 
-// v7 — REESCRITO DESDE CERO como experimento controlado, después de
-// confirmar con una app de referencia real (Goodwy Gallery, que usa este
-// mismo mecanismo de base) que el cambio de ícono SÍ funciona instantáneo en
-// el mismo dispositivo donde a BouncyNotes no se le reflejaba. Eso descartó
-// la teoría de "es un límite del launcher/OS" — el problema tenía que estar
-// del lado de esta app.
+// v7 — algoritmo calcado de una app de referencia real (Goodwy Gallery, que
+// usa este mismo mecanismo de base) después de confirmar en el mismo
+// dispositivo que el cambio de ícono SÍ funciona instantáneo ahí. La
+// diferencia real encontrada: agregar la capa <monochrome> (íconos con
+// temas, Android 13+) a los tres íconos. Con eso, "Durazno" y "Melones"
+// (ambos 100% vectoriales) ya refrescan bien; "Note Girl" (el único basado
+// en PNG) sigue sin reflejarse — evidencia de que el problema real es
+// específicamente PNG vs vector en el launcher del usuario, no el algoritmo
+// de habilitar/deshabilitar en sí.
 //
-// Comparando el manifiesto real de esa app contra el nuestro, la diferencia
-// concreta encontrada fue: NINGUNO de nuestros tres íconos tenía la capa
-// <monochrome> (la usada por "íconos con temas" de Material You, Android
-// 13+), mientras que TODOS los de la referencia sí la tienen. Sin esa capa,
-// algunos launchers (Samsung One UI, Xiaomi HyperOS) generan y cachean la
-// versión temática del ícono una sola vez POR PAQUETE instalado, y esa
-// caché no se invalida al cambiar de alias en runtime — solo se refresca
-// reinstalando la app. Eso explicaría por qué el diagnóstico de
-// PackageManager (ver rawStates() más abajo) siempre mostraba el cambio
-// como aceptado, pero la pantalla de inicio seguía sin reflejarlo.
-//
-// Este archivo reimplementa el cambio de ícono calcando el algoritmo real
-// de la referencia (ver Context-styling.kt de Goodwy Commons,
-// checkAppIconColor()/toggleAppIconColor()): deshabilitar TODOS los alias
-// primero (DISABLED explícito, en un loop) y recién después habilitar el
-// elegido (ENABLED), siempre con DONT_KILL_APP. Se abandona a propósito la
-// distinción DEFAULT-vs-DISABLED de la v5/v6 (que en su momento se pensó
-// necesaria) para que este sea un experimento limpio: si ahora SÍ funciona
-// con el algoritmo simple + monochrome agregado, confirma que el problema
-// real siempre fue la capa monochrome faltante, no el algoritmo de
-// habilitar/deshabilitar.
-enum class AppIcon(val alias: String, val label: String) {
-    DEFAULT("com.dumb.bouncynotes.DefaultIconAlias", "Por defecto"),
-    NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl"),
-    // Reemplaza al viejo "Purple Note" (PNG con foreground vacío, sin
-    // monochrome). Este es el opuesto: 100% vectorial, para comparar contra
-    // Note Girl (PNG) ahora que ambos tienen su capa monochrome.
-    VECTOR_TEST("com.dumb.bouncynotes.VectorTestIconAlias", "Prueba vectorial")
+// v8 — íconos renombrados por la fruta que llevan: DEFAULT -> PEACH,
+// VECTOR_TEST -> MELONS. También se agrega mipmapResId a cada entrada para
+// que la UI de Ajustes pueda mostrar el ícono REAL (el mismo recurso
+// @mipmap que usa el sistema) en vez de una aproximación dibujada aparte.
+enum class AppIcon(val alias: String, val label: String, val mipmapResId: Int) {
+    PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.mipmap.ic_launcher),
+    NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.mipmap.ic_launcher_notegirl),
+    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.mipmap.ic_launcher_melons)
 }
 
 object AppIconManager {
@@ -49,7 +33,7 @@ object AppIconManager {
         return AppIcon.entries.firstOrNull { icon ->
             pm.getComponentEnabledSetting(ComponentName(context, icon.alias)) ==
                 PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-        } ?: AppIcon.DEFAULT
+        } ?: AppIcon.PEACH
     }
 
     /**
@@ -72,9 +56,7 @@ object AppIconManager {
 
     /**
      * Algoritmo calcado de la referencia: apagar TODOS los alias primero,
-     * después prender solo el elegido. Sin distinción DEFAULT/DISABLED a
-     * propósito (ver comentario de arriba del archivo) — es la parte que
-     * este experimento está poniendo a prueba.
+     * después prender solo el elegido, siempre con DONT_KILL_APP.
      */
     fun setIcon(context: Context, icon: AppIcon): Result<Unit> {
         val pm = context.packageManager
@@ -99,9 +81,8 @@ object AppIconManager {
     }
 
     /**
-     * Reinicio MANUAL y OPCIONAL: se mantiene igual que en la v6, por si
-     * hace falta como último recurso incluso después del fix de monochrome.
-     * Nunca se dispara automáticamente.
+     * Reinicio MANUAL y OPCIONAL: se mantiene por si hace falta como último
+     * recurso. Nunca se dispara automáticamente.
      */
     fun restartProcess() {
         Process.killProcess(Process.myPid())

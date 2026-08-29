@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Melones": misma estructura exacta que ic_launcher_foreground.xml
+     (Durazno) — hoja + rayón + marco — pero con 2 melones levemente
+     superpuestos dentro del marco en vez de un durazno. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillColor="#FFF3E0"
+        android:pathData="M24,20 L76,20 L84,28 L84,88 L24,88 Z" />
+    <path
+        android:fillColor="#FFE0B2"
+        android:pathData="M76,20 L84,28 L76,28 Z" />
+
+    <path
+        android:strokeColor="#8D6E63"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,40 C36,32 42,46 48,38 C54,30 60,44 66,36" />
+
+    <path
+        android:strokeColor="#D7CCC8"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M32,48 L76,48 L76,84 L32,84 Z" />
+
+    <!-- Melón de atrás. -->
+    <path
+        android:fillColor="#AED581"
+        android:pathData="M45,67 m-13,0 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0 z" />
+    <!-- Melón de adelante, superpuesto. -->
+    <path
+        android:fillColor="#C5E1A5"
+        android:pathData="M61,69 m-15,0 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.4"
+        android:pathData="M57,62 m-5,-3.5 a5,3.5 0 1,0 10,0 a5,3.5 0 1,0 -10,0 z" />
+</vector>

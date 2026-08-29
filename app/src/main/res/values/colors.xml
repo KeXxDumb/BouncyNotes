@@ -1,5 +1,5 @@
 <resources>
     <color name="ic_launcher_background">#FFB74D</color>
-    <!-- Fondo del ícono de prueba vectorial (VectorTestIconAlias). -->
-    <color name="ic_launcher_vectortest_background">#26A69A</color>
+    <!-- Fondo del ícono "Melones" (MelonsIconAlias). -->
+    <color name="ic_launcher_melons_background">#26A69A</color>
 </resources>

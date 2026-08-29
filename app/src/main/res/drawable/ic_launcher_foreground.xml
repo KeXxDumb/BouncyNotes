@@ -1,41 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Rediseño v2: una hoja de papel (con la esquina doblada, típico ícono de
-     "nota") con un rayón/garabato simulando texto, y por debajo de la hoja
-     asoma un durazno (la mascota real de la app). El durazno se dibuja
-     PRIMERO (queda atrás) y el papel se dibuja DESPUÉS (encima), tapando la
-     mitad de arriba del durazno — solo se le ve la panza inferior asomando
-     por debajo del borde de la hoja. -->
+<!-- "Durazno": nota de papel completa (con esquina doblada) que contiene,
+     DENTRO de sus límites: un rayón garabateado arriba (el "texto") y,
+     debajo de esa línea, un durazno chico dentro de un marco tipo foto
+     adjunta — simulando una nota real de la app con texto + imagen
+     complementaria. Nada del dibujo sale de la hoja. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Durazno, atrás. Cuerpo simple (sin lóbulos/tallo/hoja: esa parte
-         queda tapada por el papel de todos modos) + una sombra sutil para
-         dar volumen a lo que sí se ve. -->
-    <path
-        android:fillColor="#FF8A65"
-        android:pathData="M29,76 a25,22 0 1,0 50,0 a25,22 0 1,0 -50,0 z" />
-    <path
-        android:fillColor="#E8735A"
-        android:pathData="M54,80 a12,14 0 1,0 24,0 a12,14 0 1,0 -24,0 z" />
-
-    <!-- Hoja de papel, adelante, con la esquina superior derecha doblada
-         ("dog-ear"), el detalle clásico de ícono de nota. -->
+    <!-- Hoja de papel, con esquina superior derecha doblada. -->
     <path
         android:fillColor="#FFF3E0"
-        android:pathData="M26,22 L74,22 L82,30 L82,74 L26,74 Z" />
+        android:pathData="M24,20 L76,20 L84,28 L84,88 L24,88 Z" />
     <path
         android:fillColor="#FFE0B2"
-        android:pathData="M74,22 L82,30 L74,30 Z" />
+        android:pathData="M76,20 L84,28 L76,28 Z" />
 
-    <!-- El rayón simulando texto: una sola línea garabateada, no un bloque
-         de texto prolijo. -->
+    <!-- Rayón simulando texto, arriba de la hoja. -->
     <path
         android:strokeColor="#8D6E63"
-        android:strokeWidth="3.5"
+        android:strokeWidth="3"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M34,48 C40,40 46,54 52,46 C58,38 64,52 70,44" />
+        android:pathData="M30,40 C36,32 42,46 48,38 C54,30 60,44 66,36" />
+
+    <!-- Marco de la "imagen adjunta", dentro de la hoja, debajo del texto. -->
+    <path
+        android:strokeColor="#D7CCC8"
+        android:strokeWidth="2"
+        android:fillColor="#00000000"
+        android:pathData="M32,48 L76,48 L76,84 L32,84 Z" />
+
+    <!-- Durazno, dentro del marco. -->
+    <path
+        android:fillColor="#7CB342"
+        android:pathData="M48,54 C51,49 58,49 61,53 C58,57 51,57 48,54 Z" />
+    <path
+        android:fillColor="#5D4037"
+        android:pathData="M53,54 L55,54 L55.5,49 L52.5,49 Z" />
+    <path
+        android:fillColor="#FF8A65"
+        android:pathData="M37,62 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 z
+                           M52,62 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 z
+                           M38,72 a16,12 0 1,0 32,0 a16,12 0 1,0 -32,0 z" />
+    <path
+        android:fillColor="#E8735A"
+        android:pathData="M54.5,70 a6.5,8 0 1,0 13,0 a6.5,8 0 1,0 -13,0 z" />
+    <path
+        android:strokeColor="#E8735A"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M54,56 C51,63 57,70 54,80" />
 </vector>

@@ -44,10 +44,10 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Notes" />
 
-        <!-- Ícono por defecto (rediseñado: ahora es un durazno vectorial de
-             verdad, ver ic_launcher_foreground.xml). Habilitado al principio. -->
+        <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
+             (ver ic_launcher_foreground.xml). Habilitado al principio. -->
         <activity-alias
-            android:name=".DefaultIconAlias"
+            android:name=".PeachIconAlias"
             android:targetActivity=".MainActivity"
             android:enabled="true"
             android:exported="true"
@@ -76,18 +76,16 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Ícono de prueba vectorial (reemplaza al viejo "Purple Note", que
-             era una prueba fallida sin capa monochrome). 100% vector, sin
-             ningún PNG de por medio — para comparar contra Note Girl (PNG) y
-             contra Por Defecto (vector) ahora que los tres tienen capa
-             monochrome. Deshabilitado al principio; se activa desde Ajustes. -->
+        <!-- "Melones": misma estructura que Durazno, con 2 melones
+             superpuestos dentro de la hoja en vez de un durazno. 100%
+             vectorial. Deshabilitado al principio; se activa desde Ajustes. -->
         <activity-alias
-            android:name=".VectorTestIconAlias"
+            android:name=".MelonsIconAlias"
             android:targetActivity=".MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_vectortest"
-            android:roundIcon="@mipmap/ic_launcher_vectortest"
+            android:icon="@mipmap/ic_launcher_melons"
+            android:roundIcon="@mipmap/ic_launcher_melons"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

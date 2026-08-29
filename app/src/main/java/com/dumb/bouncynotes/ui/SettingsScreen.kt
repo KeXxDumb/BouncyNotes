@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -874,54 +873,18 @@ private fun AppIconSetting() {
                     }
                     .padding(10.dp)
             ) {
-                when (icon) {
-                    AppIcon.NOTE_GIRL -> {
-                        Image(
-                            painter = painterResource(R.drawable.ic_notegirl_background),
-                            contentDescription = icon.label,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                        )
-                    }
-                    AppIcon.VECTOR_TEST -> {
-                        // Preview simplificado del diseño real (nota +
-                        // 2 melones superpuestos): dos círculos en los
-                        // mismos verdes, sin necesidad de ningún PNG.
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF26A69A)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .offset(x = (-6).dp, y = 6.dp)
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFAED581))
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .offset(x = 6.dp, y = 8.dp)
-                                    .size(30.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFFC5E1A5))
-                            )
-                        }
-                    }
-                    else -> {
-                        Box(
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFFFB74D)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("🍑", style = MaterialTheme.typography.headlineMedium)
-                        }
-                    }
-                }
+                // 1:1 real: se carga el mismo recurso @mipmap que usa el
+                // sistema para el launcher (AdaptiveIconDrawable, con sus
+                // capas background+foreground+monochrome ya combinadas) —
+                // antes acá había una aproximación dibujada a mano por
+                // ícono (un emoji, círculos sueltos...) que se podía
+                // desincronizar del diseño real. Ahora es literalmente el
+                // mismo dibujo, no una copia.
+                Image(
+                    painter = painterResource(icon.mipmapResId),
+                    contentDescription = icon.label,
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(icon.label, style = MaterialTheme.typography.labelSmall)
             }
