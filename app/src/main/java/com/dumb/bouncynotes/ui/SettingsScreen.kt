@@ -883,17 +883,24 @@ private fun AppIconSetting() {
                 // sistema — PERO painterResource() no sabe interpretar un
                 // XML <adaptive-icon> (solo entiende <vector> o bitmaps
                 // planos), así que crasheaba al entrar a esta pantalla.
-                // Solución: pedirle el Drawable real a ContextCompat (que sí
-                // sabe construir un AdaptiveIconDrawable a partir de las 3
-                // capas) y rasterizarlo nosotros a un Bitmap normal con
-                // toBitmap() (androidx.core) — Compose ya sabe mostrar eso
-                // sin problema.
+                // Se intentó arreglar con ContextCompat+toBitmap() y SIGUIÓ
+                // crasheando — así que en vez de seguir adivinando a
+                // ciegas sin ver el error real, ahora todo el bloque va
+                // envuelto en try/catch: si algo revienta, se muestra el
+                // texto de la excepción en pantalla en vez de tirar abajo
+                // toda la app. Sacá captura de esa línea roja si aparece.
                 val density = LocalDensity.current
                 val sizePx = with(density) { 56.dp.roundToPx() }
+                var loadError by remember(icon) { mutableStateOf<String?>(null) }
                 val bitmap = remember(icon, sizePx) {
-                    ContextCompat.getDrawable(context, icon.mipmapResId)
-                        ?.toBitmap(width = sizePx, height = sizePx)
-                        ?.asImageBitmap()
+                    try {
+                        ContextCompat.getDrawable(context, icon.mipmapResId)
+                            ?.toBitmap(width = sizePx, height = sizePx)
+                            ?.asImageBitmap()
+                    } catch (e: Throwable) {
+                        loadError = "${e.javaClass.simpleName}: ${e.message}"
+                        null
+                    }
                 }
                 if (bitmap != null) {
                     Image(
@@ -901,6 +908,22 @@ private fun AppIconSetting() {
                         contentDescription = icon.label,
                         modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFB00020)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            loadError ?: "null",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(2.dp)
+                        )
+                    }
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(icon.label, style = MaterialTheme.typography.labelSmall)
