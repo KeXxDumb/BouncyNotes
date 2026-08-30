@@ -42,7 +42,17 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = true
+            // Desactivado a propósito: el shrinker de recursos venía
+            // borrando PNGs de íconos del APK final porque solo los
+            // referencia un <adaptive-icon> anidado dentro de un
+            // <activity-alias> — un patrón que su análisis estático no
+            // sigue de forma confiable. Ya perdimos varias vueltas
+            // manteniendo una lista de excepciones (res/raw/keep.xml) que
+            // se rompía cada vez que se agregaba/renombraba un ícono; sacar
+            // el shrinker de la ecuación es más robusto que seguir
+            // ampliando esa lista a mano. El costo es un APK algo más
+            // pesado, aceptable para esta app.
+            isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }
