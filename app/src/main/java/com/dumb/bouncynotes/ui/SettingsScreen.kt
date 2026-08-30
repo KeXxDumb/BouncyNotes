@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -76,12 +78,13 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -873,18 +876,29 @@ private fun AppIconSetting() {
                     }
                     .padding(10.dp)
             ) {
-                // 1:1 real: se carga el mismo recurso @mipmap que usa el
-                // sistema para el launcher (AdaptiveIconDrawable, con sus
-                // capas background+foreground+monochrome ya combinadas) —
-                // antes acá había una aproximación dibujada a mano por
-                // ícono (un emoji, círculos sueltos...) que se podía
-                // desincronizar del diseño real. Ahora es literalmente el
-                // mismo dibujo, no una copia.
-                Image(
-                    painter = painterResource(icon.mipmapResId),
-                    contentDescription = icon.label,
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                )
+                // 1:1 real, tomando el mismo recurso @mipmap que usa el
+                // sistema — PERO painterResource() no sabe interpretar un
+                // XML <adaptive-icon> (solo entiende <vector> o bitmaps
+                // planos), así que crasheaba al entrar a esta pantalla.
+                // Solución: pedirle el Drawable real a ContextCompat (que sí
+                // sabe construir un AdaptiveIconDrawable a partir de las 3
+                // capas) y rasterizarlo nosotros a un Bitmap normal con
+                // toBitmap() (androidx.core) — Compose ya sabe mostrar eso
+                // sin problema.
+                val density = LocalDensity.current
+                val sizePx = with(density) { 56.dp.roundToPx() }
+                val bitmap = remember(icon, sizePx) {
+                    ContextCompat.getDrawable(context, icon.mipmapResId)
+                        ?.toBitmap(width = sizePx, height = sizePx)
+                        ?.asImageBitmap()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap,
+                        contentDescription = icon.label,
+                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(icon.label, style = MaterialTheme.typography.labelSmall)
             }
