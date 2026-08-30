@@ -155,11 +155,10 @@ class ReminderReceiver : BroadcastReceiver() {
         contentIntentNoteId: Long?
     ) {
         val builder = NotificationCompat.Builder(context, channelId)
-            // ic_launcher_foreground (vector) ya no existe: el sistema de
-            // íconos pasó a ser 100% PNG. ic_peach_monochrome es justo lo
-            // que Android pide para un ícono de notificación (silueta
-            // blanca sobre transparente), así que sirve directo acá.
-            .setSmallIcon(R.drawable.ic_peach_monochrome)
+            // Silueta blanca sobre transparente, formato que pide Android
+            // para íconos de notificación — recurso independiente del
+            // sistema de íconos de la app (que ahora es plano, sin capas).
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

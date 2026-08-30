@@ -7,8 +7,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -79,13 +77,12 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -879,52 +876,15 @@ private fun AppIconSetting() {
                     }
                     .padding(10.dp)
             ) {
-                // 1:1 real, tomando el mismo recurso @mipmap que usa el
-                // sistema — PERO painterResource() no sabe interpretar un
-                // XML <adaptive-icon> (solo entiende <vector> o bitmaps
-                // planos), así que crasheaba al entrar a esta pantalla.
-                // Se intentó arreglar con ContextCompat+toBitmap() y SIGUIÓ
-                // crasheando — así que en vez de seguir adivinando a
-                // ciegas sin ver el error real, ahora todo el bloque va
-                // envuelto en try/catch: si algo revienta, se muestra el
-                // texto de la excepción en pantalla en vez de tirar abajo
-                // toda la app. Sacá captura de esa línea roja si aparece.
-                val density = LocalDensity.current
-                val sizePx = with(density) { 56.dp.roundToPx() }
-                var loadError by remember(icon) { mutableStateOf<String?>(null) }
-                val bitmap = remember(icon, sizePx) {
-                    try {
-                        ContextCompat.getDrawable(context, icon.mipmapResId)
-                            ?.toBitmap(width = sizePx, height = sizePx)
-                            ?.asImageBitmap()
-                    } catch (e: Throwable) {
-                        loadError = "${e.javaClass.simpleName}: ${e.message}"
-                        null
-                    }
-                }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap,
-                        contentDescription = icon.label,
-                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFFB00020)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            loadError ?: "null",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(2.dp)
-                        )
-                    }
-                }
+                // Ahora que es un @drawable plano (sin <adaptive-icon> de
+                // por medio), painterResource() lo carga sin problema —
+                // se saca todo el rodeo de ContextCompat+toBitmap+try/catch
+                // que hacía falta antes solo para esquivar esa limitación.
+                Image(
+                    painter = painterResource(icon.drawableResId),
+                    contentDescription = icon.label,
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(icon.label, style = MaterialTheme.typography.labelSmall)
             }

@@ -1,21 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Con isShrinkResources=true (ver app/build.gradle.kts), el compilador
-    borra del APK final cualquier recurso que su análisis estático no
-    detecte como "usado". Ya se confirmó en la práctica (NotFoundException
-    real, ver historial) que los PNG referenciados solo desde dentro de un
-    <adaptive-icon> de un <activity-alias> caen en esa categoría y se
-    recortan — por eso TODO recurso de ícono, sin excepción, tiene que
-    estar listado acá.
-
-    Sistema reconstruido para ser 100% PNG (el artista real solo entrega
-    PNG, no vectores) — ya no hay ningún @color ni @drawable vectorial de
-    ícono, salvo ic_empty_foreground.xml, que es un vector vacío compartido
-    por todos como capa foreground (no dibuja nada, pero <adaptive-icon>
-    igual exige la etiqueta).
-
-    IMPORTANTE: cada vez que se agregue/renombre un ícono nuevo, hay que
-    sumar sus recursos acá también — esta lista no se actualiza sola.
+    isShrinkResources está en false (ver app/build.gradle.kts) después de
+    confirmar que el shrinker borraba PNGs de íconos del APK final sin que
+    esta lista lograra protegerlos de forma confiable. Esta lista queda
+    igual como red de seguridad documentada, actualizada a los nombres
+    actuales (sistema de íconos planos, sin adaptive-icon) por si en algún
+    momento se reactiva el shrinker.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@mipmap/ic_launcher,@mipmap/ic_launcher_notegirl,@mipmap/ic_launcher_melons,@mipmap/ic_launcher_pngtest_original,@mipmap/ic_launcher_pngtest_teal,@mipmap/ic_launcher_pngtest_violet,@drawable/ic_empty_foreground,@drawable/ic_peach_background,@drawable/ic_peach_monochrome,@drawable/ic_notegirl_background,@drawable/ic_notegirl_monochrome,@drawable/ic_melons_background,@drawable/ic_melons_monochrome,@drawable/ic_pngtest_original_background,@drawable/ic_pngtest_original_monochrome,@drawable/ic_pngtest_teal_background,@drawable/ic_pngtest_teal_monochrome,@drawable/ic_pngtest_violet_background,@drawable/ic_pngtest_violet_monochrome" />
+    tools:keep="@drawable/ic_icon_peach,@drawable/ic_icon_notegirl,@drawable/ic_icon_melons,@drawable/ic_icon_pngtest_original,@drawable/ic_icon_pngtest_teal,@drawable/ic_icon_pngtest_violet,@drawable/ic_notification" />
