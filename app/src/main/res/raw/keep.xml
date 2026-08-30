@@ -8,14 +8,18 @@
     tiempo de ejecución) es un lugar bastante menos común donde buscar esas
     referencias que el <application> de siempre.
 
-    No hay evidencia concreta de que esto esté rompiendo el cambio de
-    ícono ahora mismo (una comparación directa contra Goodwy Messages, que
-    hace exactamente este mismo truco de activity-alias, muestra la misma
-    configuración de shrinkResources sin problema) — pero es una protección
-    barata y sin bajada: declarar estos recursos acá los deja siempre
-    afuera del recorte del shrinker pase lo que pase en el futuro, sin
-    depender de que su heurística los detecte bien versión tras versión de
-    Android Gradle Plugin.
+    ACTUALIZACIÓN: esto YA rompió el cambio de ícono en la práctica — el
+    diagnóstico (NotFoundException al cargar el Drawable en Ajustes) mostró
+    que específicamente los PNG (Note Girl, y los 3 íconos de prueba
+    ic_pngtest_*) se estaban recortando, mientras que los vectoriales
+    (Durazno, Melones) sobrevivían igual sin estar en esta lista. No importa
+    por qué el shrinker distingue PNG de vector acá — la lista de abajo
+    ahora incluye TODOS los recursos de íconos que existen, PNG y vector
+    por igual, para no depender de esa heurística nunca más.
+
+    IMPORTANTE: cada vez que se agregue/renombre un ícono nuevo (otro alias,
+    otro color de prueba, etc.), hay que sumar sus recursos acá también —
+    esta lista no se actualiza sola.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@mipmap/ic_launcher,@mipmap/ic_launcher_notegirl,@drawable/ic_launcher_foreground,@drawable/ic_notegirl_foreground,@drawable/ic_notegirl_background,@color/ic_launcher_background" />
+    tools:keep="@mipmap/ic_launcher,@mipmap/ic_launcher_notegirl,@mipmap/ic_launcher_melons,@mipmap/ic_launcher_pngtest_original,@mipmap/ic_launcher_pngtest_teal,@mipmap/ic_launcher_pngtest_violet,@drawable/ic_launcher_foreground,@drawable/ic_notegirl_foreground,@drawable/ic_notegirl_background,@drawable/ic_notegirl_monochrome,@drawable/ic_melons_foreground,@drawable/ic_pngtest_original_background,@drawable/ic_pngtest_original_monochrome,@drawable/ic_pngtest_teal_background,@drawable/ic_pngtest_teal_monochrome,@drawable/ic_pngtest_violet_background,@drawable/ic_pngtest_violet_monochrome,@color/ic_launcher_background,@color/ic_launcher_melons_background" />
