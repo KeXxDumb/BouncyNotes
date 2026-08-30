@@ -24,7 +24,15 @@ import kotlin.system.exitProcess
 enum class AppIcon(val alias: String, val label: String, val mipmapResId: Int) {
     PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.mipmap.ic_launcher),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.mipmap.ic_launcher_notegirl),
-    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.mipmap.ic_launcher_melons)
+    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.mipmap.ic_launcher_melons),
+
+    // EXPERIMENTO TEMPORAL (ver comentario en el manifiesto): misma imagen,
+    // 3 matices de color distintos, cada uno con su propio monochrome. Sacar
+    // estas 3 entradas una vez que se confirme o descarte "PNG en general
+    // no refresca en este launcher".
+    PNG_TEST_ORIGINAL("com.dumb.bouncynotes.PngTestOriginalIconAlias", "PNG orig.", R.mipmap.ic_launcher_pngtest_original),
+    PNG_TEST_TEAL("com.dumb.bouncynotes.PngTestTealIconAlias", "PNG teal", R.mipmap.ic_launcher_pngtest_teal),
+    PNG_TEST_VIOLET("com.dumb.bouncynotes.PngTestVioletIconAlias", "PNG violeta", R.mipmap.ic_launcher_pngtest_violet)
 }
 
 object AppIconManager {

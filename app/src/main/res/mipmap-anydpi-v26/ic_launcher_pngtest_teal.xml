@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXPERIMENTO TEMPORAL: probar si el launcher del usuario refresca
+     íconos PNG en general, ahora que sabemos que necesitan capa
+     monochrome. Las 3 variantes (original/teal/violet) son EXACTAMENTE
+     la misma imagen, solo con el matiz rotado — así se aísla "PNG vs
+     vector" sin ninguna otra variable de por medio (mismo monochrome,
+     mismo alias mechanism, solo cambia el color). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_pngtest_teal_background" />
+    <foreground android:drawable="@drawable/ic_notegirl_foreground" />
+    <monochrome android:drawable="@drawable/ic_pngtest_teal_monochrome" />
+</adaptive-icon>
