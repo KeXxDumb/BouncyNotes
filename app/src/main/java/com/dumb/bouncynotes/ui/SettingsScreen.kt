@@ -55,7 +55,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -82,6 +81,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -104,6 +105,7 @@ import com.dumb.bouncynotes.data.TitleMode
 import com.dumb.bouncynotes.data.RightEdgeSwipeAction
 import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
+import com.dumb.bouncynotes.ui.components.FlatTextField
 import com.dumb.bouncynotes.ui.theme.ThemeSeedColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -510,10 +512,38 @@ fun SettingsScreen(
                         onSelect = { v -> onUpdate { it.copy(titleMode = v) } }
                     )
                     if (settings.titleMode == TitleMode.CUSTOM_TEXT) {
-                        OutlinedTextField(
-                            value = settings.customTitleText,
-                            onValueChange = { v -> onUpdate { it.copy(customTitleText = v) } },
-                            label = { Text("Texto para la barra superior") },
+                        // Estado LOCAL para el buffer editable, en vez de leer
+                        // directo de `settings.customTitleText` en cada
+                        // recomposición. onUpdate() persiste en DataStore de
+                        // forma asíncrona (ver SettingsRepository/ViewModel);
+                        // si el campo tomara su valor directamente de
+                        // `settings`, cada letra tipeada dispararía una
+                        // escritura a disco y el campo recién se "enteraría"
+                        // del cambio cuando ese Flow completara el viaje de
+                        // ida y vuelta. Con tipeo rápido, la recomposición
+                        // llegaba con el texto de UNA letra atrás, y como el
+                        // valor externo cambiaba, Compose recalculaba el
+                        // cursor a partir de ESE texto más corto — quedaba
+                        // "atrasado", como si el cursor se ubicara detrás de
+                        // la última letra en vez de después. Manteniendo el
+                        // buffer en memoria local, el cursor sigue siempre a
+                        // la escritura real y la persistencia queda como un
+                        // efecto secundario en paralelo, sin afectar la UI.
+                        var customTitleField by remember {
+                            mutableStateOf(
+                                TextFieldValue(
+                                    text = settings.customTitleText,
+                                    selection = TextRange(settings.customTitleText.length)
+                                )
+                            )
+                        }
+                        FlatTextField(
+                            value = customTitleField,
+                            onValueChange = { v ->
+                                customTitleField = v
+                                onUpdate { it.copy(customTitleText = v.text) }
+                            },
+                            placeholder = { Text("Texto para la barra superior") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                         )
@@ -564,11 +594,7 @@ fun SettingsScreen(
                     onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Recordatorios") null else "Recordatorios" }
                 ) {
                     Text(
-                        "Para que un recordatorio suene puntual con la app cerrada o el " +
-                            "teléfono en reposo, Android necesita estos dos permisos. Sin " +
-                            "ellos el recordatorio puede sonar tarde o directamente no sonar " +
-                            "(esto depende del fabricante: es más común en Samsung, Xiaomi/MIUI " +
-                            "y similares).",
+                        "Estos permisos evitan que el sistema retrase o silencie los recordatorios en segundo plano.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -609,13 +635,7 @@ fun SettingsScreen(
                     HorizontalDivider()
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Para probar de una si los recordatorios andan en este " +
-                            "teléfono, sin tener que crear una nota: programa un " +
-                            "aviso de prueba en 10 segundos. Dejá la pantalla " +
-                            "apagada esos 10 segundos para que la prueba sea real " +
-                            "(con la app abierta y la pantalla prendida, Android no " +
-                            "aplica ninguna restricción de batería, así que ahí " +
-                            "suena siempre igual haya o no un bug real).",
+                        "Prueba rápida: programa un aviso en 10 segundos y apaga la pantalla ese tiempo para simular condiciones reales.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -623,7 +643,7 @@ fun SettingsScreen(
                     OutlinedButton(
                         onClick = {
                             ReminderScheduler.scheduleTest(context, secondsFromNow = 10)
-                            statusMessage = "Recordatorio de prueba en 10 segundos. Apagá la pantalla."
+                            statusMessage = "Recordatorio de prueba en 10 segundos. Apaga la pantalla."
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Probar recordatorio (10s)") }
@@ -772,13 +792,23 @@ private fun ExpandableSection(
     onToggle: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    // Mismo lenguaje visual que las tarjetas de notas (NoteCard en
+    // NoteListScreen): esquinas de 16dp y superficie semitransparente al
+    // 60%, en vez de un contenedor opaco. Así, si hay una imagen de fondo
+    // configurada, se nota a través de estas tarjetas igual que a través de
+    // las de notas — antes Ajustes quedaba visualmente aparte del resto de
+    // la app, con tarjetas planas y opacas.
+    val cardShape = RoundedCornerShape(16.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
+            .clip(cardShape)
             .animateContentSize(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+        shape = cardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f)
+        )
     ) {
         Column {
             Row(
@@ -823,10 +853,6 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
 private fun AppIconSetting() {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
-    // Se pone en true la primera vez que se cambia de ícono en esta sesión,
-    // para recién ahí mostrar la opción de reiniciar manualmente (antes de
-    // tocar nada no tiene sentido ofrecerla).
-    var changedThisSession by remember { mutableStateOf(false) }
     // Diagnóstico: estado REAL que devuelve PackageManager para cada alias,
     // recién leído después del último intento de cambio. Si esto no
     // refleja el ícono elegido, el problema es que PackageManager rechaza
@@ -855,7 +881,6 @@ private fun AppIconSetting() {
                             AppIconManager.setIcon(context, icon)
                                 .onSuccess {
                                     selected = AppIconManager.current(context)
-                                    changedThisSession = true
                                 }
                                 .onFailure { e ->
                                     // Antes esto se tragaba en silencio (v1-v5):
@@ -887,15 +912,6 @@ private fun AppIconSetting() {
             }
         }
     }
-    Text(
-        "El cambio se aplica al toque. Si no se ve reflejado en la pantalla " +
-            "de inicio, volvé al inicio o abrí el cajón de apps de nuevo — " +
-            "algunos teléfonos (Samsung, Xiaomi) tardan un poco en refrescar " +
-            "el ícono mientras la app sigue abierta.",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
     // Diagnóstico visible (sin necesitar adb/logcat): si esto muestra el
     // estado correcto (el elegido en ENABLED, los otros en DISABLED/DEFAULT)
     // pero el ícono real de la pantalla de inicio nunca cambia, el problema
@@ -910,26 +926,6 @@ private fun AppIconSetting() {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-    }
-
-    if (changedThisSession) {
-        var showRestartConfirm by remember { mutableStateOf(false) }
-        TextButton(onClick = { showRestartConfirm = true }, modifier = Modifier.padding(top = 4.dp)) {
-            Text("¿Sigue sin verse? Reiniciar la app ahora")
-        }
-        if (showRestartConfirm) {
-            AlertDialog(
-                onDismissRequest = { showRestartConfirm = false },
-                title = { Text("¿Reiniciar la app?") },
-                text = { Text("La app se va a cerrar. Volvé a abrirla tocando su ícono en la pantalla de inicio.") },
-                confirmButton = {
-                    TextButton(onClick = { AppIconManager.restartProcess() }) { Text("Reiniciar") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showRestartConfirm = false }) { Text("Cancelar") }
-                }
-            )
-        }
     }
 }
 
