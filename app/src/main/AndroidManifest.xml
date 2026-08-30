@@ -45,7 +45,8 @@
             android:theme="@style/Theme.Notes" />
 
         <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
-             (ver ic_launcher_foreground.xml). Habilitado al principio. -->
+             (ver ic_peach_background.png / ic_peach_monochrome.png, ambos
+             PNG). Habilitado al principio. -->
         <activity-alias
             android:name=".PeachIconAlias"
             android:targetActivity=".MainActivity"

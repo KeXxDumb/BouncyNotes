@@ -2,24 +2,20 @@
 <!--
     Con isShrinkResources=true (ver app/build.gradle.kts), el compilador
     borra del APK final cualquier recurso que su análisis estático no
-    detecte como "usado" en código o en el manifiesto. Ese análisis sigue
-    referencias @drawable/@mipmap normales sin problema, pero el ícono de
-    un <activity-alias> (usado acá para poder cambiar el ícono de la app en
-    tiempo de ejecución) es un lugar bastante menos común donde buscar esas
-    referencias que el <application> de siempre.
+    detecte como "usado". Ya se confirmó en la práctica (NotFoundException
+    real, ver historial) que los PNG referenciados solo desde dentro de un
+    <adaptive-icon> de un <activity-alias> caen en esa categoría y se
+    recortan — por eso TODO recurso de ícono, sin excepción, tiene que
+    estar listado acá.
 
-    ACTUALIZACIÓN: esto YA rompió el cambio de ícono en la práctica — el
-    diagnóstico (NotFoundException al cargar el Drawable en Ajustes) mostró
-    que específicamente los PNG (Note Girl, y los 3 íconos de prueba
-    ic_pngtest_*) se estaban recortando, mientras que los vectoriales
-    (Durazno, Melones) sobrevivían igual sin estar en esta lista. No importa
-    por qué el shrinker distingue PNG de vector acá — la lista de abajo
-    ahora incluye TODOS los recursos de íconos que existen, PNG y vector
-    por igual, para no depender de esa heurística nunca más.
+    Sistema reconstruido para ser 100% PNG (el artista real solo entrega
+    PNG, no vectores) — ya no hay ningún @color ni @drawable vectorial de
+    ícono, salvo ic_empty_foreground.xml, que es un vector vacío compartido
+    por todos como capa foreground (no dibuja nada, pero <adaptive-icon>
+    igual exige la etiqueta).
 
-    IMPORTANTE: cada vez que se agregue/renombre un ícono nuevo (otro alias,
-    otro color de prueba, etc.), hay que sumar sus recursos acá también —
-    esta lista no se actualiza sola.
+    IMPORTANTE: cada vez que se agregue/renombre un ícono nuevo, hay que
+    sumar sus recursos acá también — esta lista no se actualiza sola.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@mipmap/ic_launcher,@mipmap/ic_launcher_notegirl,@mipmap/ic_launcher_melons,@mipmap/ic_launcher_pngtest_original,@mipmap/ic_launcher_pngtest_teal,@mipmap/ic_launcher_pngtest_violet,@drawable/ic_launcher_foreground,@drawable/ic_notegirl_foreground,@drawable/ic_notegirl_background,@drawable/ic_notegirl_monochrome,@drawable/ic_melons_foreground,@drawable/ic_pngtest_original_background,@drawable/ic_pngtest_original_monochrome,@drawable/ic_pngtest_teal_background,@drawable/ic_pngtest_teal_monochrome,@drawable/ic_pngtest_violet_background,@drawable/ic_pngtest_violet_monochrome,@color/ic_launcher_background,@color/ic_launcher_melons_background" />
+    tools:keep="@mipmap/ic_launcher,@mipmap/ic_launcher_notegirl,@mipmap/ic_launcher_melons,@mipmap/ic_launcher_pngtest_original,@mipmap/ic_launcher_pngtest_teal,@mipmap/ic_launcher_pngtest_violet,@drawable/ic_empty_foreground,@drawable/ic_peach_background,@drawable/ic_peach_monochrome,@drawable/ic_notegirl_background,@drawable/ic_notegirl_monochrome,@drawable/ic_melons_background,@drawable/ic_melons_monochrome,@drawable/ic_pngtest_original_background,@drawable/ic_pngtest_original_monochrome,@drawable/ic_pngtest_teal_background,@drawable/ic_pngtest_teal_monochrome,@drawable/ic_pngtest_violet_background,@drawable/ic_pngtest_violet_monochrome" />

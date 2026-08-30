@@ -1,13 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- "Durazno" — reconstruido para ser 100% PNG (el artista real que va a
+     hacer los íconos solo entrega PNG, no vectores). -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <!-- Capa para "íconos con temas" (Material You, Android 13+). Antes no
-         existía en NINGUNO de los tres íconos de la app — ver el hallazgo
-         documentado en AppIconManager.kt: sin esta capa, algunos launchers
-         (Samsung One UI, Xiaomi HyperOS) cachean el ícono temático por
-         PAQUETE en vez de por alias activo, y esa caché no se invalida al
-         cambiar de alias en runtime. Se reusa el mismo foreground: Android
-         solo necesita su canal alfa (la silueta), ignora el color. -->
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@drawable/ic_peach_background" />
+    <foreground android:drawable="@drawable/ic_empty_foreground" />
+    <monochrome android:drawable="@drawable/ic_peach_monochrome" />
 </adaptive-icon>

@@ -1,5 +1,6 @@
 <resources>
-    <color name="ic_launcher_background">#FFB74D</color>
-    <!-- Fondo del ícono "Melones" (MelonsIconAlias). -->
-    <color name="ic_launcher_melons_background">#26A69A</color>
+    <!-- Ya no se usan @color como background de ningún ícono: el sistema
+         de íconos se reconstruyó para ser 100% PNG (background+monochrome
+         como imágenes reales), matching el flujo de trabajo real del
+         artista. Este archivo queda vacío a propósito por ahora. -->
 </resources>
