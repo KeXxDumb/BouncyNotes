@@ -94,53 +94,6 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- EXPERIMENTO TEMPORAL — 3 íconos PNG idénticos (misma imagen,
-             solo cambia el matiz de color), cada uno con su propio
-             monochrome. Objetivo: confirmar si el launcher del usuario
-             refresca PNG en general una vez que tiene monochrome, o si
-             el problema sigue siendo específico de PNG sin importar qué
-             tan bien armado esté. Sacar estos 3 alias (y sus recursos
-             ic_pngtest_*) una vez que se tenga la respuesta. -->
-        <activity-alias
-            android:name=".PngTestOriginalIconAlias"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@drawable/ic_icon_pngtest_original"
-            android:roundIcon="@drawable/ic_icon_pngtest_original"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".PngTestTealIconAlias"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@drawable/ic_icon_pngtest_teal"
-            android:roundIcon="@drawable/ic_icon_pngtest_teal"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-        <activity-alias
-            android:name=".PngTestVioletIconAlias"
-            android:targetActivity=".MainActivity"
-            android:enabled="false"
-            android:exported="true"
-            android:icon="@drawable/ic_icon_pngtest_violet"
-            android:roundIcon="@drawable/ic_icon_pngtest_violet"
-            android:label="@string/app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
-
         <receiver
             android:name=".data.ReminderReceiver"
             android:exported="false" />

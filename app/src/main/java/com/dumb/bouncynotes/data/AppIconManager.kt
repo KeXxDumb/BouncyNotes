@@ -7,34 +7,20 @@ import android.os.Process
 import com.dumb.bouncynotes.R
 import kotlin.system.exitProcess
 
-// v7 — algoritmo calcado de una app de referencia real (Goodwy Gallery), con
-// capa <monochrome> agregada. Con eso, "Durazno" y "Melones" (vectoriales)
-// refrescaban bien; "Note Girl" (PNG) no.
-//
-// v8 — íconos renombrados por la fruta que llevan.
-//
-// v9 — DESCARTADO EL SISTEMA ADAPTIVE-ICON POR COMPLETO. Después de
-// encontrar y arreglar varios problemas reales (monochrome faltante,
-// shrinkResources borrando PNGs referenciados solo desde un activity-alias)
-// el ícono seguía sin cambiar bien en el dispositivo del usuario — así que
-// en vez de seguir agregando parches sobre <adaptive-icon> (que trae capas,
-// máscaras, caché de "íconos con temas" por launcher/OEM, y ya nos rompió
-// de tres formas distintas), se vuelve al mecanismo más simple y más viejo
-// de Android: un ícono plano (@drawable normal, un solo PNG, sin
-// background/foreground/monochrome). Es el mismo mecanismo que usaban todas
-// las apps antes de Android 8 y sigue siendo 100% válido — se pierde el
-// recorte prolijo a la forma de cada launcher, pero se elimina toda la
-// superficie de bugs que veníamos peleando.
+// Historial resumido (ver estado-actual.md para el detalle completo):
+// v7: se agregó capa <monochrome> (adaptive-icon) tras comparar contra una
+// app de referencia real. v8: renombrado por fruta. v9: DESCARTADO
+// <adaptive-icon> por completo — tras confirmar que ni monochrome ni
+// arreglar shrinkResources bastaban, se volvió al mecanismo plano de
+// Android (@drawable normal, un solo PNG, sin background/foreground/
+// monochrome) — mismo mecanismo que usaban todas las apps antes de
+// Android 8, y el que finalmente funcionó en el dispositivo real. v10: se
+// sacaron los 3 íconos de prueba de color (ya cumplieron su función) y
+// Note Girl pasó a ser la ilustración remasterizada del artista.
 enum class AppIcon(val alias: String, val label: String, val drawableResId: Int) {
     PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.drawable.ic_icon_peach),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.drawable.ic_icon_notegirl),
-    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.drawable.ic_icon_melons),
-
-    // EXPERIMENTO TEMPORAL: misma imagen, 3 matices de color. Sacar estas 3
-    // entradas una vez que se confirme que el ícono plano sí refresca bien.
-    PNG_TEST_ORIGINAL("com.dumb.bouncynotes.PngTestOriginalIconAlias", "PNG orig.", R.drawable.ic_icon_pngtest_original),
-    PNG_TEST_TEAL("com.dumb.bouncynotes.PngTestTealIconAlias", "PNG teal", R.drawable.ic_icon_pngtest_teal),
-    PNG_TEST_VIOLET("com.dumb.bouncynotes.PngTestVioletIconAlias", "PNG violeta", R.drawable.ic_icon_pngtest_violet)
+    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.drawable.ic_icon_melons)
 }
 
 object AppIconManager {

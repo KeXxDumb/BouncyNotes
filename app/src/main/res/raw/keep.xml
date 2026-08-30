@@ -8,4 +8,4 @@
     momento se reactiva el shrinker.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_icon_peach,@drawable/ic_icon_notegirl,@drawable/ic_icon_melons,@drawable/ic_icon_pngtest_original,@drawable/ic_icon_pngtest_teal,@drawable/ic_icon_pngtest_violet,@drawable/ic_notification" />
+    tools:keep="@drawable/ic_icon_peach,@drawable/ic_icon_notegirl,@drawable/ic_icon_melons,@drawable/ic_notification" />
