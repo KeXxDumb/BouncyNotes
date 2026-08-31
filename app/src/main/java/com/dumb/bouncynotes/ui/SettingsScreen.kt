@@ -17,8 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +41,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -50,7 +49,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -312,7 +310,7 @@ fun SettingsScreen(
                     expanded = expandedSectionTitle == "Apariencia",
                     onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Apariencia") null else "Apariencia" }
                 ) {
-                    ChipSetting(
+                    CycleSetting(
                         label = "Tema",
                         options = listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro"),
                         selected = settings.themeMode,
@@ -343,7 +341,10 @@ fun SettingsScreen(
                             }
                         }
                     }
-                    ChipSetting(
+                    // Divisor: de "color del tema" pasamos a "cómo se ven
+                    // y leen las notas en la lista", otro tema distinto.
+                    SettingsDivider()
+                    CycleSetting(
                         label = "Diseño de la lista",
                         options = listOf(NoteLayout.GRID to "Cuadrícula", NoteLayout.LIST to "Lista"),
                         selected = settings.noteLayout,
@@ -358,17 +359,24 @@ fun SettingsScreen(
                             onSelect = { v -> onUpdate { it.copy(gridColumns = v) } }
                         )
                     }
-                    ChipSetting(
+                    CycleSetting(
                         label = "Tamaño de texto",
                         options = listOf(FontScale.SMALL to "Chico", FontScale.MEDIUM to "Mediano", FontScale.LARGE to "Grande"),
                         selected = settings.fontScale,
                         onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
                     )
 
+                    // Divisor: el ícono de la app es un tema aparte (y su
+                    // selector es una grilla de miniaturas, no una opción
+                    // que quepa en un botón alternante).
+                    SettingsDivider()
                     Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(4.dp))
                     AppIconSetting()
 
+                    // Divisor: la imagen de fondo es, de nuevo, un tema
+                    // aparte del ícono.
+                    SettingsDivider()
                     Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(4.dp))
                     if (settings.backgroundImagePath != null) {
@@ -452,7 +460,7 @@ fun SettingsScreen(
                     expanded = expandedSectionTitle == "Comportamiento",
                     onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Comportamiento") null else "Comportamiento" }
                 ) {
-                    ChipSetting(
+                    CycleSetting(
                         label = "Ordenar notas por",
                         options = listOf(
                             SortOrder.UPDATED to "Última edición",
@@ -463,22 +471,26 @@ fun SettingsScreen(
                         selected = settings.sortOrder,
                         onSelect = { v -> onUpdate { it.copy(sortOrder = v) } }
                     )
-                    ChipSetting(
-                        label = "Posición de la casilla en checklists",
-                        options = listOf(CheckboxPosition.START to "Antes del texto", CheckboxPosition.END to "Después del texto"),
-                        selected = settings.checkboxPosition,
-                        onSelect = { v -> onUpdate { it.copy(checkboxPosition = v) } }
-                    )
                     SwitchSetting(
                         label = "Mostrar siempre la primera imagen de la nota",
                         checked = settings.showFirstImage,
                         onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
                     )
-                    ChipSetting(
+                    CycleSetting(
                         label = "Formato por defecto para imágenes agrupadas",
                         options = GalleryLayout.entries.map { it to it.label },
                         selected = settings.defaultGalleryLayout,
                         onSelect = { v -> onUpdate { it.copy(defaultGalleryLayout = v) } }
+                    )
+                    // Divisor: pasamos de "cómo se listan las notas" a
+                    // "checklists y edición", que son temas distintos —
+                    // por eso separa acá y no entre cada fila individual.
+                    SettingsDivider()
+                    CycleSetting(
+                        label = "Posición de la casilla en checklists",
+                        options = listOf(CheckboxPosition.START to "Antes del texto", CheckboxPosition.END to "Después del texto"),
+                        selected = settings.checkboxPosition,
+                        onSelect = { v -> onUpdate { it.copy(checkboxPosition = v) } }
                     )
                     SwitchSetting(
                         label = "Enviar tareas marcadas al final",
@@ -495,13 +507,16 @@ fun SettingsScreen(
                         checked = settings.doubleTapToEdit,
                         onCheckedChange = { v -> onUpdate { it.copy(doubleTapToEdit = v) } }
                     )
-                    ChipSetting(
+                    // Divisor: de "checklists y edición" pasamos a
+                    // "navegación e interfaz", otro tema distinto.
+                    SettingsDivider()
+                    CycleSetting(
                         label = "Vista al abrir la app",
                         options = listOf(StartView.ALL to "Todas las notas", StartView.LAST_USED to "Última vista usada"),
                         selected = settings.startView,
                         onSelect = { v -> onUpdate { it.copy(startView = v) } }
                     )
-                    ChipSetting(
+                    CycleSetting(
                         label = "Título de la barra superior",
                         options = listOf(
                             TitleMode.APP_NAME to "Nombre de la app",
@@ -553,7 +568,7 @@ fun SettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    ChipSetting(
+                    CycleSetting(
                         label = "Deslizar desde el borde izquierdo",
                         options = listOf(
                             RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
@@ -632,7 +647,7 @@ fun SettingsScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    HorizontalDivider()
+                    SettingsDivider()
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Prueba rápida: programa un aviso en 10 segundos y apaga la pantalla ese tiempo para simular condiciones reales.",
@@ -664,6 +679,9 @@ fun SettingsScreen(
                         selected = settings.biometricRememberMinutes,
                         onSelect = { v -> onUpdate { it.copy(biometricRememberMinutes = v) } }
                     )
+                    // Divisor: pasamos de "cuánto dura el desbloqueo" a
+                    // "qué se protege/oculta", que es un tema distinto.
+                    SettingsDivider()
                     SwitchSetting(
                         label = "Ocultar contenido en apps recientes",
                         checked = settings.hideFromRecents,
@@ -846,6 +864,69 @@ private fun SwitchSetting(label: String, checked: Boolean, onCheckedChange: (Boo
     }
 }
 
+// Divisor sutil entre opciones dentro de un cajón: usa el color de acento
+// (primary de Material You) a baja opacidad, en vez del HorizontalDivider
+// gris por defecto — pensado para separar visualmente cada fila de
+// "Comportamiento" ahora que varias de ellas son botones compactos en vez de
+// filas de chips, que antes ya se distinguían solo por su propia altura.
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 6.dp),
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    )
+}
+
+// Alternativa compacta a ChipSetting para ajustes con varias opciones: en vez
+// de mostrar todas las opciones como chips (ocupan una fila entera, o dos si
+// no entran), esto es un único botón a la derecha de la etiqueta que, al
+// tocarlo, avanza a la siguiente opción (y vuelve a la primera al llegar al
+// final). Mismo dato subyacente que ChipSetting (una lista de pares
+// valor/etiqueta más el valor actual), pero ocupa una sola fila fija sin
+// importar cuántas opciones haya — pensado para el cajón "Comportamiento",
+// que se sentía saturado con tantas filas de chips seguidas.
+@Composable
+private fun <T> CycleSetting(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    val index = options.indexOfFirst { it.first == selected }.let { if (it == -1) 0 else it }
+    val currentLabel = options[index].second
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, modifier = Modifier.weight(1f).padding(end = 8.dp))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                .clickable {
+                    val next = (index + 1) % options.size
+                    onSelect(options[next].first)
+                }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                currentLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            // Solo tiene sentido invitar a "tocar para cambiar" cuando hay
+            // más de una opción entre las que rotar.
+            if (options.size > 1) {
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Filled.SwapHoriz,
+                    contentDescription = "Tocar para cambiar",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
+}
+
 // Elegir entre los íconos de la app disponibles (activity-alias en el
 // manifiesto). El estado real vive en PackageManager, no en nuestro
 // DataStore, así que lo leemos directo de ahí al entrar a esta pantalla.
@@ -928,31 +1009,6 @@ private fun AppIconSetting() {
         )
     }
 }
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun <T> ChipSetting(label: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(4.dp))
-        // Antes era un Row: con 4 opciones ("Ordenar notas por") no entraban en el
-        // ancho de la pantalla y el último chip ("Color") se comprimía hasta quedar
-        // angosto y con el texto vertical. FlowRow los pasa a una segunda línea.
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            options.forEach { (value, text) ->
-                FilterChip(
-                    selected = value == selected,
-                    onClick = { onSelect(value) },
-                    label = { Text(text) }
-                )
-            }
-        }
-    }
-}
-
 
 // Vista previa en vivo de "Imagen de fondo": se pidió algo como desvanecer
 // Ajustes y dejar ver la lista de notas real detrás mientras se arrastra un
