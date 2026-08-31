@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Bouncy Notes</string>
+    <string name="pinned_note_widget_description">Muestra una nota fijada en la pantalla de inicio</string>
 </resources>

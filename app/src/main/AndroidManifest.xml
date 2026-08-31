@@ -111,6 +111,34 @@
             </intent-filter>
         </receiver>
 
+        <!-- Widget de "nota fijada" (solo lectura). El receiver es lo que el
+             sistema ve como "el widget"; exported=true es obligatorio para
+             que el launcher/home screen pueda invocarlo. -->
+        <receiver
+            android:name=".widget.PinnedNoteWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/pinned_note_widget_info" />
+        </receiver>
+
+        <!-- Se abre una sola vez, al agregar el widget a la pantalla de
+             inicio, para elegir qué nota le corresponde a esa instancia
+             (ver android:configure en pinned_note_widget_info.xml).
+             exported=true es obligatorio: la invoca el proceso del
+             launcher, no la propia app. -->
+        <activity
+            android:name=".widget.PinnedNoteWidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Notes">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

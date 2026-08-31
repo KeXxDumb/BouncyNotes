@@ -28,7 +28,8 @@ enum class ViewMode { ALL, TRASH, PRIVATE }
 class NoteViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = NoteRepository(
-        NoteDatabase.getInstance(application).noteDao()
+        NoteDatabase.getInstance(application).noteDao(),
+        context = application
     )
     private val settingsRepository = SettingsRepository(application)
 

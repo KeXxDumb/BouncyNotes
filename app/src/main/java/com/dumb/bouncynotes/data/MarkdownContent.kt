@@ -170,3 +170,22 @@ fun isNoteEmpty(note: Note): Boolean {
         NoteType.CHECKLIST -> note.checklistItems.all { it.text.isBlank() }
     }
 }
+
+// Vista de solo texto del contenido de una nota, sin imágenes/gifs/video (se
+// reemplazan por un emoji indicativo). La usa el widget de "nota fijada": a
+// diferencia de la UI normal, un widget de Glance no puede reusar
+// parseNoteContent() para renderizar imágenes/galerías/video de verdad, así
+// que esto le da al menos una idea de que ahí había contenido multimedia.
+fun buildPlainTextPreview(note: Note): String = when (note.type) {
+    NoteType.CHECKLIST -> note.checklistItems.joinToString("\n") { item ->
+        (if (item.checked) "☑ " else "☐ ") + item.text
+    }
+    NoteType.TEXT -> parseNoteContent(note.content).joinToString("") { part ->
+        when (part) {
+            is ContentPart.TextPart -> part.text
+            is ContentPart.ImagePart -> "📷 "
+            is ContentPart.GalleryPart -> "🖼️ "
+            is ContentPart.VideoPart -> "🎬 "
+        }
+    }.trim()
+}
