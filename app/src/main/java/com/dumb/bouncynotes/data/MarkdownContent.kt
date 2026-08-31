@@ -189,3 +189,12 @@ fun buildPlainTextPreview(note: Note): String = when (note.type) {
         }
     }.trim()
 }
+
+// Primer archivo de imagen/gif de la nota en orden real de aparición (ni
+// video: para eso habría que decodificar un frame del archivo por
+// separado, y no vale la pena para una miniatura de widget). null si la
+// nota no tiene ninguna imagen o es de tipo checklist.
+fun firstDisplayableImage(note: Note): String? =
+    if (note.type == NoteType.TEXT) {
+        extractMediaRefs(note.content).firstOrNull { !it.isVideo }?.fileName
+    } else null
