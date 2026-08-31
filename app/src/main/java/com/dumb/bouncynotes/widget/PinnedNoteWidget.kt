@@ -1,13 +1,13 @@
 package com.dumb.bouncynotes.widget
 
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
-import androidx.glance.action.ActionParameters
-import androidx.glance.action.actionParametersOf
+import androidx.glance.GlanceTheme
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -16,13 +16,11 @@ import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.update
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
 import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
-import androidx.glance.material3.GlanceTheme
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -41,13 +39,6 @@ import kotlinx.coroutines.launch
 // widget a la pantalla de inicio.
 val KEY_PINNED_NOTE_ID = longPreferencesKey("pinnedNoteId")
 
-// Misma clave que ya usa MainActivity para "abrí directo en esta nota" (ver
-// el comentario ahí: la usan los recordatorios al tocar la notificación). El
-// widget reutiliza EXACTAMENTE esa puerta de entrada en vez de inventar una
-// nueva: como ActionParameters.Key<Long>("openNoteId") viaja como extra del
-// Intent con ese mismo nombre, MainActivity la recibe sin ningún cambio.
-private val openNoteIdParam = ActionParameters.Key<Long>("openNoteId")
-
 class PinnedNoteWidget : GlanceAppWidget() {
 
     override val stateDefinition = PreferencesGlanceStateDefinition
@@ -60,24 +51,30 @@ class PinnedNoteWidget : GlanceAppWidget() {
 
         provideContent {
             GlanceTheme {
-                PinnedNoteContent(note)
+                PinnedNoteContent(context, note)
             }
         }
     }
 }
 
 @Composable
-private fun PinnedNoteContent(note: Note?) {
-    val openAction = actionStartActivity<MainActivity>(
-        parameters = actionParametersOf(openNoteIdParam to (note?.id ?: 0L))
-    )
+private fun PinnedNoteContent(context: Context, note: Note?) {
+    // Mismo extra ("openNoteId") que ya usa MainActivity para "abrí directo
+    // en esta nota" (lo usan los recordatorios al tocar la notificación):
+    // el widget reutiliza esa puerta de entrada en vez de inventar una
+    // nueva. Es un Intent EXPLÍCITO (target = MainActivity), así que no
+    // choca con la restricción de Android 14+ sobre PendingIntent mutables
+    // para intents implícitos.
+    val openIntent = Intent(context, MainActivity::class.java).apply {
+        putExtra("openNoteId", note?.id ?: 0L)
+    }
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
             .background(GlanceTheme.colors.widgetBackground)
             .cornerRadius(16.dp)
             .padding(12.dp)
-            .clickable(openAction)
+            .clickable(actionStartActivity(openIntent))
     ) {
         if (note == null) {
             // La nota asignada ya no existe (se borró para siempre) o el
@@ -125,8 +122,13 @@ object PinnedNoteWidgetUpdater {
     // La llama PinnedNoteWidgetConfigActivity al confirmar qué nota le
     // corresponde a ESTA instancia del widget en particular.
     suspend fun assignNote(context: Context, glanceId: GlanceId, noteId: Long) {
+        // Preferences es INMUTABLE: no se puede hacer prefs[key] = valor
+        // directo sobre lo que llega en el lambda, hay que pasar por
+        // toMutablePreferences() y devolver ESE resultado.
         updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-            prefs[KEY_PINNED_NOTE_ID] = noteId
+            prefs.toMutablePreferences().apply {
+                this[KEY_PINNED_NOTE_ID] = noteId
+            }
         }
         PinnedNoteWidget().update(context, glanceId)
     }
