@@ -198,3 +198,17 @@ fun firstDisplayableImage(note: Note): String? =
     if (note.type == NoteType.TEXT) {
         extractMediaRefs(note.content).firstOrNull { !it.isVideo }?.fileName
     } else null
+
+// Todos los nombres de archivo de imagen/gif referenciados en una lista ya
+// parseada de ContentPart (sueltas + las de cada galería), en orden. Se usa
+// para precargar de una las miniaturas que va a necesitar el widget antes
+// de renderizar, en vez de ir cargando archivo por archivo durante el
+// armado de la UI.
+fun allInlineImageFileNames(parts: List<ContentPart>): List<String> =
+    parts.flatMap { part ->
+        when (part) {
+            is ContentPart.ImagePart -> listOf(part.fileName)
+            is ContentPart.GalleryPart -> part.fileNames
+            else -> emptyList()
+        }
+    }

@@ -23,31 +23,29 @@ import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.appwidget.updateAll
 import androidx.glance.background
-import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
-import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
-import androidx.glance.layout.size
-import androidx.glance.layout.width
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import com.dumb.bouncynotes.MainActivity
+import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.NoteType
+import com.dumb.bouncynotes.data.allInlineImageFileNames
 import com.dumb.bouncynotes.data.buildPlainTextPreview
-import com.dumb.bouncynotes.data.firstDisplayableImage
+import com.dumb.bouncynotes.data.parseNoteContent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -58,6 +56,12 @@ import java.io.File
 // widget a la pantalla de inicio.
 val KEY_PINNED_NOTE_ID = longPreferencesKey("pinnedNoteId")
 
+// Un widget viaja por Binder con un límite chico de tamaño total: mostrar
+// TODAS las imágenes de una nota con muchas fotos arriesgaría pasarse de
+// ese límite. Se muestran como mucho estas, y el resto queda como aviso de
+// texto ("+N más, abrí la nota").
+private const val MAX_INLINE_IMAGES = 6
+
 class PinnedNoteWidget : GlanceAppWidget() {
 
     override val stateDefinition = PreferencesGlanceStateDefinition
@@ -67,30 +71,36 @@ class PinnedNoteWidget : GlanceAppWidget() {
         val note = noteId?.takeIf { it != 0L }?.let {
             NoteDatabase.getInstance(context).noteDao().getById(it)
         }
-        // Miniatura de la primera imagen/gif de la nota, si tiene. Un widget
-        // viaja por Binder con un límite chico de tamaño total, así que acá
-        // se decodifica YA reducida (nunca la imagen original completa) para
-        // no arriesgar un TransactionTooLargeException.
-        val thumbnail = note?.let { firstDisplayableImage(it) }?.let { fileName ->
-            withContext(Dispatchers.IO) { loadThumbnail(context, fileName) }
+
+        // Se arma la lista real de bloques (texto/imagen/galería/video) de
+        // la nota, en el mismo orden en que aparecen — no un resumen
+        // aplanado — para reproducir su posición real dentro del widget.
+        // Los checklists no lo necesitan: no tienen imágenes.
+        val parts = note?.takeIf { it.type == NoteType.TEXT }?.let { parseNoteContent(it.content) }
+
+        val allImageNames = parts?.let { allInlineImageFileNames(it) }.orEmpty()
+        val thumbnails: Map<String, Bitmap> = withContext(Dispatchers.IO) {
+            allImageNames.take(MAX_INLINE_IMAGES).mapNotNull { fileName ->
+                loadThumbnail(context, fileName)?.let { fileName to it }
+            }.toMap()
         }
 
         provideContent {
             GlanceTheme {
-                PinnedNoteContent(context, note, thumbnail)
+                PinnedNoteContent(context, note, parts, thumbnails, allImageNames.size)
             }
         }
     }
 }
 
-private fun loadThumbnail(context: Context, fileName: String, maxDim: Int = 300): Bitmap? {
+private fun loadThumbnail(context: Context, fileName: String, maxDim: Int = 260): Bitmap? {
     val file = File(ImageStorage.imagesDir(context), fileName)
     if (!file.exists()) return null
     return try {
         // Dos pasadas: la primera solo mide (inJustDecodeBounds), para poder
         // calcular un inSampleSize y recién ahí decodificar de verdad — así
         // nunca se llega a cargar en memoria la imagen a resolución completa
-        // (podría ser varios MB) para terminar mostrando 40dp de miniatura.
+        // para terminar mostrándola reducida.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         var sample = 1
@@ -103,7 +113,13 @@ private fun loadThumbnail(context: Context, fileName: String, maxDim: Int = 300)
 }
 
 @Composable
-private fun PinnedNoteContent(context: Context, note: Note?, thumbnail: Bitmap?) {
+private fun PinnedNoteContent(
+    context: Context,
+    note: Note?,
+    parts: List<ContentPart>?,
+    thumbnails: Map<String, Bitmap>,
+    totalImageCount: Int
+) {
     // Mismo extra ("openNoteId") que ya usa MainActivity para "abrí directo
     // en esta nota" (lo usan los recordatorios al tocar la notificación): el
     // widget reutiliza esa puerta de entrada en vez de inventar una nueva.
@@ -124,8 +140,7 @@ private fun PinnedNoteContent(context: Context, note: Note?, thumbnail: Bitmap?)
     ) {
         if (note == null) {
             // La nota asignada ya no existe (se borró para siempre) o el
-            // widget todavía no terminó de configurarse. Todo este estado
-            // es tocable (no hay cuerpo con scroll que le compita el gesto).
+            // widget todavía no terminó de configurarse.
             Column(modifier = GlanceModifier.fillMaxSize().clickable(openAction)) {
                 Text(
                     "Esta nota ya no está disponible.\nQuitá y volvé a agregar el widget para elegir otra.",
@@ -133,32 +148,19 @@ private fun PinnedNoteContent(context: Context, note: Note?, thumbnail: Bitmap?)
                 )
             }
         } else {
-            // Encabezado (miniatura + título, hasta 2 líneas): es la ÚNICA
-            // parte que abre la nota al tocar. El cuerpo de abajo tiene su
-            // propio scroll, y si todo el widget fuera clickable a la vez,
-            // el gesto de abrir competiría con el de scrollear.
-            Row(
-                modifier = GlanceModifier.fillMaxWidth().clickable(openAction),
-                verticalAlignment = Alignment.Vertical.CenterVertically
-            ) {
-                if (thumbnail != null) {
-                    Image(
-                        provider = ImageProvider(thumbnail),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = GlanceModifier.size(40.dp).cornerRadius(8.dp)
-                    )
-                    Spacer(modifier = GlanceModifier.width(8.dp))
-                }
-                Text(
-                    note.title.ifBlank { "(Sin título)" },
-                    maxLines = 2,
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onSurface,
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-            }
+            // Título (hasta 2 líneas): es la ÚNICA parte que abre la nota al
+            // tocar. El cuerpo de abajo tiene su propio scroll, y si todo el
+            // widget fuera clickable a la vez, el gesto de abrir competiría
+            // con el de scrollear.
+            Text(
+                note.title.ifBlank { "(Sin título)" },
+                maxLines = 2,
+                style = TextStyle(
+                    color = GlanceTheme.colors.onSurface,
+                    fontWeight = FontWeight.Bold
+                ),
+                modifier = GlanceModifier.fillMaxWidth().clickable(openAction)
+            )
             Spacer(modifier = GlanceModifier.height(8.dp))
             // Divisor: Glance no trae un composable "Divider" propio, así
             // que es una franja fina de 1dp con un color del tema.
@@ -170,15 +172,75 @@ private fun PinnedNoteContent(context: Context, note: Note?, thumbnail: Bitmap?)
             ) {}
             Spacer(modifier = GlanceModifier.height(8.dp))
             // Cuerpo CON scroll: un Column normal no se puede scrollear en
-            // Glance. Un LazyColumn con un único ítem sí — es el patrón que
-            // recomienda la propia documentación de Glance para contenido
-            // más largo que el alto visible del widget.
+            // Glance. Un LazyColumn sí — cada bloque de la nota (texto o
+            // imagen) es un ítem separado, en el mismo orden real en que
+            // aparecen en la nota.
             LazyColumn(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                item {
-                    Text(
-                        buildPlainTextPreview(note),
-                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant)
-                    )
+                if (note.type == NoteType.CHECKLIST) {
+                    item {
+                        Text(buildPlainTextPreview(note), style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant))
+                    }
+                } else {
+                    parts?.forEach { part ->
+                        when (part) {
+                            is ContentPart.TextPart -> {
+                                if (part.text.isNotBlank()) {
+                                    item {
+                                        Text(part.text, style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant))
+                                    }
+                                }
+                            }
+                            is ContentPart.ImagePart -> {
+                                thumbnails[part.fileName]?.let { bmp ->
+                                    item {
+                                        Image(
+                                            provider = ImageProvider(bmp),
+                                            contentDescription = part.caption,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = GlanceModifier.fillMaxWidth().height(140.dp).cornerRadius(8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            is ContentPart.GalleryPart -> {
+                                // Simplificación: se muestran todas las
+                                // imágenes del grupo apiladas una debajo de
+                                // la otra, en vez de reproducir el layout
+                                // real (grilla/carrusel) — no entra bien en
+                                // el ancho de un widget.
+                                part.fileNames.forEach { fileName ->
+                                    thumbnails[fileName]?.let { bmp ->
+                                        item {
+                                            Image(
+                                                provider = ImageProvider(bmp),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = GlanceModifier.fillMaxWidth().height(140.dp).cornerRadius(8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            is ContentPart.VideoPart -> {
+                                // Un widget no puede reproducir video ni
+                                // decodificar un frame para miniatura acá.
+                                item {
+                                    Text(
+                                        "🎬 " + part.caption.ifBlank { "Video" } + " — abrí la nota para verlo",
+                                        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (totalImageCount > MAX_INLINE_IMAGES) {
+                        item {
+                            Text(
+                                "+ ${totalImageCount - MAX_INLINE_IMAGES} imagen(es) más — abrí la nota para verlas todas",
+                                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -203,26 +265,15 @@ object PinnedNoteWidgetUpdater {
     }
 
     // La llama PinnedNoteWidgetConfigActivity al confirmar qué nota le
-    // corresponde a ESTA instancia del widget en particular.
+    // corresponde a ESTA instancia del widget en particular. Usa el
+    // overload SIMPLE de updateAppWidgetState (context, glanceId, lambda),
+    // no el genérico con PreferencesGlanceStateDefinition explícito +
+    // transform que devuelve un Preferences nuevo: ese overload genérico
+    // era el que fallaba en el primer placement del widget.
     suspend fun assignNote(context: Context, glanceId: GlanceId, noteId: Long) {
-        // Preferences es INMUTABLE: no se puede hacer prefs[key] = valor
-        // directo sobre lo que llega en el lambda, hay que pasar por
-        // toMutablePreferences() y devolver ESE resultado.
-        updateAppWidgetState(context, PreferencesGlanceStateDefinition, glanceId) { prefs ->
-            prefs.toMutablePreferences().apply {
-                this[KEY_PINNED_NOTE_ID] = noteId
-            }
+        updateAppWidgetState(context, glanceId) { prefs ->
+            prefs[KEY_PINNED_NOTE_ID] = noteId
         }
-        PinnedNoteWidget().update(context, glanceId)
-        // Bug conocido de Glance (reportado por varios desarrolladores): en
-        // el PRIMER placement de un widget con Activity de configuración,
-        // este primer update() puede no "pegar" porque el widget todavía no
-        // terminó de registrarse del todo del lado del sistema justo en ese
-        // instante. Un segundo intento, un toque después, lo resuelve de
-        // forma confiable — sin esto, quedaba mostrando "nota no disponible"
-        // hasta que algo más disparara un refresh (por eso abrir la app y
-        // volver a guardar la nota, o reconfigurar el widget, lo arreglaba).
-        delay(600)
         PinnedNoteWidget().update(context, glanceId)
     }
 }
