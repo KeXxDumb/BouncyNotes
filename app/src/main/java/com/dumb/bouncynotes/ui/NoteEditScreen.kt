@@ -1110,6 +1110,17 @@ fun NoteEditScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(checklistScrollState)
+                            // Sin esto, Compose no se entera de que el teclado
+                            // ocupa espacio (más allá de lo que el propio
+                            // sistema resuelva o no con adjustResize — en
+                            // algunos fabricantes, notablemente Xiaomi/MIUI,
+                            // adjustResize es poco confiable), así que
+                            // bringIntoView() calcula "ya está visible" con
+                            // el alto de pantalla COMPLETO, sin descontar el
+                            // teclado, y el cursor termina tapado. Es un
+                            // no-op (0dp) cuando el teclado está oculto, así
+                            // que no afecta el modo lectura de la checklist.
+                            .imePadding()
                             .then(readModeGesture)
                     ) {
                         ChecklistEditor(
@@ -1141,7 +1152,17 @@ fun NoteEditScreen(
                         label = "modo-edicion-vista"
                     ) { editing ->
                         if (editing) {
-                    Column(modifier = Modifier.fillMaxSize().verticalScroll(editScrollState)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(editScrollState)
+                            // Mismo motivo que en la columna del checklist: sin
+                            // esto, bringIntoView() no descuenta el teclado del
+                            // alto disponible, y en fabricantes donde
+                            // adjustResize no es confiable (Xiaomi/MIUI en
+                            // particular) el cursor queda tapado al escribir.
+                            .imePadding()
+                    ) {
                         segments.forEachIndexed { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {

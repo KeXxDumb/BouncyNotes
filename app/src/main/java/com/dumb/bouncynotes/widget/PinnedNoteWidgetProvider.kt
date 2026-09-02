@@ -66,6 +66,13 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
             val noteId = PinnedNoteWidgetPrefs.getNoteId(context, widgetId)
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_note)
 
+            // Un widget no puede usar el theming de Compose de la app —
+            // se resuelve claro/oscuro a mano, con el mismo criterio que
+            // ya usa MainActivity, y se aplica color por color.
+            val colors = resolveWidgetColors(context)
+            views.setInt(R.id.Layout, "setBackgroundResource", colors.backgroundRes)
+            views.setTextColor(R.id.Empty, colors.textSecondary)
+
             if (noteId == null) {
                 views.setViewVisibility(R.id.ListView, View.GONE)
                 views.setViewVisibility(R.id.Empty, View.VISIBLE)

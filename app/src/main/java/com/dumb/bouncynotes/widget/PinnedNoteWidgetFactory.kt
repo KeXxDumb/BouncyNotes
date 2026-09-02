@@ -37,6 +37,7 @@ class PinnedNoteWidgetFactory(
 
     private var note: Note? = null
     private var rows: List<Row> = emptyList()
+    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
 
     override fun onCreate() {}
 
@@ -50,6 +51,7 @@ class PinnedNoteWidgetFactory(
         val current = runBlocking { NoteDatabase.getInstance(context).noteDao().getById(noteId) }
         note = current
         rows = current?.let { buildRows(it) } ?: emptyList()
+        colors = resolveWidgetColors(context)
     }
 
     private fun buildRows(note: Note): List<Row> {
@@ -112,11 +114,15 @@ class PinnedNoteWidgetFactory(
         val currentNote = note
         return RemoteViews(context.packageName, R.layout.pinned_note_widget_header).apply {
             setTextViewText(R.id.Title, currentNote?.title?.ifBlank { "(Sin título)" } ?: "")
-            setOnClickFillInIntent(R.id.HeaderRow, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
-            // Fila del mismo ListView, pero con una action DISTINTA en su
-            // propio fill-in Intent: la plantilla (ver updateWidget()) no
-            // trae ninguna action fija, así que cada vista puede resolver
-            // la suya.
+            setTextColor(R.id.Title, colors.textPrimary)
+            // El click de "abrir la nota" va en Title específicamente, NO en
+            // HeaderRow (el contenedor que envuelve a Title y a ChangeNote):
+            // dos vistas ANIDADAS (contenedor + hijo) con manejadores de
+            // click distintos es un problema conocido en listas de widgets
+            // — el sistema puede disparar los dos a la vez, o ninguno de
+            // forma confiable. Al ser hermanas (mismo nivel, sin superponerse),
+            // cada una responde solo a su propio toque.
+            setOnClickFillInIntent(R.id.Title, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
             setOnClickFillInIntent(R.id.ChangeNote, PinnedNoteWidgetProvider.reconfigureFillInIntent(widgetId))
         }
     }
@@ -124,6 +130,7 @@ class PinnedNoteWidgetFactory(
     private fun getTextRowView(row: Row.TextRow): RemoteViews =
         RemoteViews(context.packageName, R.layout.pinned_note_widget_text_row).apply {
             setTextViewText(R.id.RowText, row.text)
+            setTextColor(R.id.RowText, colors.textSecondary)
             setOnClickFillInIntent(R.id.RowText, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
         }
 

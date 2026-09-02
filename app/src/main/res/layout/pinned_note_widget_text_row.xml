@@ -9,5 +9,4 @@
     android:paddingBottom="4dp"
     android:lineSpacingMultiplier="1.1"
     android:textSize="13sp"
-    android:textColor="?android:attr/textColorSecondary"
-    android:theme="@style/Theme.Notes" />
+    android:textColor="?android:attr/textColorSecondary" />
