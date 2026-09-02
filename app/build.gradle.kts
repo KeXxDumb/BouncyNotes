@@ -156,12 +156,4 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-ui:1.11.0")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
-
-    // Widget de "nota fijada" (solo lectura) en la pantalla de inicio.
-    // 1.1.1 es la última versión ESTABLE de Glance al momento de esto (hay
-    // una 1.3.0 en alpha, pero todavía no estable) — glance-material3 da
-    // colores dinámicos (Material You) al widget sin tener que armar un
-    // esquema de color a mano como en ui/theme/Theme.kt.
-    implementation("androidx.glance:glance-appwidget:1.1.1")
-    implementation("androidx.glance:glance-material3:1.1.1")
 }

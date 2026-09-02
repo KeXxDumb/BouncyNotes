@@ -111,12 +111,16 @@
             </intent-filter>
         </receiver>
 
-        <!-- Widget de "nota fijada" (solo lectura). El receiver es lo que el
-             sistema ve como "el widget"; exported=true es obligatorio para
-             que el launcher/home screen pueda invocarlo. -->
+        <!-- Widget de "nota fijada" (solo lectura), sobre RemoteViews/
+             AppWidgetProvider clásico — no Glance (ver historial: Glance
+             tenía una carrera de timing entre la Activity de configuración
+             y su primer render, que este enfoque, mucho más viejo y
+             probado, no tiene). exported=false: el sistema invoca el
+             provider a través de AppWidgetManager, no por un broadcast que
+             cualquier app externa pudiera enviar. -->
         <receiver
-            android:name=".widget.PinnedNoteWidgetReceiver"
-            android:exported="true">
+            android:name=".widget.PinnedNoteWidgetProvider"
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -125,14 +129,25 @@
                 android:resource="@xml/pinned_note_widget_info" />
         </receiver>
 
-        <!-- Se abre una sola vez, al agregar el widget a la pantalla de
-             inicio, para elegir qué nota le corresponde a esa instancia
-             (ver android:configure en pinned_note_widget_info.xml).
-             exported=true es obligatorio: la invoca el proceso del
-             launcher, no la propia app. -->
+        <!-- Le da el contenido de la lista (ListView) del widget: un header
+             más un renglón por cada bloque de texto/imagen de la nota, en
+             su orden real. BIND_REMOTEVIEWS es obligatorio para cualquier
+             RemoteViewsService: solo el sistema puede bindearse a este
+             servicio, ninguna otra app. -->
+        <service
+            android:name=".widget.PinnedNoteWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <!-- Se abre al agregar el widget a la pantalla de inicio (para
+             elegir qué nota le corresponde) y también al tocar el ícono de
+             "cambiar nota" del encabezado, para reconfigurar sin tener que
+             quitar y volver a agregar el widget. exported=false: las
+             acciones APPWIDGET_CONFIGURE las dispara el sistema, no hace
+             falta exponerla a otras apps. -->
         <activity
             android:name=".widget.PinnedNoteWidgetConfigActivity"
-            android:exported="true"
+            android:exported="false"
             android:theme="@style/Theme.Notes">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />

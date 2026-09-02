@@ -2,16 +2,16 @@
 <!--
     minWidth/minHeight de 2x2 celdas aprox (110dp): un tamaño chico como
     para convivir con otros widgets/íconos, pero que alcanza para título +
-    unas líneas de preview. resizeMode permite agrandarlo si el usuario
-    quiere ver más texto.
+    unas líneas de contenido. resizeMode permite agrandarlo si el usuario
+    quiere ver más.
 
-    initialLayout usa el layout de "cargando" que ya trae la propia librería
-    Glance (glance_default_loading_layout): se ve un instante, antes de que
-    termine la primera composición async del widget real.
+    initialLayout apunta directo al layout real del widget (no hace falta
+    un placeholder de "cargando" como con Glance): el propio onUpdate()
+    del sistema lo llena con contenido real casi al instante.
 
     updatePeriodMillis="0": no hay refresco periódico automático del
     sistema. El refresco lo dispara la propia app (NoteRepository, después
-    de cada save/delete) llamando a PinnedNoteWidget().updateAll().
+    de cada save/delete) llamando a PinnedNoteWidgetProvider.refreshAll().
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
@@ -19,7 +19,7 @@
     android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
-    android:initialLayout="@layout/glance_default_loading_layout"
+    android:initialLayout="@layout/widget_pinned_note"
     android:configure="com.dumb.bouncynotes.widget.PinnedNoteWidgetConfigActivity"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"

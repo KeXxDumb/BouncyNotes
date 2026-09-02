@@ -1,7 +1,7 @@
 package com.dumb.bouncynotes.data
 
 import android.content.Context
-import com.dumb.bouncynotes.widget.PinnedNoteWidgetUpdater
+import com.dumb.bouncynotes.widget.PinnedNoteWidgetProvider
 import kotlinx.coroutines.flow.Flow
 
 // `context` es OPCIONAL a propósito: ReminderScheduler.rescheduleAll() arma
@@ -27,6 +27,6 @@ class NoteRepository(private val dao: NoteDao, private val context: Context? = n
     suspend fun getAllWithReminders(): List<Note> = dao.getAllWithReminders()
 
     private fun refreshPinnedNoteWidget() {
-        context?.let { PinnedNoteWidgetUpdater.refreshAll(it) }
+        context?.let { PinnedNoteWidgetProvider.refreshAll(it) }
     }
 }

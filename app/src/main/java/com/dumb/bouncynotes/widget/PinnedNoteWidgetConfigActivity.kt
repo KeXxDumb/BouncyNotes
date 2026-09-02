@@ -29,8 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteRepository
@@ -39,7 +37,6 @@ import com.dumb.bouncynotes.data.buildPlainTextPreview
 import com.dumb.bouncynotes.ui.SettingsViewModel
 import com.dumb.bouncynotes.ui.theme.NotesTheme
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 
 class PinnedNoteWidgetConfigActivity : ComponentActivity() {
 
@@ -82,15 +79,15 @@ class PinnedNoteWidgetConfigActivity : ComponentActivity() {
     }
 
     private fun assignAndFinish(noteId: Long) {
-        lifecycleScope.launch {
-            val glanceId = GlanceAppWidgetManager(this@PinnedNoteWidgetConfigActivity)
-                .getGlanceIdBy(appWidgetId)
-            PinnedNoteWidgetUpdater.assignNote(this@PinnedNoteWidgetConfigActivity, glanceId, noteId)
+        // Nada de estado async ni GlanceId: SharedPreferences síncrono +
+        // un llamado directo a updateWidget con el appWidgetId de toda la
+        // vida. Es justo lo que evita la carrera que teníamos con Glance.
+        PinnedNoteWidgetPrefs.setNoteId(this, appWidgetId, noteId)
+        PinnedNoteWidgetProvider.updateWidget(this, AppWidgetManager.getInstance(this), appWidgetId)
 
-            val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-            setResult(RESULT_OK, resultValue)
-            finish()
-        }
+        val resultValue = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        setResult(RESULT_OK, resultValue)
+        finish()
     }
 }
 
