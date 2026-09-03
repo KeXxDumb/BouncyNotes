@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.data
 
 import android.content.Context
+import com.dumb.bouncynotes.widget.LastEditedNoteWidgetProvider
 import com.dumb.bouncynotes.widget.PinnedNoteWidgetProvider
 import kotlinx.coroutines.flow.Flow
 
@@ -18,15 +19,18 @@ class NoteRepository(private val dao: NoteDao, private val context: Context? = n
 
     suspend fun getById(id: Long): Note? = dao.getById(id)
 
-    suspend fun save(note: Note): Long = dao.upsert(note).also { refreshPinnedNoteWidget() }
+    suspend fun save(note: Note): Long = dao.upsert(note).also { refreshWidgets() }
 
-    suspend fun delete(note: Note) = dao.delete(note).also { refreshPinnedNoteWidget() }
+    suspend fun delete(note: Note) = dao.delete(note).also { refreshWidgets() }
 
-    suspend fun purgeOldTrash(threshold: Long) = dao.purgeOldTrash(threshold).also { refreshPinnedNoteWidget() }
+    suspend fun purgeOldTrash(threshold: Long) = dao.purgeOldTrash(threshold).also { refreshWidgets() }
 
     suspend fun getAllWithReminders(): List<Note> = dao.getAllWithReminders()
 
-    private fun refreshPinnedNoteWidget() {
-        context?.let { PinnedNoteWidgetProvider.refreshAll(it) }
+    private fun refreshWidgets() {
+        context?.let {
+            PinnedNoteWidgetProvider.refreshAll(it)
+            LastEditedNoteWidgetProvider.refreshAll(it)
+        }
     }
 }

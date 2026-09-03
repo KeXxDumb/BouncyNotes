@@ -61,6 +61,11 @@ class MainActivity : FragmentActivity() {
         // Si la actividad se abrió desde la notificación de un recordatorio,
         // vamos directo a esa nota en vez de a la lista.
         val openNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
+        // Si se abrió desde el widget de "acciones rápidas" (nueva nota /
+        // nuevo checklist), vamos directo a una nota en blanco de ese tipo
+        // — misma convención que ya usa el botón "+" de la lista (noteId=0
+        // significa "todavía no existe, se crea al guardar").
+        val newNoteType = intent?.getStringExtra("newNoteType")
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             // El parpadeo de fondo negro / valores de fábrica al abrir la
@@ -151,7 +156,11 @@ class MainActivity : FragmentActivity() {
                         } else {
                             NavHost(
                                 navController = navController,
-                                startDestination = if (openNoteId != null) "edit/$openNoteId?type=TEXT" else "list"
+                                startDestination = when {
+                                    openNoteId != null -> "edit/$openNoteId?type=TEXT"
+                                    newNoteType != null -> "edit/0?type=$newNoteType"
+                                    else -> "list"
+                                }
                             ) {
                                 composable("list") {
                                     NoteListScreen(

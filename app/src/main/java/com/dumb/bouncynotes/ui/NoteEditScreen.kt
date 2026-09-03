@@ -16,6 +16,9 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
@@ -868,6 +871,17 @@ fun NoteEditScreen(
 
     val contentLayer = rememberGraphicsLayer()
     val bottomBarHeight = 56.dp
+    // El Spacer de compensación al final del contenido necesita el alto TOTAL
+    // que ocupa la barra en pantalla, no solo sus 56dp fijos: más abajo, el
+    // Box que envuelve a GlassBottomBar la empuja hacia arriba con
+    // navigationBarsPadding() en los teléfonos donde el sistema no la
+    // acomoda solo (ver comentario ahí — bug ya visto una vez en otro
+    // dispositivo). Si el Spacer no suma ESE MISMO inset, en esos teléfonos
+    // la barra ocupa más alto real del que el Spacer previó, y la última
+    // línea del contenido queda tapada justo esa diferencia — es lo que
+    // reportó el amigo del usuario.
+    val bottomBarNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val bottomBarCompensation = bottomBarHeight + bottomBarNavInset + 12.dp
 
     Scaffold(
         topBar = {
@@ -1136,7 +1150,7 @@ fun NoteEditScreen(
                         )
                         // Despeje para que el último ítem no quede tapado por la
                         // barra inferior flotante y semitransparente.
-                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
+                        Spacer(Modifier.height(bottomBarCompensation))
                     }
                 } else {
                     // Antes el cambio entre modo edición y vista (el botón del
@@ -1334,7 +1348,7 @@ fun NoteEditScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
+                        Spacer(Modifier.height(bottomBarCompensation))
                     }
                         } else {
                     Column(
@@ -1347,7 +1361,7 @@ fun NoteEditScreen(
                             content = current.content,
                             onImageClick = { idx -> viewerStartPos = idx }
                         )
-                        Spacer(Modifier.height(bottomBarHeight + 12.dp))
+                        Spacer(Modifier.height(bottomBarCompensation))
                     }
                         }
                     }

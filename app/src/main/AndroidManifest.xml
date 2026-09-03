@@ -139,6 +139,38 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
+        <!-- Widget de "última nota editada" (automático, sin Activity de
+             configuración): siempre muestra la nota con updatedAt más
+             reciente. -->
+        <receiver
+            android:name=".widget.LastEditedNoteWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/last_edited_note_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".widget.LastEditedNoteWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <!-- Widget de acciones rápidas (nueva nota / nuevo checklist +
+             reloj): sin lista ni RemoteViewsService, son botones fijos. -->
+        <receiver
+            android:name=".widget.QuickActionsWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_actions_widget_info" />
+        </receiver>
+
         <!-- Se abre al agregar el widget a la pantalla de inicio (para
              elegir qué nota le corresponde) y también al tocar el ícono de
              "cambiar nota" del encabezado, para reconfigurar sin tener que
