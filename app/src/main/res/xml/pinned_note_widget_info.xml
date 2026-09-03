@@ -20,6 +20,7 @@
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_pinned_note"
+    android:previewLayout="@layout/widget_pinned_note"
     android:configure="com.dumb.bouncynotes.widget.PinnedNoteWidgetConfigActivity"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"

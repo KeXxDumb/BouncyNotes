@@ -41,6 +41,7 @@ class PinnedNoteWidgetFactory(
         return when (val row = rows[position - 1]) {
             is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteId, row)
             is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteId, row)
+            is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteId, row)
         }
     }
 
@@ -61,7 +62,7 @@ class PinnedNoteWidgetFactory(
         }
     }
 
-    override fun getViewTypeCount() = 3
+    override fun getViewTypeCount() = 4
 
     override fun hasStableIds() = false
 

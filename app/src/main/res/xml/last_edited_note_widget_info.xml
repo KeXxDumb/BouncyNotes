@@ -11,6 +11,7 @@
     android:targetCellHeight="2"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_pinned_note"
+    android:previewLayout="@layout/widget_pinned_note"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/last_edited_note_widget_description" />

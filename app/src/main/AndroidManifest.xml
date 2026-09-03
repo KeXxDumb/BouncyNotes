@@ -120,7 +120,8 @@
              cualquier app externa pudiera enviar. -->
         <receiver
             android:name=".widget.PinnedNoteWidgetProvider"
-            android:exported="false">
+            android:exported="false"
+            android:label="@string/pinned_note_widget_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -144,7 +145,8 @@
              reciente. -->
         <receiver
             android:name=".widget.LastEditedNoteWidgetProvider"
-            android:exported="false">
+            android:exported="false"
+            android:label="@string/last_edited_note_widget_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
@@ -162,7 +164,8 @@
              reloj): sin lista ni RemoteViewsService, son botones fijos. -->
         <receiver
             android:name=".widget.QuickActionsWidgetProvider"
-            android:exported="false">
+            android:exported="false"
+            android:label="@string/quick_actions_widget_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

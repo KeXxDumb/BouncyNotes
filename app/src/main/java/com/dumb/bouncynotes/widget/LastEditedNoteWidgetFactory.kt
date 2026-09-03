@@ -44,6 +44,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
         return when (val row = rows[position - 1]) {
             is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteIdForClicks, row)
             is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteIdForClicks, row)
+            is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteIdForClicks, row)
         }
     }
 
@@ -63,7 +64,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
         }
     }
 
-    override fun getViewTypeCount() = 3
+    override fun getViewTypeCount() = 4
 
     override fun hasStableIds() = false
 

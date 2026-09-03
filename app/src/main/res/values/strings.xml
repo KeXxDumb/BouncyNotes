@@ -1,9 +1,12 @@
 <resources>
     <string name="app_name">Bouncy Notes</string>
+    <string name="pinned_note_widget_label">Nota fijada</string>
     <string name="pinned_note_widget_description">Muestra una nota fijada en la pantalla de inicio</string>
     <string name="pinned_note_widget_select_note">Tocá para elegir una nota</string>
     <string name="pinned_note_widget_change_note">Cambiar nota</string>
+    <string name="last_edited_note_widget_label">Última nota editada</string>
     <string name="last_edited_note_widget_description">Muestra la última nota editada, sin elegir ninguna</string>
+    <string name="quick_actions_widget_label">Acciones rápidas</string>
     <string name="quick_actions_widget_description">Accesos rápidos: nueva nota, nuevo checklist y reloj</string>
     <string name="quick_actions_widget_new_note">Nota</string>
     <string name="quick_actions_widget_new_checklist">Checklist</string>

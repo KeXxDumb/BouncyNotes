@@ -11,10 +11,17 @@ import android.view.View
 import android.widget.RemoteViews
 import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
+import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.NoteRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private const val ACTION_OPEN_NOTE = "com.dumb.bouncynotes.widget.ACTION_OPEN_NOTE"
 private const val ACTION_RECONFIGURE = "com.dumb.bouncynotes.widget.ACTION_RECONFIGURE"
+private const val ACTION_TOGGLE_CHECKLIST_ITEM = "com.dumb.bouncynotes.widget.ACTION_TOGGLE_CHECKLIST_ITEM"
 const val EXTRA_NOTE_ID = "com.dumb.bouncynotes.widget.EXTRA_NOTE_ID"
+private const val EXTRA_ITEM_INDEX = "com.dumb.bouncynotes.widget.EXTRA_ITEM_INDEX"
 
 class PinnedNoteWidgetProvider : AppWidgetProvider() {
 
@@ -55,7 +62,41 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                     context.startActivity(configIntent)
                 }
             }
+            ACTION_TOGGLE_CHECKLIST_ITEM -> {
+                val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
+                val itemIndex = intent.getIntExtra(EXTRA_ITEM_INDEX, -1)
+                if (noteId != 0L && itemIndex >= 0) {
+                    // Tocar Room desde onReceive necesita salirse del hilo
+                    // principal, pero el receiver puede destruirse apenas
+                    // onReceive() retorna — goAsync() lo mantiene vivo hasta
+                    // que la corrutina llame a pendingResult.finish().
+                    val pendingResult = goAsync()
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            toggleChecklistItem(context, noteId, itemIndex)
+                        } finally {
+                            pendingResult.finish()
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private suspend fun toggleChecklistItem(context: Context, noteId: Long, itemIndex: Int) {
+        val dao = NoteDatabase.getInstance(context).noteDao()
+        val note = dao.getById(noteId) ?: return
+        if (itemIndex !in note.checklistItems.indices) return
+        val updatedItems = note.checklistItems.toMutableList().apply {
+            this[itemIndex] = this[itemIndex].copy(checked = !this[itemIndex].checked)
+        }
+        // Pasa por NoteRepository (no dao.upsert directo) para que dispare
+        // el mismo refresh que cualquier otro guardado: así se actualiza
+        // ESTE widget y también el de "última nota editada", si esta nota
+        // fuera además la más reciente.
+        NoteRepository(dao, context).save(
+            note.copy(checklistItems = updatedItems, updatedAt = System.currentTimeMillis())
+        )
     }
 
     companion object {
@@ -146,6 +187,14 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 action = ACTION_RECONFIGURE
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                 data = Uri.parse("bouncynotes://widget/reconfigure/$widgetId")
+            }
+
+        fun toggleChecklistItemFillInIntent(noteId: Long, itemIndex: Int): Intent =
+            Intent().apply {
+                action = ACTION_TOGGLE_CHECKLIST_ITEM
+                putExtra(EXTRA_NOTE_ID, noteId)
+                putExtra(EXTRA_ITEM_INDEX, itemIndex)
+                data = Uri.parse("bouncynotes://widget/toggle/$noteId/$itemIndex")
             }
 
         // FLAG_MUTABLE es obligatorio para un PendingIntentTemplate: el

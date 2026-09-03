@@ -19,20 +19,22 @@ import java.io.File
 private const val MAX_INLINE_IMAGES = 6
 
 // Una fila de la lista de un widget de "una nota completa": bloque de
-// texto (párrafo, ítem de checklist, o el aviso de "video"/"+N imágenes
-// más"), o una imagen ya decodificada y reducida. Compartida entre el
-// widget de "nota fijada" y el de "última nota editada" — la única
-// diferencia entre esos dos widgets es CÓMO deciden qué nota mostrar, no
-// cómo la dibujan.
+// texto, ítem de checklist tildable, o una imagen ya decodificada y
+// reducida. Compartida entre el widget de "nota fijada" y el de "última
+// nota editada" — la única diferencia entre esos dos widgets es CÓMO
+// deciden qué nota mostrar, no cómo la dibujan. Si la nota es de tipo
+// checklist, CUALQUIERA de los dos "muta" solo a una lista tildable — no
+// hace falta un tercer widget aparte para eso.
 sealed class NoteWidgetRow {
     data class TextRow(val text: String) : NoteWidgetRow()
     data class ImageRow(val bitmap: Bitmap) : NoteWidgetRow()
+    data class ChecklistItemRow(val itemIndex: Int, val text: String, val checked: Boolean) : NoteWidgetRow()
 }
 
 fun buildNoteWidgetRows(context: Context, note: Note): List<NoteWidgetRow> {
     if (note.type == NoteType.CHECKLIST) {
-        return note.checklistItems.map { item ->
-            NoteWidgetRow.TextRow((if (item.checked) "☑ " else "☐ ") + item.text)
+        return note.checklistItems.mapIndexed { index, item ->
+            NoteWidgetRow.ChecklistItemRow(index, item.text, item.checked)
         }
     }
 
@@ -105,4 +107,27 @@ fun getNoteWidgetImageRowView(context: Context, noteId: Long, row: NoteWidgetRow
     RemoteViews(context.packageName, R.layout.pinned_note_widget_image_row).apply {
         setImageViewBitmap(R.id.RowImage, row.bitmap)
         setOnClickFillInIntent(R.id.RowImage, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
+    }
+
+fun getNoteWidgetChecklistRowView(
+    context: Context,
+    colors: WidgetColors,
+    noteId: Long,
+    row: NoteWidgetRow.ChecklistItemRow
+): RemoteViews =
+    RemoteViews(context.packageName, R.layout.pinned_note_widget_checklist_row).apply {
+        setTextViewText(R.id.CheckboxGlyph, if (row.checked) "☑" else "☐")
+        setTextColor(R.id.CheckboxGlyph, colors.textPrimary)
+        setTextViewText(R.id.ChecklistText, row.text)
+        setTextColor(R.id.ChecklistText, colors.textSecondary)
+        // CheckboxGlyph y ChecklistText son HERMANOS (mismo nivel, sin
+        // superponerse) — no un contenedor + un hijo — por la misma razón
+        // que Title/ChangeNote en el encabezado: dos vistas ANIDADAS con
+        // manejadores de click distintos es un problema conocido en listas
+        // de widgets.
+        setOnClickFillInIntent(
+            R.id.CheckboxGlyph,
+            PinnedNoteWidgetProvider.toggleChecklistItemFillInIntent(noteId, row.itemIndex)
+        )
+        setOnClickFillInIntent(R.id.ChecklistText, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
     }
