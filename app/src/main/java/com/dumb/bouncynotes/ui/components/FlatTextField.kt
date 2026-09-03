@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 @Composable
 private fun flatColors() = TextFieldDefaults.colors(
@@ -93,6 +94,17 @@ fun FlatTextField(
     )
     if (bringIntoViewRequester != null) {
         LaunchedEffect(value.selection) {
+            bringIntoViewRequester.bringIntoView()
+            // El teclado tarda unos cientos de ms en terminar de animar y
+            // reportar su alto final (WindowInsets.ime). Si este efecto se
+            // dispara justo cuando el campo recibe foco por primera vez —
+            // el caso más común de "salto de línea"/toque en una nota —
+            // ese primer bringIntoView() puede calcular el scroll con un
+            // viewport que todavía no descontó el teclado completo, y
+            // quedarse corto. Un segundo pedido, un toque después, corrige
+            // eso sin afectar el caso normal (que ya queda bien resuelto
+            // con el primero).
+            delay(300)
             bringIntoViewRequester.bringIntoView()
         }
     }

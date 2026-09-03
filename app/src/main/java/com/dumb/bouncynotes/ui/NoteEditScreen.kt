@@ -50,6 +50,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -327,17 +330,24 @@ fun NoteEditScreen(
 
     // BUG: al abrir el visor de imágenes a pantalla completa, más abajo hay un
     // "return" temprano que hace que todo el Scaffold con el contenido de la
-    // nota (y su Column con scroll) directamente NO se componga mientras el
-    // visor está abierto. Al cerrar el visor, esa Column vuelve a entrar en
-    // composición desde cero, y como su rememberScrollState() se creaba ahí
-    // mismo (en la línea del .verticalScroll(...)), perdía cualquier scroll
-    // previo y arrancaba siempre en 0 (el inicio de la nota). La solución es
-    // crear estos ScrollState ACÁ arriba, antes de ese "return": como esta
-    // parte de la función SIEMPRE se ejecuta en cada recomposición (viewer
-    // abierto o no), Compose los recuerda de forma estable sin importar que
-    // la Column de más abajo se deje de componer temporalmente.
+    // nota (y su Column/LazyColumn con scroll) directamente NO se componga
+    // mientras el visor está abierto. Al cerrar el visor, ese contenedor
+    // vuelve a entrar en composición desde cero, y como su estado de scroll
+    // se creaba ahí mismo (en la línea del .verticalScroll(...) / LazyColumn),
+    // perdía cualquier scroll previo y arrancaba siempre en 0 (el inicio de
+    // la nota). La solución es crear estos estados ACÁ arriba, antes de ese
+    // "return": como esta parte de la función SIEMPRE se ejecuta en cada
+    // recomposición (viewer abierto o no), Compose los recuerda de forma
+    // estable sin importar que el contenedor de más abajo se deje de
+    // componer temporalmente.
     val checklistScrollState = rememberScrollState()
-    val editScrollState = rememberScrollState()
+    // LazyColumn en vez de un Column+verticalScroll: con notas de muchas
+    // imágenes, esto evita que Coil cargue y mantenga en memoria TODAS las
+    // imágenes a la vez — solo compone (y por lo tanto solo carga) los
+    // segmentos cerca de lo que está en pantalla. rememberLazyListState() es
+    // el equivalente de un ScrollState para LazyColumn; se hoistea acá por
+    // la MISMA razón de arriba.
+    val editLazyListState = rememberLazyListState()
     val viewScrollState = rememberScrollState()
 
     // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
@@ -1123,18 +1133,20 @@ fun NoteEditScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(checklistScrollState)
-                            // Sin esto, Compose no se entera de que el teclado
-                            // ocupa espacio (más allá de lo que el propio
-                            // sistema resuelva o no con adjustResize — en
-                            // algunos fabricantes, notablemente Xiaomi/MIUI,
-                            // adjustResize es poco confiable), así que
-                            // bringIntoView() calcula "ya está visible" con
-                            // el alto de pantalla COMPLETO, sin descontar el
-                            // teclado, y el cursor termina tapado. Es un
-                            // no-op (0dp) cuando el teclado está oculto, así
-                            // que no afecta el modo lectura de la checklist.
+                            // .imePadding() ANTES de .verticalScroll(), no
+                            // después: en ese orden, el padding ACHICA la
+                            // caja disponible para el scroll (el viewport
+                            // real), en vez de sumarse como espacio extra
+                            // DENTRO del contenido scrolleable — que es lo
+                            // que pasaba antes, y por lo que el cálculo de
+                            // "hasta dónde hay que scrollear" para que el
+                            // cursor quede visible no daba bien: Compose no
+                            // se enteraba de que el teclado había reducido
+                            // el alto disponible de verdad. Es un no-op
+                            // (0dp) cuando el teclado está oculto, así que
+                            // no afecta el modo lectura de la checklist.
                             .imePadding()
+                            .verticalScroll(checklistScrollState)
                             .then(readModeGesture)
                     ) {
                         ChecklistEditor(
@@ -1159,25 +1171,25 @@ fun NoteEditScreen(
                     // realmente había cambiado de modo. Crossfade anima un
                     // fundido cruzado entre ambos sin tocar el scroll de cada
                     // uno (que ya quedan hoisted arriba, en
-                    // editScrollState/viewScrollState).
+                    // editLazyListState/viewScrollState).
                     Crossfade(
                         targetState = isEditing,
                         animationSpec = tween(220),
                         label = "modo-edicion-vista"
                     ) { editing ->
                         if (editing) {
-                    Column(
+                    LazyColumn(
+                        state = editLazyListState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(editScrollState)
-                            // Mismo motivo que en la columna del checklist: sin
-                            // esto, bringIntoView() no descuenta el teclado del
-                            // alto disponible, y en fabricantes donde
-                            // adjustResize no es confiable (Xiaomi/MIUI en
-                            // particular) el cursor queda tapado al escribir.
+                            // Mismo motivo que antes con verticalScroll: el
+                            // padding del teclado tiene que achicar el
+                            // viewport real de la LazyColumn (pasado acá,
+                            // en su propio Modifier), no sumarse como
+                            // espacio aparte dentro del contenido.
                             .imePadding()
                     ) {
-                        segments.forEachIndexed { index, segment ->
+                        itemsIndexed(segments, key = { index, _ -> index }) { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
                                     // Solo el campo activo necesita pedir "traeme a la
@@ -1348,7 +1360,9 @@ fun NoteEditScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(bottomBarCompensation))
+                        item(key = "bottom-bar-spacer") {
+                            Spacer(Modifier.height(bottomBarCompensation))
+                        }
                     }
                         } else {
                     Column(
