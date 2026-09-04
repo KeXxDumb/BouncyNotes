@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.content.Context
 import coil.compose.AsyncImage
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.GalleryLayout
@@ -32,9 +33,19 @@ import java.io.File
 // directo al LazyListScope de una LazyColumn externa — no es una Column
 // propia, así que el que la llama controla el scroll (y por lo tanto puede
 // scrollear TODO junto con el resto de la pantalla, sin un scroll anidado).
-@Composable
-fun LazyListScope.NoteContentView(content: String, onImageClick: (Int) -> Unit) {
-    val context = LocalContext.current
+//
+// IMPORTANTE: esto NO puede ser @Composable. El bloque de contenido de un
+// LazyColumn { ... } (el LazyListScope.() -> Unit) NO es en sí mismo un
+// contexto @Composable — ahí adentro solo se pueden llamar funciones
+// normales como item()/items() (que reciben un lambda composable aparte
+// para el contenido real de cada fila). Marcar esta función @Composable y
+// llamarla suelta dentro de un LazyColumn{} rompe la compilación
+// ("@Composable invocations can only happen from the context of a
+// @Composable function"). Por la misma razón, no se puede leer
+// LocalContext.current acá adentro (esa lectura sí necesita contexto
+// composable) — context llega como parámetro, provisto por quien SÍ está
+// en un @Composable (la pantalla que arma el LazyColumn).
+fun LazyListScope.NoteContentView(context: Context, content: String, onImageClick: (Int) -> Unit) {
     val parts = parseNoteContent(content)
     // Cuenta imágenes en la lista PLANA (sueltas + las de dentro de cada
     // grupo, en orden), la misma indexación que usa extractImageFileNames y

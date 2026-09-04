@@ -1383,6 +1383,7 @@ fun NoteEditScreen(
                             .then(readModeGesture)
                     ) {
                         NoteContentView(
+                            context = context,
                             content = current.content,
                             onImageClick = { idx -> viewerStartPos = idx }
                         )
