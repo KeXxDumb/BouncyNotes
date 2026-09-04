@@ -130,4 +130,23 @@ object ImageStorage {
         } catch (e: Exception) {
         }
     }
+
+    // Lee SOLO las dimensiones del archivo (ancho x alto), sin decodificar
+    // los píxeles — BitmapFactory.Options.inJustDecodeBounds hace que solo
+    // se lea el encabezado del archivo, prácticamente instantáneo incluso
+    // para imágenes grandes. Se usa para poder reservarle a una imagen su
+    // relación de aspecto REAL en una lista con scroll (LazyColumn) antes
+    // de que la imagen completa haya cargado — así el layout no "salta"
+    // cuando la carga real termina, sin necesidad de recortar la imagen a
+    // una proporción fija arbitraria.
+    fun readImageDimensions(context: Context, fileName: String): Pair<Int, Int>? {
+        return try {
+            val file = File(imagesDir(context), fileName)
+            val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
+        } catch (e: Exception) {
+            null
+        }
+    }
 }

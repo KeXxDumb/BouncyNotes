@@ -168,6 +168,7 @@ import com.dumb.bouncynotes.ui.components.GalleryGrid
 import com.dumb.bouncynotes.ui.components.NoteContentView
 import com.dumb.bouncynotes.ui.components.NoteVideoPlayer
 import com.dumb.bouncynotes.ui.components.RgbColorPicker
+import com.dumb.bouncynotes.ui.components.rememberImageAspectRatio
 import java.io.File
 
 // Modelo local para el editor segmentado: cada tramo de texto es un campo editable
@@ -348,7 +349,10 @@ fun NoteEditScreen(
     // el equivalente de un ScrollState para LazyColumn; se hoistea acá por
     // la MISMA razón de arriba.
     val editLazyListState = rememberLazyListState()
-    val viewScrollState = rememberScrollState()
+    // Mismo cambio y mismo motivo que arriba, para el modo lectura (que es
+    // donde más se sentía el delay con notas de varias imágenes, ya que es
+    // el modo en el que más tiempo se pasa comparado con el de edición).
+    val viewLazyListState = rememberLazyListState()
 
     // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
     // permiso de notificaciones. Se pide justo al programar el primer
@@ -1171,7 +1175,7 @@ fun NoteEditScreen(
                     // realmente había cambiado de modo. Crossfade anima un
                     // fundido cruzado entre ambos sin tocar el scroll de cada
                     // uno (que ya quedan hoisted arriba, en
-                    // editLazyListState/viewScrollState).
+                    // editLazyListState/viewLazyListState).
                     Crossfade(
                         targetState = isEditing,
                         animationSpec = tween(220),
@@ -1231,12 +1235,19 @@ fun NoteEditScreen(
                                                     is EditSegment.TextSeg -> 0
                                                 }
                                             }
+                                            // Se usa la relación de aspecto REAL de la imagen
+                                            // (ver rememberImageAspectRatio) para que LazyColumn
+                                            // sepa el alto correcto ANTES de que Coil termine de
+                                            // cargarla del todo, sin tener que recortarla a una
+                                            // proporción fija.
+                                            val imageAspectRatio = rememberImageAspectRatio(context, segment.fileName)
                                             AsyncImage(
                                                 model = File(ImageStorage.imagesDir(context), segment.fileName),
                                                 contentDescription = null,
                                                 contentScale = ContentScale.FillWidth,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
+                                                    .aspectRatio(imageAspectRatio)
                                                     .clip(RoundedCornerShape(16.dp))
                                                     .clickable { viewerStartPos = imageIndex }
                                             )
@@ -1365,17 +1376,19 @@ fun NoteEditScreen(
                         }
                     }
                         } else {
-                    Column(
+                    LazyColumn(
+                        state = viewLazyListState,
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(viewScrollState)
                             .then(readModeGesture)
                     ) {
                         NoteContentView(
                             content = current.content,
                             onImageClick = { idx -> viewerStartPos = idx }
                         )
-                        Spacer(Modifier.height(bottomBarCompensation))
+                        item(key = "bottom-bar-spacer-view") {
+                            Spacer(Modifier.height(bottomBarCompensation))
+                        }
                     }
                         }
                     }

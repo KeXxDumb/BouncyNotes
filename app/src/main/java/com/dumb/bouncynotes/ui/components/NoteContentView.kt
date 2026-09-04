@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +27,13 @@ import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.parseNoteContent
 import java.io.File
 
-// Renderiza el contenido de una nota de texto en modo lectura: texto, imágenes
-// sueltas y grupos de imágenes intercalados exactamente en la posición donde
-// el usuario los insertó.
+// Aporta los ítems del contenido de una nota de texto en modo lectura
+// (texto, imágenes sueltas y grupos, intercalados en su posición real)
+// directo al LazyListScope de una LazyColumn externa — no es una Column
+// propia, así que el que la llama controla el scroll (y por lo tanto puede
+// scrollear TODO junto con el resto de la pantalla, sin un scroll anidado).
 @Composable
-fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
+fun LazyListScope.NoteContentView(content: String, onImageClick: (Int) -> Unit) {
     val context = LocalContext.current
     val parts = parseNoteContent(content)
     // Cuenta imágenes en la lista PLANA (sueltas + las de dentro de cada
@@ -38,34 +41,33 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
     // por lo tanto el visor a pantalla completa.
     var imageOccurrence = 0
 
-    Column {
-        parts.forEach { part ->
-            when (part) {
-                is ContentPart.TextPart -> {
-                    if (part.text.isNotBlank()) {
+    parts.forEachIndexed { partIndex, part ->
+        when (part) {
+            is ContentPart.TextPart -> {
+                if (part.text.isNotBlank()) {
+                    item(key = "text-$partIndex") {
                         InlineMarkdownText(text = part.text)
                     }
                 }
-                is ContentPart.ImagePart -> {
-                    val occurrenceIndex = imageOccurrence
-                    imageOccurrence++
+            }
+            is ContentPart.ImagePart -> {
+                val occurrenceIndex = imageOccurrence
+                imageOccurrence++
+                item(key = "image-$partIndex") {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                        // El pellizco (detectTransformGestures) que había antes
-                        // capturaba TODO el toque sobre la imagen, incluido un
-                        // arrastre de un solo dedo, así que bloqueaba el scroll de la
-                        // nota cuando el deslizamiento arrancaba justo sobre una
-                        // imagen, y además el pellizco en sí no siempre se detectaba
-                        // bien. Un tap simple con .clickable convive bien con el
-                        // scroll (un arrastre se le \"escapa\" al contenedor que
-                        // scrollea) y abre el visor a pantalla completa, que ya tiene
-                        // su propio zoom/pan y sigue siendo de solo lectura (sin
-                        // edición de descripción).
+                        // Se usa la relación de aspecto REAL de la imagen (leída
+                        // aparte, solo el encabezado del archivo — ver
+                        // rememberImageAspectRatio) para que LazyColumn sepa el
+                        // alto correcto ANTES de que Coil termine de cargarla del
+                        // todo, sin tener que recortarla a una proporción fija.
+                        val aspectRatio = rememberImageAspectRatio(context, part.fileName)
                         AsyncImage(
                             model = File(ImageStorage.imagesDir(context), part.fileName),
                             contentDescription = part.caption.ifBlank { "Imagen" },
                             contentScale = ContentScale.FillWidth,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .aspectRatio(aspectRatio)
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable { onImageClick(occurrenceIndex) }
                         )
@@ -79,20 +81,24 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
                         }
                     }
                 }
-                is ContentPart.GalleryPart -> {
-                    // El primer índice de este grupo dentro de la lista plana de
-                    // imágenes; cada imagen del grupo es startIndex + su
-                    // posición dentro de part.fileNames.
-                    val startIndex = imageOccurrence
-                    imageOccurrence += part.fileNames.size
+            }
+            is ContentPart.GalleryPart -> {
+                // El primer índice de este grupo dentro de la lista plana de
+                // imágenes; cada imagen del grupo es startIndex + su
+                // posición dentro de part.fileNames.
+                val startIndex = imageOccurrence
+                imageOccurrence += part.fileNames.size
+                item(key = "gallery-$partIndex") {
                     GalleryGrid(
                         layout = part.layout,
                         fileNames = part.fileNames,
                         onImageClick = { indexInGroup -> onImageClick(startIndex + indexInGroup) }
                     )
                 }
-                is ContentPart.VideoPart -> {
-                    imageOccurrence++
+            }
+            is ContentPart.VideoPart -> {
+                imageOccurrence++
+                item(key = "video-$partIndex") {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
                         NoteVideoPlayer(
                             fileName = part.fileName,
@@ -118,7 +124,9 @@ fun NoteContentView(content: String, onImageClick: (Int) -> Unit) {
 
 // Cuadrícula (o carrusel) para un grupo de imágenes agrupadas. El formato
 // (GalleryLayout) se elige al insertar el grupo, o toma el que esté
-// configurado por defecto en Ajustes.
+// configurado por defecto en Ajustes. Ya usaba tamaños fijos (.size(...))
+// para cada miniatura, así que no tenía el problema de altura variable de
+// las imágenes sueltas — no necesitó tocarse para el fix de scroll.
 @Composable
 internal fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImageClick: (Int) -> Unit) {
     val context = LocalContext.current
