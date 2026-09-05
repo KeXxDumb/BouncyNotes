@@ -71,14 +71,7 @@ data class AppSettings(
     // texto elegido por el usuario, o el nombre de la pestaña actual.
     val titleMode: TitleMode = TitleMode.APP_NAME,
     val customTitleText: String = "",
-    val rightEdgeSwipeAction: RightEdgeSwipeAction = RightEdgeSwipeAction.SETTINGS,
-    // Si está activo, elegir imágenes/videos (en el editor de notas y para
-    // la imagen de fondo) abre el selector CLÁSICO del sistema
-    // (ACTION_GET_CONTENT, con TODAS las apps que puedan entregar ese tipo
-    // de contenido — galerías de terceros, administradores de archivos,
-    // etc.) en vez del Photo Picker nativo, que solo muestra la biblioteca
-    // de medios del propio sistema.
-    val useThirdPartyMediaPicker: Boolean = false
+    val rightEdgeSwipeAction: RightEdgeSwipeAction = RightEdgeSwipeAction.SETTINGS
 )
 
 class SettingsRepository(private val context: Context) {
@@ -115,7 +108,6 @@ class SettingsRepository(private val context: Context) {
         val TITLE_MODE = stringPreferencesKey("title_mode")
         val CUSTOM_TITLE_TEXT = stringPreferencesKey("custom_title_text")
         val RIGHT_EDGE_SWIPE_ACTION = stringPreferencesKey("right_edge_swipe_action")
-        val USE_THIRD_PARTY_MEDIA_PICKER = booleanPreferencesKey("use_third_party_media_picker")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -154,8 +146,7 @@ class SettingsRepository(private val context: Context) {
             customTitleText = prefs[Keys.CUSTOM_TITLE_TEXT] ?: "",
             rightEdgeSwipeAction = runCatching {
                 RightEdgeSwipeAction.valueOf(prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] ?: "SETTINGS")
-            }.getOrDefault(RightEdgeSwipeAction.SETTINGS),
-            useThirdPartyMediaPicker = prefs[Keys.USE_THIRD_PARTY_MEDIA_PICKER] ?: false
+            }.getOrDefault(RightEdgeSwipeAction.SETTINGS)
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -204,7 +195,6 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.TITLE_MODE] = updated.titleMode.name
             prefs[Keys.CUSTOM_TITLE_TEXT] = updated.customTitleText
             prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] = updated.rightEdgeSwipeAction.name
-            prefs[Keys.USE_THIRD_PARTY_MEDIA_PICKER] = updated.useThirdPartyMediaPicker
         }
     }
 

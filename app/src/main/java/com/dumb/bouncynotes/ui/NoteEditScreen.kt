@@ -4,7 +4,6 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -626,18 +625,14 @@ fun NoteEditScreen(
         }
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris: List<Uri> -> handlePickedImages(uris) }
-
     // Selector "clásico" (ACTION_GET_CONTENT vía GetMultipleContents): a
-    // diferencia del Photo Picker de arriba, este abre el selector genérico
-    // del sistema con TODAS las apps que puedan entregar contenido de ese
-    // tipo — galerías de terceros, administradores de archivos, etc. — en
-    // vez de forzar el picker de fotos nativo (que solo muestra la
-    // biblioteca de medios del propio sistema). Se usa cuando el usuario
-    // activa "Usar app externa para elegir imágenes y videos" en Ajustes.
-    val galleryLauncherThirdParty = rememberLauncherForActivityResult(
+    // diferencia del Photo Picker nativo (PickMultipleVisualMedia, que solo
+    // muestra la biblioteca de medios del propio sistema), este abre el
+    // selector genérico del sistema con TODAS las apps que puedan entregar
+    // contenido de ese tipo — galerías de terceros, administradores de
+    // archivos, etc. Antes esto era opcional (ajuste
+    // "useThirdPartyMediaPicker"); ahora es el único comportamiento.
+    val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> -> handlePickedImages(uris) }
 
@@ -665,8 +660,8 @@ fun NoteEditScreen(
         }
     }
 
-    // Misma idea que con handlePickedImages: se extrae para reusarla desde
-    // los dos selectores de video.
+    // Misma idea que con handlePickedImages: se extrae para reusarla si hace
+    // falta más de un selector de video en el futuro.
     fun handlePickedVideo(uri: Uri?) {
         if (uri != null) {
             val result = ImageStorage.copyVideoFromUri(context, uri)
@@ -680,12 +675,8 @@ fun NoteEditScreen(
         }
     }
 
+    // Selector clásico para video, mismo motivo que galleryLauncher de arriba.
     val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? -> handlePickedVideo(uri) }
-
-    // Selector clásico para video, mismo motivo que galleryLauncherThirdParty.
-    val videoLauncherThirdParty = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? -> handlePickedVideo(uri) }
 
@@ -813,19 +804,11 @@ fun NoteEditScreen(
                         },
                         Triple(Icons.Filled.PhotoLibrary, "Galería (fotos y gifs)") {
                             showImageSourceDialog = false
-                            if (settings.useThirdPartyMediaPicker) {
-                                galleryLauncherThirdParty.launch("image/*")
-                            } else {
-                                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            }
+                            galleryLauncher.launch("image/*")
                         },
                         Triple(Icons.Filled.Videocam, "Video (máx. ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB)") {
                             showImageSourceDialog = false
-                            if (settings.useThirdPartyMediaPicker) {
-                                videoLauncherThirdParty.launch("video/*")
-                            } else {
-                                videoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
-                            }
+                            videoLauncher.launch("video/*")
                         }
                     ).forEach { (icon, label, onClick) ->
                         Row(
@@ -1082,7 +1065,12 @@ fun NoteEditScreen(
                 GlassBottomBar(
                     contentLayer = contentLayer,
                     height = bottomBarHeight,
-                    centered = isEditing
+                    // Antes solo se centraba en modo edición (`isEditing`);
+                    // en modo lectura quedaba alineado al inicio, así que la
+                    // barra "saltaba" de posición al cambiar de modo con el
+                    // ojo/lápiz aunque tuviera básicamente los mismos
+                    // botones. Ahora siempre centrado, en los dos modos.
+                    centered = true
                 ) {
                 if (current.deletedAt != null) {
                     IconButton(onClick = {
@@ -1301,6 +1289,7 @@ fun NoteEditScreen(
                             checkboxPosition = settings.checkboxPosition,
                             readOnly = !isEditing,
                             extraBottomInset = bottomBarCompensation,
+                            autoSortChecked = settings.autoSortChecked,
                             onItemsChange = { newItems ->
                                 val finalItems = if (settings.autoSortChecked) {
                                     newItems.sortedBy { it.checked }
@@ -1634,9 +1623,9 @@ private fun LabelsEditor(
 // pensado para un FAB embebido que acá no se usa). Esta versión:
 //  - tiene una altura fija y compacta (parámetro `height`, 56dp desde donde se
 //    llama), en vez de la altura excesiva por defecto.
-//  - centra sus botones cuando `centered = true` (modo edición); en modo
-//    vista los deja alineados al inicio, ya que ahí hay menos botones y
-//    centrarlos se vería raro con tanto espacio vacío alrededor.
+//  - centra sus botones cuando `centered = true` (usado siempre, en modo
+//    edición y en modo vista, para que la barra no "salte" de alineación al
+//    cambiar de modo con el ojo/lápiz).
 //  - es semitransparente y desenfoca lo que hay detrás en vez de tapar todo
 //    con un panel sólido. El contenido de la nota (en NoteEditScreen) se
 //    deja dibujar por debajo de esta barra a propósito, grabando su dibujo

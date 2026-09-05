@@ -59,7 +59,6 @@ object SettingsCache {
         const val TITLE_MODE = "title_mode"
         const val CUSTOM_TITLE_TEXT = "custom_title_text"
         const val RIGHT_EDGE_SWIPE_ACTION = "right_edge_swipe_action"
-        const val USE_THIRD_PARTY_MEDIA_PICKER = "use_third_party_media_picker"
     }
 
     /** Lectura 100% sincrónica. Segura de llamar antes de setContent(). */
@@ -97,8 +96,7 @@ object SettingsCache {
             defaultGalleryLayout = runCatching { GalleryLayout.valueOf(prefs.getString(K.DEFAULT_GALLERY_LAYOUT, null) ?: d.defaultGalleryLayout.name) }.getOrDefault(d.defaultGalleryLayout),
             titleMode = runCatching { TitleMode.valueOf(prefs.getString(K.TITLE_MODE, null) ?: d.titleMode.name) }.getOrDefault(d.titleMode),
             customTitleText = prefs.getString(K.CUSTOM_TITLE_TEXT, d.customTitleText) ?: d.customTitleText,
-            rightEdgeSwipeAction = runCatching { RightEdgeSwipeAction.valueOf(prefs.getString(K.RIGHT_EDGE_SWIPE_ACTION, null) ?: d.rightEdgeSwipeAction.name) }.getOrDefault(d.rightEdgeSwipeAction),
-            useThirdPartyMediaPicker = prefs.getBoolean(K.USE_THIRD_PARTY_MEDIA_PICKER, d.useThirdPartyMediaPicker)
+            rightEdgeSwipeAction = runCatching { RightEdgeSwipeAction.valueOf(prefs.getString(K.RIGHT_EDGE_SWIPE_ACTION, null) ?: d.rightEdgeSwipeAction.name) }.getOrDefault(d.rightEdgeSwipeAction)
         )
     }
 
@@ -142,7 +140,6 @@ object SettingsCache {
             putString(K.TITLE_MODE, settings.titleMode.name)
             putString(K.CUSTOM_TITLE_TEXT, settings.customTitleText)
             putString(K.RIGHT_EDGE_SWIPE_ACTION, settings.rightEdgeSwipeAction.name)
-            putBoolean(K.USE_THIRD_PARTY_MEDIA_PICKER, settings.useThirdPartyMediaPicker)
             apply()
         }
     }

@@ -61,6 +61,14 @@ fun ChecklistEditor(
     // ella. Se pasa desde NoteEditScreen (mismo valor que usa el Spacer de
     // compensación al final de la lista).
     extraBottomInset: Dp = 0.dp,
+    // Si está activo, NoteEditScreen reordena la lista completa (marcados al
+    // final, orden estable) en su propio onItemsChange CADA VEZ que algo
+    // cambia — incluido agregar un elemento nuevo. ChecklistEditor necesita
+    // saber esto SOLO para calcular bien a qué índice pedirle el foco (ver
+    // pendingFocusIndex más abajo): si hay elementos marcados, el nuevo
+    // elemento (sin marcar) NO termina en el último índice de la lista
+    // entera, sino en el último índice del grupo de los NO marcados.
+    autoSortChecked: Boolean = false,
     onItemsChange: (List<ChecklistItem>) -> Unit
 ) {
     // Índice del elemento recién agregado con "Agregar elemento": se usa una
@@ -179,8 +187,22 @@ fun ChecklistEditor(
         }
         if (!readOnly) {
             TextButton(onClick = {
-                val newIndex = items.size
-                onItemsChange(items + ChecklistItem())
+                val newList = items + ChecklistItem()
+                // El reordenamiento en sí lo aplica NoteEditScreen (arriba,
+                // en onItemsChange) con sortedBy { it.checked }, que es
+                // ESTABLE: los no marcados conservan su orden relativo entre
+                // sí, y el elemento recién agregado (sin marcar) era el
+                // último de TODA la lista antes de ordenar, así que después
+                // de ordenar sigue siendo el último dentro del grupo de los
+                // NO marcados — sin importar cuántos marcados haya al
+                // final. Por eso alcanza con contar, no hace falta
+                // reproducir el ordenamiento acá para saber dónde queda.
+                val newIndex = if (autoSortChecked) {
+                    newList.count { !it.checked } - 1
+                } else {
+                    newList.size - 1
+                }
+                onItemsChange(newList)
                 pendingFocusIndex = newIndex
             }) {
                 Icon(Icons.Filled.Add, contentDescription = null)

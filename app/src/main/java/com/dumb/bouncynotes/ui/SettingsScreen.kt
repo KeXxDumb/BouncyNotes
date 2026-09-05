@@ -5,7 +5,6 @@ import android.content.ContextWrapper
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
@@ -184,15 +183,11 @@ fun SettingsScreen(
         }
     }
 
+    // Selector "clásico" (ACTION_GET_CONTENT): abre el chooser genérico del
+    // sistema con galerías de terceros y administradores de archivos, en vez
+    // del Photo Picker nativo (que solo muestra la biblioteca de medios del
+    // propio sistema).
     val backgroundImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? -> handlePickedBackgroundImage(uri) }
-
-    // Mismo selector "clásico" que en NoteEditScreen (ver
-    // useThirdPartyMediaPicker): abre el chooser genérico del sistema con
-    // galerías de terceros y administradores de archivos, en vez del picker
-    // de fotos nativo.
-    val backgroundImageLauncherThirdParty = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? -> handlePickedBackgroundImage(uri) }
 
@@ -455,11 +450,7 @@ fun SettingsScreen(
                         }
                     } else {
                         OutlinedButton(onClick = {
-                            if (settings.useThirdPartyMediaPicker) {
-                                backgroundImageLauncherThirdParty.launch("image/*")
-                            } else {
-                                backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            }
+                            backgroundImageLauncher.launch("image/*")
                         }) {
                             Text("Elegir imagen de fondo")
                         }
@@ -770,18 +761,6 @@ fun SettingsScreen(
                             onSelect = { v -> onUpdate { it.copy(imageQuality = v) } }
                         )
                     }
-                    SettingsDivider()
-                    SwitchSetting(
-                        label = "Usar app externa para elegir imágenes y videos",
-                        checked = settings.useThirdPartyMediaPicker,
-                        onCheckedChange = { v -> onUpdate { it.copy(useThirdPartyMediaPicker = v) } }
-                    )
-                    Text(
-                        "Abre el selector clásico del sistema (con galerías de terceros y administradores de archivos) en vez del selector de fotos integrado.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
                 }
             }
 

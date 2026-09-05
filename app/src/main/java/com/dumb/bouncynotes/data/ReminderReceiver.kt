@@ -209,6 +209,14 @@ class ReminderReceiver : BroadcastReceiver() {
         // se pisan una a la otra en la bandeja de notificaciones.
         val notificationId = if (isAdvance) note.id.toInt() + 1_000_000 else note.id.toInt()
 
+        if (!isAdvance) {
+            // Si el aviso de "falta 1 hora" seguía visible (el usuario no lo
+            // había descartado), se retira acá: una vez que aparece la
+            // notificación de "ya es la hora" no aporta nada tenerlas las
+            // dos juntas en la bandeja, solo confunde.
+            NotificationManagerCompat.from(context).cancel(note.id.toInt() + 1_000_000)
+        }
+
         showNotificationRaw(
             context = context,
             channelId = if (isAdvance) CHANNEL_ID_ADVANCE else CHANNEL_ID_EXACT,
