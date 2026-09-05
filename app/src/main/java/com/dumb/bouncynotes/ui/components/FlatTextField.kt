@@ -29,9 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -91,13 +93,26 @@ fun FlatTextField(
     // Opcional: si se pasa, el campo pedirá activamente que scrolleen hasta
     // la línea donde está el cursor cada vez que cambia la selección, o
     // cuando el teclado termina de aparecer.
-    bringIntoViewRequester: BringIntoViewRequester? = null
+    bringIntoViewRequester: BringIntoViewRequester? = null,
+    // Alto extra (en dp) que hay que dejar libre por DEBAJO del cursor al
+    // scrollear hacia él. Existe por la barra inferior flotante y
+    // semitransparente (GlassBottomBar): esa barra a propósito NO reduce el
+    // viewport real de scroll (se deja que el contenido se dibuje detrás para
+    // poder desenfocarlo), así que bringIntoView() no tiene forma de saber
+    // que esa franja de pantalla está tapada — sin este colchón, el cursor
+    // termina "a mitad" detrás de la barra en vez de completamente arriba de
+    // ella. Se logra inflando el rectángulo del cursor hacia abajo antes de
+    // pedir que se traiga a la vista: bringIntoView() scrollea lo necesario
+    // para que TODO el rectángulo (cursor + colchón) quede visible, dejando
+    // ese espacio libre por debajo.
+    extraBottomInset: Dp = 0.dp
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     val backgroundAlpha = if (isFocused) 0.22f else 0.07f
     val textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    val extraBottomInsetPx = with(LocalDensity.current) { extraBottomInset.toPx() }
 
     val requesterModifier = if (bringIntoViewRequester != null) {
         Modifier.bringIntoViewRequester(bringIntoViewRequester)
@@ -142,11 +157,15 @@ fun FlatTextField(
             val layout = textLayoutResult ?: return@LaunchedEffect
             val cursorOffset = value.selection.end.coerceIn(0, layout.layoutInput.text.length)
             val cursorRect = layout.getCursorRect(cursorOffset)
-            bringIntoViewRequester.bringIntoView(cursorRect)
+            // Se infla el rectángulo hacia abajo (ver comentario de
+            // extraBottomInset arriba) para que la barra inferior flotante
+            // no termine tapando la mitad del cursor.
+            val paddedCursorRect = cursorRect.copy(bottom = cursorRect.bottom + extraBottomInsetPx)
+            bringIntoViewRequester.bringIntoView(paddedCursorRect)
             // Colchón extra por si el layout de arriba se calculó con el
             // teclado todavía a mitad de animar.
             delay(150)
-            bringIntoViewRequester.bringIntoView(cursorRect)
+            bringIntoViewRequester.bringIntoView(paddedCursorRect)
         }
     }
 }

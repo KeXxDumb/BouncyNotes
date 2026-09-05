@@ -113,6 +113,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -145,7 +147,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.withTimeoutOrNull
+import org.json.JSONArray
+import org.json.JSONObject
 import com.dumb.bouncynotes.data.AppSettings
+import com.dumb.bouncynotes.data.ChecklistItem
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
@@ -253,6 +258,99 @@ private fun segmentsToContent(segments: List<EditSegment>): String =
         }
     }
 
+// BUG (reportado): girar la pantalla mientras se crea o edita una nota la
+// "resetea" — se pierde todo lo escrito. Causa real: `current` (la nota que
+// se está editando, actualizada en CADA cambio: cada letra tipeada, cada
+// casilla marcada) vivía en un `remember` simple más abajo. `remember` NO
+// sobrevive a que la Activity se destruya y se vuelva a crear, y girar la
+// pantalla SIEMPRE hace eso (no hay android:configChanges en el manifest
+// que lo evite). El LaunchedEffect(noteId) que carga la nota al entrar solo
+// trae de la base de datos la última versión GUARDADA — así que al volver a
+// componer desde cero después de girar, una nota NUEVA (noteId == 0)
+// arrancaba de un Note() en blanco (se perdía TODO), y una nota YA
+// EXISTENTE volvía a como estaba la ÚLTIMA VEZ que se guardó (se perdían los
+// cambios de la sesión de edición actual, aunque no fueran nuevos).
+//
+// La solución es guardar `current` con rememberSaveable (que sí sobrevive,
+// porque usa el Bundle de estado de la Activity) en vez de remember. Como
+// `Note` no es Parcelable, hace falta un Saver propio que la convierta a un
+// String (JSON) y de vuelta — muy parecido a noteToJson/jsonToNote de
+// BackupManager, pero ESTE conserva el id real de la nota (BackupManager lo
+// fuerza a 0 a propósito, porque está pensado para notas nuevas al importar
+// un respaldo; acá necesitamos el id real para seguir guardando sobre la
+// misma fila en vez de crear una nota duplicada).
+private val NoteStateSaver: Saver<Note, String> = Saver(
+    save = { note ->
+        val o = JSONObject()
+        o.put("id", note.id)
+        o.put("type", note.type.name)
+        o.put("title", note.title)
+        o.put("content", note.content)
+        o.put("color", note.color ?: JSONObject.NULL)
+        o.put("pinned", note.pinned)
+        o.put("archived", note.archived)
+        o.put("isPrivate", note.isPrivate)
+        o.put("deletedAt", note.deletedAt ?: JSONObject.NULL)
+        o.put("createdAt", note.createdAt)
+        o.put("updatedAt", note.updatedAt)
+        o.put("reminderAt", note.reminderAt ?: JSONObject.NULL)
+        val reminderDaysArr = JSONArray()
+        note.reminderDays.forEach { reminderDaysArr.put(it) }
+        o.put("reminderDays", reminderDaysArr)
+        val reminderCalendarDatesArr = JSONArray()
+        note.reminderCalendarDates.forEach { reminderCalendarDatesArr.put(it) }
+        o.put("reminderCalendarDates", reminderCalendarDatesArr)
+        o.put("reminderCalendarRecurring", note.reminderCalendarRecurring)
+        val labelsArr = JSONArray()
+        note.labels.forEach { labelsArr.put(it) }
+        o.put("labels", labelsArr)
+        val itemsArr = JSONArray()
+        note.checklistItems.forEach { item ->
+            val io = JSONObject()
+            io.put("text", item.text)
+            io.put("checked", item.checked)
+            itemsArr.put(io)
+        }
+        o.put("checklistItems", itemsArr)
+        o.toString()
+    },
+    restore = { json ->
+        val o = JSONObject(json)
+        val labels = mutableListOf<String>()
+        o.optJSONArray("labels")?.let { arr -> for (i in 0 until arr.length()) labels.add(arr.getString(i)) }
+        val items = mutableListOf<ChecklistItem>()
+        o.optJSONArray("checklistItems")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val io = arr.getJSONObject(i)
+                items.add(ChecklistItem(text = io.optString("text"), checked = io.optBoolean("checked")))
+            }
+        }
+        Note(
+            id = o.optLong("id"),
+            type = try { NoteType.valueOf(o.optString("type")) } catch (e: Exception) { NoteType.TEXT },
+            title = o.optString("title"),
+            content = o.optString("content"),
+            checklistItems = items,
+            labels = labels,
+            color = if (o.isNull("color")) null else o.optString("color"),
+            pinned = o.optBoolean("pinned"),
+            archived = o.optBoolean("archived"),
+            isPrivate = o.optBoolean("isPrivate"),
+            deletedAt = if (o.isNull("deletedAt")) null else o.optLong("deletedAt"),
+            createdAt = o.optLong("createdAt", System.currentTimeMillis()),
+            updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
+            reminderAt = if (o.isNull("reminderAt")) null else o.optLong("reminderAt"),
+            reminderDays = o.optJSONArray("reminderDays")?.let { arr ->
+                (0 until arr.length()).map { arr.getInt(it) }.toSet()
+            } ?: emptySet(),
+            reminderCalendarDates = o.optJSONArray("reminderCalendarDates")?.let { arr ->
+                (0 until arr.length()).map { arr.getLong(it) }.toSet()
+            } ?: emptySet(),
+            reminderCalendarRecurring = o.optBoolean("reminderCalendarRecurring")
+        )
+    }
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteEditScreen(
@@ -267,8 +365,8 @@ fun NoteEditScreen(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
-    var loaded by remember { mutableStateOf(false) }
-    var current by remember { mutableStateOf(Note(type = initialType)) }
+    var loaded by rememberSaveable { mutableStateOf(false) }
+    var current by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = initialType)) }
     var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
@@ -304,7 +402,7 @@ fun NoteEditScreen(
     var showMoreSheet by remember { mutableStateOf(false) }
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
-    var isEditing by remember { mutableStateOf(true) }
+    var isEditing by rememberSaveable { mutableStateOf(true) }
 
     // Destello de feedback al cambiar entre modo edición y modo vista: se
     // prende apenas isEditing cambia y se apaga solo, rápido, sin que el
@@ -362,11 +460,22 @@ fun NoteEditScreen(
     ) { /* si lo niega, igual queda programada la alarma; solo no se verá la notificación */ }
 
     LaunchedEffect(noteId) {
-        if (noteId != 0L) {
-            viewModel.getById(noteId)?.let { current = it }
+        // El "!loaded" es lo que evita que esto pise el estado restaurado
+        // por rememberSaveable después de girar la pantalla: `loaded`
+        // también sobrevive (ver arriba), así que en una recreación por
+        // rotación ya entra en true, y esto NO vuelve a traer la nota de la
+        // base de datos (que solo tiene la última versión GUARDADA,
+        // desactualizada respecto de lo que había en pantalla) ni reajusta
+        // isEditing según settings.doubleTapToEdit (que pisaría el modo
+        // edición/vista en el que estaba el usuario). Es una carga real
+        // solo la primera vez que esta pantalla se compone de verdad.
+        if (!loaded) {
+            if (noteId != 0L) {
+                viewModel.getById(noteId)?.let { current = it }
+            }
+            isEditing = noteId == 0L || !settings.doubleTapToEdit
         }
         segments = buildEditSegments(current.content)
-        isEditing = noteId == 0L || !settings.doubleTapToEdit
         loaded = true
     }
 
@@ -488,9 +597,11 @@ fun NoteEditScreen(
         updateContentFromSegments(newSegments)
     }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris: List<Uri> ->
+    // Extraído a función para poder reusarlo desde los DOS selectores de
+    // galería (el picker de fotos nativo y el "clásico" de apps de
+    // terceros, ver más abajo) sin duplicar la lógica de copiar/comprimir e
+    // insertar.
+    fun handlePickedImages(uris: List<Uri>) {
         val fileNames = uris.mapNotNull { uri ->
             if (settings.compressImages) {
                 ImageStorage.compressFromUri(context, uri, settings.imageQuality)
@@ -514,6 +625,21 @@ fun NoteEditScreen(
             }
         }
     }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> -> handlePickedImages(uris) }
+
+    // Selector "clásico" (ACTION_GET_CONTENT vía GetMultipleContents): a
+    // diferencia del Photo Picker de arriba, este abre el selector genérico
+    // del sistema con TODAS las apps que puedan entregar contenido de ese
+    // tipo — galerías de terceros, administradores de archivos, etc. — en
+    // vez de forzar el picker de fotos nativo (que solo muestra la
+    // biblioteca de medios del propio sistema). Se usa cuando el usuario
+    // activa "Usar app externa para elegir imágenes y videos" en Ajustes.
+    val galleryLauncherThirdParty = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> -> handlePickedImages(uris) }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -539,9 +665,9 @@ fun NoteEditScreen(
         }
     }
 
-    val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
+    // Misma idea que con handlePickedImages: se extrae para reusarla desde
+    // los dos selectores de video.
+    fun handlePickedVideo(uri: Uri?) {
         if (uri != null) {
             val result = ImageStorage.copyVideoFromUri(context, uri)
             when {
@@ -553,6 +679,15 @@ fun NoteEditScreen(
             }
         }
     }
+
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? -> handlePickedVideo(uri) }
+
+    // Selector clásico para video, mismo motivo que galleryLauncherThirdParty.
+    val videoLauncherThirdParty = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> handlePickedVideo(uri) }
 
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
     // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
@@ -678,11 +813,19 @@ fun NoteEditScreen(
                         },
                         Triple(Icons.Filled.PhotoLibrary, "Galería (fotos y gifs)") {
                             showImageSourceDialog = false
-                            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            if (settings.useThirdPartyMediaPicker) {
+                                galleryLauncherThirdParty.launch("image/*")
+                            } else {
+                                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
                         },
                         Triple(Icons.Filled.Videocam, "Video (máx. ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB)") {
                             showImageSourceDialog = false
-                            videoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                            if (settings.useThirdPartyMediaPicker) {
+                                videoLauncherThirdParty.launch("video/*")
+                            } else {
+                                videoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                            }
                         }
                     ).forEach { (icon, label, onClick) ->
                         Row(
@@ -1157,6 +1300,7 @@ fun NoteEditScreen(
                             items = current.checklistItems,
                             checkboxPosition = settings.checkboxPosition,
                             readOnly = !isEditing,
+                            extraBottomInset = bottomBarCompensation,
                             onItemsChange = { newItems ->
                                 val finalItems = if (settings.autoSortChecked) {
                                     newItems.sortedBy { it.checked }
@@ -1217,7 +1361,8 @@ fun NoteEditScreen(
                                             )
                                             .onFocusChanged { if (it.isFocused) activeSegmentIndex = index },
                                         placeholder = { Text("Escribe...") },
-                                        bringIntoViewRequester = bringIntoViewRequester
+                                        bringIntoViewRequester = bringIntoViewRequester,
+                                        extraBottomInset = bottomBarCompensation
                                     )
                                 }
                                 is EditSegment.ImageSeg -> {

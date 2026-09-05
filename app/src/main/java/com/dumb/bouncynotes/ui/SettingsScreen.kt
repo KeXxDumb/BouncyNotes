@@ -175,9 +175,7 @@ fun SettingsScreen(
         }
     }
 
-    val backgroundImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
+    fun handlePickedBackgroundImage(uri: Uri?) {
         if (uri != null) {
             val fileName = ImageStorage.copyFromUri(context, uri)
             if (fileName != null) {
@@ -185,6 +183,18 @@ fun SettingsScreen(
             }
         }
     }
+
+    val backgroundImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri: Uri? -> handlePickedBackgroundImage(uri) }
+
+    // Mismo selector "clásico" que en NoteEditScreen (ver
+    // useThirdPartyMediaPicker): abre el chooser genérico del sistema con
+    // galerías de terceros y administradores de archivos, en vez del picker
+    // de fotos nativo.
+    val backgroundImageLauncherThirdParty = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? -> handlePickedBackgroundImage(uri) }
 
     if (showDisableTrashWarning) {
         AlertDialog(
@@ -445,7 +455,11 @@ fun SettingsScreen(
                         }
                     } else {
                         OutlinedButton(onClick = {
-                            backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            if (settings.useThirdPartyMediaPicker) {
+                                backgroundImageLauncherThirdParty.launch("image/*")
+                            } else {
+                                backgroundImageLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
                         }) {
                             Text("Elegir imagen de fondo")
                         }
@@ -756,6 +770,18 @@ fun SettingsScreen(
                             onSelect = { v -> onUpdate { it.copy(imageQuality = v) } }
                         )
                     }
+                    SettingsDivider()
+                    SwitchSetting(
+                        label = "Usar app externa para elegir imágenes y videos",
+                        checked = settings.useThirdPartyMediaPicker,
+                        onCheckedChange = { v -> onUpdate { it.copy(useThirdPartyMediaPicker = v) } }
+                    )
+                    Text(
+                        "Abre el selector clásico del sistema (con galerías de terceros y administradores de archivos) en vez del selector de fotos integrado.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 
