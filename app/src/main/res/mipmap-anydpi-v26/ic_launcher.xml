@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- "Durazno" — reconstruido para ser 100% PNG (el artista real que va a
-     hacer los íconos solo entrega PNG, no vectores). -->
-<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@drawable/ic_peach_background" />
-    <foreground android:drawable="@drawable/ic_empty_foreground" />
-    <monochrome android:drawable="@drawable/ic_peach_monochrome" />
-</adaptive-icon>
