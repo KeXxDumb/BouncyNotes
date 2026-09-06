@@ -180,7 +180,7 @@ import java.io.File
 private sealed class EditSegment {
     data class TextSeg(val value: TextFieldValue) : EditSegment()
     data class ImageSeg(val fileName: String, val caption: String) : EditSegment()
-    data class GallerySeg(val layout: GalleryLayout, val fileNames: List<String>) : EditSegment()
+    data class GallerySeg(val layout: GalleryLayout, val fileNames: List<String>, val captions: List<String> = emptyList()) : EditSegment()
     data class VideoSeg(val fileName: String, val caption: String) : EditSegment()
 }
 
@@ -210,7 +210,7 @@ private fun buildEditSegments(content: String): List<EditSegment> {
                 if (segments.isEmpty() || isMediaSeg(segments.last())) {
                     segments.add(EditSegment.TextSeg(TextFieldValue("")))
                 }
-                segments.add(EditSegment.GallerySeg(part.layout, part.fileNames))
+                segments.add(EditSegment.GallerySeg(part.layout, part.fileNames, part.captions))
             }
             is ContentPart.VideoPart -> {
                 if (segments.isEmpty() || isMediaSeg(segments.last())) {
@@ -252,7 +252,7 @@ private fun segmentsToContent(segments: List<EditSegment>): String =
         when (seg) {
             is EditSegment.TextSeg -> seg.value.text
             is EditSegment.ImageSeg -> buildImageTag(seg.fileName, seg.caption)
-            is EditSegment.GallerySeg -> buildGalleryTag(seg.layout, seg.fileNames)
+            is EditSegment.GallerySeg -> buildGalleryTag(seg.layout, seg.fileNames, seg.captions)
             is EditSegment.VideoSeg -> buildVideoTag(seg.fileName, seg.caption)
         }
     }
@@ -574,6 +574,48 @@ fun NoteEditScreen(
             }
         }
         if (newSegments.isEmpty()) newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
+        updateContentFromSegments(newSegments)
+    }
+
+    // Antes esto no existía: desde el editor solo se podía borrar el GRUPO
+    // entero (deleteMediaSegment); para sacar una sola imagen de adentro
+    // había que ir al visor a pantalla completa. Opera directo sobre el
+    // EditSegment (no sobre el string de contenido vía removeImageOccurrence)
+    // porque durante la edición los segments en memoria son la fuente de
+    // verdad real, no el content ya serializado.
+    fun removeImageFromGallerySeg(segIndex: Int, imageIndexInGroup: Int) {
+        val seg = segments.getOrNull(segIndex) as? EditSegment.GallerySeg ?: return
+        val fileName = seg.fileNames.getOrNull(imageIndexInGroup) ?: return
+        ImageStorage.deleteFile(context, fileName)
+        val newFileNames = seg.fileNames.toMutableList().also { it.removeAt(imageIndexInGroup) }
+        val newCaptions = seg.captions.toMutableList().also {
+            if (imageIndexInGroup < it.size) it.removeAt(imageIndexInGroup)
+        }
+        val newSegments = segments.toMutableList()
+        when {
+            // Sin imágenes: el grupo entero desaparece, igual que
+            // deleteMediaSegment (con el mismo merge de TextSeg vecinos).
+            newFileNames.isEmpty() -> {
+                newSegments.removeAt(segIndex)
+                if (segIndex > 0 && segIndex < newSegments.size) {
+                    val prev = newSegments[segIndex - 1]
+                    val next = newSegments[segIndex]
+                    if (prev is EditSegment.TextSeg && next is EditSegment.TextSeg) {
+                        newSegments[segIndex - 1] = EditSegment.TextSeg(TextFieldValue(prev.value.text + next.value.text))
+                        newSegments.removeAt(segIndex)
+                    }
+                }
+                if (newSegments.isEmpty()) newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
+            }
+            // Un grupo con una sola imagen ya no es "grupo" — mismo criterio
+            // que removeImageOccurrence en MarkdownContent.kt.
+            newFileNames.size == 1 -> {
+                newSegments[segIndex] = EditSegment.ImageSeg(newFileNames[0], newCaptions.getOrElse(0) { "" })
+            }
+            else -> {
+                newSegments[segIndex] = seg.copy(fileNames = newFileNames, captions = newCaptions)
+            }
+        }
         updateContentFromSegments(newSegments)
     }
 
@@ -1454,12 +1496,25 @@ fun NoteEditScreen(
                                         GalleryGrid(
                                             layout = segment.layout,
                                             fileNames = segment.fileNames,
-                                            onImageClick = { i -> viewerStartPos = startIndex + i }
+                                            captions = segment.captions,
+                                            onImageClick = { i -> viewerStartPos = startIndex + i },
+                                            onDeleteImage = { i -> removeImageFromGallerySeg(index, i) },
+                                            onCaptionChange = { i, caption ->
+                                                val newSegments = segments.toMutableList()
+                                                val newCaptions = segment.captions.toMutableList()
+                                                while (newCaptions.size <= i) newCaptions.add("")
+                                                newCaptions[i] = caption
+                                                newSegments[index] = segment.copy(captions = newCaptions)
+                                                updateContentFromSegments(newSegments)
+                                            }
                                         )
-                                        // A diferencia de una imagen suelta, acá no se puede
-                                        // sacar una sola imagen del grupo desde el editor (para
-                                        // eso está el visor a pantalla completa, que sí borra de
-                                        // a una); este botón quita el grupo entero.
+                                        // El botón de arriba a la derecha sigue
+                                        // quitando el GRUPO entero; borrar una
+                                        // imagen puntual ahora se hace con la X
+                                        // que aparece sobre cada miniatura (ver
+                                        // onDeleteImage arriba) — ya no hace
+                                        // falta ir al visor a pantalla completa
+                                        // para eso.
                                         IconButton(
                                             onClick = { deleteMediaSegment(index) },
                                             modifier = Modifier

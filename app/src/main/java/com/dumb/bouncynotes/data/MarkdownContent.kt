@@ -17,7 +17,14 @@ enum class GalleryLayout(val label: String) {
 sealed class ContentPart {
     data class TextPart(val text: String) : ContentPart()
     data class ImagePart(val fileName: String, val caption: String) : ContentPart()
-    data class GalleryPart(val layout: GalleryLayout, val fileNames: List<String>) : ContentPart()
+    // captions viene siempre alineada 1 a 1 con fileNames por índice
+    // (mismo tamaño); una entrada vacía "" significa "sin descripción". Se
+    // agregó como parámetro con default para no romper el único lugar que
+    // construye esto (el parser, más abajo) ni nada que solo hiciera
+    // pattern-matching sobre fileNames/layout.
+    data class GalleryPart(val layout: GalleryLayout, val fileNames: List<String>, val captions: List<String> = emptyList()) : ContentPart() {
+        fun captionAt(index: Int): String = captions.getOrElse(index) { "" }
+    }
     data class VideoPart(val fileName: String, val caption: String) : ContentPart()
 }
 
@@ -39,8 +46,18 @@ private val combinedTagRegex = Regex(
 fun buildImageTag(fileName: String, caption: String = ""): String =
     "[[img:$fileName|$caption]]"
 
-fun buildGalleryTag(layout: GalleryLayout, fileNames: List<String>): String =
-    "[[gallery:${layout.name}:${fileNames.joinToString(",")}]]"
+fun buildGalleryTag(layout: GalleryLayout, fileNames: List<String>, captions: List<String> = emptyList()): String {
+    // Cada archivo se guarda como "nombre.jpg|descripción" SOLO si tiene
+    // descripción — si no, queda "nombre.jpg" tal cual como antes. Así las
+    // notas ya guardadas (sin ninguna descripción de grupo) no cambian ni
+    // un carácter al volver a guardarse, y el formato viejo (que el parser
+    // de abajo sigue leyendo sin problema) sigue siendo válido.
+    val entries = fileNames.mapIndexed { i, name ->
+        val caption = captions.getOrElse(i) { "" }
+        if (caption.isEmpty()) name else "$name|$caption"
+    }
+    return "[[gallery:${layout.name}:${entries.joinToString(",")}]]"
+}
 
 fun buildVideoTag(fileName: String, caption: String = ""): String =
     "[[video:$fileName|$caption]]"
@@ -64,9 +81,11 @@ fun parseNoteContent(content: String): List<ContentPart> {
         when (matchKind(match.value)) {
             "img" -> result.add(ContentPart.ImagePart(fileName = match.groupValues[1], caption = match.groupValues[2]))
             "gallery" -> {
-                val fileNames = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                if (fileNames.isNotEmpty()) {
-                    result.add(ContentPart.GalleryPart(parseGalleryLayout(match.groupValues[3]), fileNames))
+                val rawEntries = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                if (rawEntries.isNotEmpty()) {
+                    val fileNames = rawEntries.map { it.substringBefore('|') }
+                    val captions = rawEntries.map { it.substringAfter('|', "") }
+                    result.add(ContentPart.GalleryPart(parseGalleryLayout(match.groupValues[3]), fileNames, captions))
                 }
             }
             else -> result.add(ContentPart.VideoPart(fileName = match.groupValues[5], caption = match.groupValues[6]))
@@ -99,7 +118,9 @@ fun extractMediaRefs(content: String): List<MediaRef> =
     parseNoteContent(content).flatMap { part ->
         when (part) {
             is ContentPart.ImagePart -> listOf(MediaRef(part.fileName, isVideo = false, caption = part.caption))
-            is ContentPart.GalleryPart -> part.fileNames.map { MediaRef(it, isVideo = false) }
+            is ContentPart.GalleryPart -> part.fileNames.mapIndexed { i, name ->
+                MediaRef(name, isVideo = false, caption = part.captionAt(i))
+            }
             is ContentPart.VideoPart -> listOf(MediaRef(part.fileName, isVideo = true, caption = part.caption))
             is ContentPart.TextPart -> emptyList()
         }
@@ -110,12 +131,50 @@ fun extractMediaRefs(content: String): List<MediaRef> =
 // que están dentro de un grupo por igual. Los videos no tienen descripción
 // editable desde acá (no hace falta, no tienen un campo de caption editable
 // en el editor todavía), por eso esta función sigue enfocada solo en imágenes.
+//
+// Antes esto SOLO tocaba imágenes sueltas (imageTagRegex.replace) — si
+// occurrenceIndex caía en una imagen dentro de un grupo, no hacía nada en
+// silencio, a pesar de que el comentario de arriba siempre dijo que debía
+// cubrir ambos casos. Ahora recorre igual que removeImageOccurrence (con
+// combinedTagRegex) para manejar los dos casos de verdad.
 fun updateImageCaption(content: String, occurrenceIndex: Int, newCaption: String): String {
-    var count = -1
-    return imageTagRegex.replace(content) { match ->
-        count++
-        if (count == occurrenceIndex) buildImageTag(match.groupValues[1], newCaption) else match.value
+    val sb = StringBuilder()
+    var lastIndex = 0
+    var flatIndex = 0
+    for (match in combinedTagRegex.findAll(content)) {
+        sb.append(content, lastIndex, match.range.first)
+        when (matchKind(match.value)) {
+            "img" -> {
+                if (flatIndex == occurrenceIndex) {
+                    sb.append(buildImageTag(match.groupValues[1], newCaption))
+                } else {
+                    sb.append(match.value)
+                }
+                flatIndex++
+            }
+            "video" -> {
+                sb.append(match.value)
+                flatIndex++
+            }
+            else -> {
+                val layout = match.groupValues[3]
+                val rawEntries = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val fileNames = rawEntries.map { it.substringBefore('|') }
+                val localIndex = occurrenceIndex - flatIndex
+                if (localIndex in fileNames.indices) {
+                    val captions = rawEntries.map { it.substringAfter('|', "") }.toMutableList()
+                    captions[localIndex] = newCaption
+                    sb.append(buildGalleryTag(parseGalleryLayout(layout), fileNames, captions))
+                } else {
+                    sb.append(match.value)
+                }
+                flatIndex += fileNames.size
+            }
+        }
+        lastIndex = match.range.last + 1
     }
+    sb.append(content, lastIndex, content.length)
+    return sb.toString()
 }
 
 // Quita UN ítem de la lista plana (occurrenceIndex): si es una imagen o video
@@ -137,14 +196,19 @@ fun removeImageOccurrence(content: String, occurrenceIndex: Int): String {
             }
             else -> {
                 val layout = match.groupValues[3]
-                val fileNames = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val remaining = fileNames.filterIndexed { i, _ -> flatIndex + i != occurrenceIndex }
+                val rawEntries = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val fileNames = rawEntries.map { it.substringBefore('|') }
+                val captions = rawEntries.map { it.substringAfter('|', "") }
+                val keepIndices = fileNames.indices.filter { i -> flatIndex + i != occurrenceIndex }
+                val remainingFiles = keepIndices.map { fileNames[it] }
+                val remainingCaptions = keepIndices.map { captions[it] }
                 when {
-                    remaining.isEmpty() -> { /* se quita el grupo entero */ }
+                    remainingFiles.isEmpty() -> { /* se quita el grupo entero */ }
                     // Un grupo con una sola imagen ya no es "grupo": lo dejamos
-                    // como una imagen suelta normal en vez de una cuadrícula de 1.
-                    remaining.size == 1 -> sb.append(buildImageTag(remaining[0]))
-                    else -> sb.append(buildGalleryTag(parseGalleryLayout(layout), remaining))
+                    // como una imagen suelta normal en vez de una cuadrícula de 1,
+                    // conservando su descripción si tenía una.
+                    remainingFiles.size == 1 -> sb.append(buildImageTag(remainingFiles[0], remainingCaptions[0]))
+                    else -> sb.append(buildGalleryTag(parseGalleryLayout(layout), remainingFiles, remainingCaptions))
                 }
                 flatIndex += fileNames.size
             }

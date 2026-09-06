@@ -13,6 +13,7 @@ import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteRepository
+import com.dumb.bouncynotes.data.SettingsCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +39,24 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
     // exige específicamente un PendingIntent.getBroadcast(), no uno de Activity.
     // Por eso "abrir la nota" y "reconfigurar" se resuelven acá, no directo
     // desde el Factory.
+    //
+    // BUG (reportado, seguía después del fix de CLEAR_TOP): tocar una fila
+    // seguía sin abrir nada — la nota recién aparecía la próxima vez que se
+    // abría la app a mano. Eso es la firma clásica de las restricciones de
+    // "Background Activity Launch" de Android 10+: un context.startActivity()
+    // llamado DIRECTO desde un BroadcastReceiver (que es justo lo que hacía
+    // este código) puede terminar creando la Activity en segundo plano SIN
+    // permiso para pasarla al frente — la Activity existe y ya procesó el
+    // Intent, pero no se ve hasta que algo más (como abrir la app a mano)
+    // la trae a primer plano de verdad. Por eso "la próxima vez ya abre
+    // ahí": es la MISMA instancia creada en el toque anterior.
+    //
+    // El arreglo: en vez de context.startActivity(...), se arma un
+    // PendingIntent.getActivity(...) y se lo manda con .send() — enviar un
+    // PendingIntent (en vez de llamar a startActivity a mano) es el patrón
+    // que Android respeta de forma confiable para pasar el permiso de
+    // "puedo abrir una Activity" que trae este click, incluso con el salto
+    // extra por el broadcast de por medio.
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
@@ -45,6 +64,7 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     putExtra("openNoteId", noteId)
+                    data = Uri.parse("bouncynotes://widget/mainactivity/open/$noteId")
                     // CLEAR_TOP además de NEW_TASK: con SOLO NEW_TASK, si la
                     // app ya tenía una tarea abierta en segundo plano,
                     // Android simplemente la trae al frente TAL CUAL estaba
@@ -56,7 +76,7 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                     // explicación de este bug).
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
-                context.startActivity(openIntent)
+                sendActivityPendingIntent(context, noteId.toInt(), openIntent)
             }
             ACTION_RECONFIGURE -> {
                 val widgetId = intent.getIntExtra(
@@ -66,9 +86,10 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     val configIntent = Intent(context, PinnedNoteWidgetConfigActivity::class.java).apply {
                         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        data = Uri.parse("bouncynotes://widget/mainactivity/reconfigure/$widgetId")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     }
-                    context.startActivity(configIntent)
+                    sendActivityPendingIntent(context, widgetId, configIntent)
                 }
             }
             ACTION_TOGGLE_CHECKLIST_ITEM -> {
@@ -92,6 +113,27 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    // Envía un PendingIntent.getActivity(...) en vez de llamar a
+    // context.startActivity(...) a mano — ver el comentario largo arriba de
+    // onReceive() con la explicación completa del bug que esto arregla.
+    // requestCode único por Intent (no una constante fija) para que dos
+    // notas/widgets distintos no compartan ni pisen el mismo PendingIntent
+    // cacheado.
+    private fun sendActivityPendingIntent(context: Context, requestCode: Int, activityIntent: Intent) {
+        val pendingIntent = PendingIntent.getActivity(
+            context, requestCode, activityIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        try {
+            pendingIntent.send()
+        } catch (e: PendingIntent.CanceledException) {
+            // No debería pasar nunca (lo acabamos de crear nosotros mismos),
+            // pero si el sistema lo cancela por lo que sea, mejor intentar
+            // el camino directo que quedarse sin abrir nada.
+            context.startActivity(activityIntent)
+        }
+    }
+
     private suspend fun toggleChecklistItem(context: Context, noteId: Long, itemIndex: Int) {
         val dao = NoteDatabase.getInstance(context).noteDao()
         val note = dao.getById(noteId) ?: return
@@ -99,12 +141,23 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
         val updatedItems = note.checklistItems.toMutableList().apply {
             this[itemIndex] = this[itemIndex].copy(checked = !this[itemIndex].checked)
         }
+        // Mismo criterio que ya aplica NoteEditScreen al tildar un ítem
+        // desde el editor (sortedBy { it.checked }, ESTABLE: los no
+        // marcados conservan su orden entre sí) — antes esto NO pasaba acá,
+        // así que tildar desde el widget dejaba el ítem en el medio de la
+        // lista en vez de mandarlo al final aunque el usuario tuviera
+        // activado "marcados al final" en Ajustes.
+        val finalItems = if (SettingsCache.read(context).autoSortChecked) {
+            updatedItems.sortedBy { it.checked }
+        } else {
+            updatedItems
+        }
         // Pasa por NoteRepository (no dao.upsert directo) para que dispare
         // el mismo refresh que cualquier otro guardado: así se actualiza
         // ESTE widget y también el de "última nota editada", si esta nota
         // fuera además la más reciente.
         NoteRepository(dao, context).save(
-            note.copy(checklistItems = updatedItems, updatedAt = System.currentTimeMillis())
+            note.copy(checklistItems = finalItems, updatedAt = System.currentTimeMillis())
         )
     }
 

@@ -1,24 +1,35 @@
 package com.dumb.bouncynotes.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import android.content.Context
 import coil.compose.AsyncImage
@@ -103,6 +114,7 @@ fun LazyListScope.NoteContentView(context: Context, content: String, onImageClic
                     GalleryGrid(
                         layout = part.layout,
                         fileNames = part.fileNames,
+                        captions = part.captions,
                         onImageClick = { indexInGroup -> onImageClick(startIndex + indexInGroup) }
                     )
                 }
@@ -138,9 +150,72 @@ fun LazyListScope.NoteContentView(context: Context, content: String, onImageClic
 // configurado por defecto en Ajustes. Ya usaba tamaños fijos (.size(...))
 // para cada miniatura, así que no tenía el problema de altura variable de
 // las imágenes sueltas — no necesitó tocarse para el fix de scroll.
+//
+// onDeleteImage/onCaptionChange son null por defecto: sin ellos (modo
+// lectura, listas de preview) esto se comporta exactamente igual que antes
+// — sin botón de borrado por imagen, y la descripción (si tiene) se muestra
+// como texto fijo en vez de un campo editable. El editor es el único lugar
+// que los pasa.
 @Composable
-internal fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImageClick: (Int) -> Unit) {
+internal fun GalleryGrid(
+    layout: GalleryLayout,
+    fileNames: List<String>,
+    captions: List<String> = emptyList(),
+    onImageClick: (Int) -> Unit,
+    onDeleteImage: ((Int) -> Unit)? = null,
+    onCaptionChange: ((Int, String) -> Unit)? = null
+) {
     val context = LocalContext.current
+
+    @Composable
+    fun Thumbnail(index: Int, fileName: String, size: Dp, cornerRadius: Dp) {
+        Column {
+            Box {
+                AsyncImage(
+                    model = File(ImageStorage.imagesDir(context), fileName),
+                    contentDescription = "Imagen ${index + 1} de ${fileNames.size}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(RoundedCornerShape(cornerRadius))
+                        .clickable { onImageClick(index) }
+                )
+                if (onDeleteImage != null) {
+                    IconButton(
+                        onClick = { onDeleteImage(index) },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Quitar esta imagen del grupo",
+                            tint = Color.White,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+            val caption = captions.getOrElse(index) { "" }
+            if (onCaptionChange != null) {
+                CompactCaptionField(
+                    value = caption,
+                    onValueChange = { onCaptionChange(index, it) },
+                    modifier = Modifier.width(size).padding(top = 4.dp)
+                )
+            } else if (caption.isNotBlank()) {
+                Text(
+                    text = caption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(size).padding(top = 2.dp)
+                )
+            }
+        }
+    }
+
     when (layout) {
         GalleryLayout.CAROUSEL -> {
             Row(
@@ -150,21 +225,15 @@ internal fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImage
                     .padding(vertical = 8.dp)
             ) {
                 fileNames.forEachIndexed { index, fileName ->
-                    AsyncImage(
-                        model = File(ImageStorage.imagesDir(context), fileName),
-                        contentDescription = "Imagen ${index + 1} de ${fileNames.size}",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(150.dp)
-                            .padding(end = if (index != fileNames.lastIndex) 6.dp else 0.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { onImageClick(index) }
-                    )
+                    Box(modifier = Modifier.padding(end = if (index != fileNames.lastIndex) 6.dp else 0.dp)) {
+                        Thumbnail(index, fileName, size = 150.dp, cornerRadius = 14.dp)
+                    }
                 }
             }
         }
         GalleryLayout.GRID_2, GalleryLayout.GRID_3 -> {
             val columns = if (layout == GalleryLayout.GRID_2) 2 else 3
+            val thumbSize = if (columns == 2) 150.dp else 100.dp
             // No hace falta LazyVerticalGrid (con scroll propio) para un puñado
             // de miniaturas fijas: alcanza con filas de Row, y así el grupo
             // scrollea junto con el resto de la nota en vez de tener su propio
@@ -175,17 +244,9 @@ internal fun GalleryGrid(layout: GalleryLayout, fileNames: List<String>, onImage
                     Row(modifier = Modifier.fillMaxWidth()) {
                         rowFiles.forEachIndexed { colIndex, fileName ->
                             val globalIndex = rowIndex * columns + colIndex
-                            AsyncImage(
-                                model = File(ImageStorage.imagesDir(context), fileName),
-                                contentDescription = "Imagen ${globalIndex + 1} de ${fileNames.size}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .size(if (columns == 2) 150.dp else 100.dp)
-                                    .padding(2.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable { onImageClick(globalIndex) }
-                            )
+                            Box(modifier = Modifier.weight(1f).padding(2.dp)) {
+                                Thumbnail(globalIndex, fileName, size = thumbSize, cornerRadius = 12.dp)
+                            }
                         }
                         // Si la última fila queda incompleta, rellenamos con
                         // espacio vacío para que las celdas no se estiren de más.
