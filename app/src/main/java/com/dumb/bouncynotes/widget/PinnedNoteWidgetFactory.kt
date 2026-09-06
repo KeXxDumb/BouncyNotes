@@ -4,7 +4,6 @@ import android.content.Context
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dumb.bouncynotes.R
-import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
 import kotlinx.coroutines.runBlocking
 
@@ -14,7 +13,6 @@ class PinnedNoteWidgetFactory(
     private val widgetId: Int
 ) : RemoteViewsService.RemoteViewsFactory {
 
-    private var note: Note? = null
     private var rows: List<NoteWidgetRow> = emptyList()
     private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
 
@@ -29,40 +27,24 @@ class PinnedNoteWidgetFactory(
     // buildNoteWidgetRows).
     override fun onDataSetChanged() {
         val current = runBlocking { NoteDatabase.getInstance(context).noteDao().getById(noteId) }
-        note = current
         rows = current?.let { buildNoteWidgetRows(context, it) } ?: emptyList()
         colors = resolveWidgetColors(context)
     }
 
-    override fun getCount(): Int = if (note != null) 1 + rows.size else 0
+    // Ya NO incluye una fila de header (ver widget_pinned_note.xml): el
+    // título vive ahora en una vista fija fuera de este ListView, con su
+    // propio click directo — acá solo queda el CONTENIDO de la nota.
+    override fun getCount(): Int = rows.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        if (position == 0) return getHeaderView()
-        return when (val row = rows[position - 1]) {
+        return when (val row = rows[position]) {
             is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteId, row)
             is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteId, row)
             is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteId, row)
         }
     }
 
-    private fun getHeaderView(): RemoteViews {
-        val currentNote = note
-        return RemoteViews(context.packageName, R.layout.pinned_note_widget_header).apply {
-            setTextViewText(R.id.Title, currentNote?.title?.ifBlank { "(Sin título)" } ?: "")
-            setTextColor(R.id.Title, colors.textPrimary)
-            // El click de "abrir la nota" va en Title específicamente, NO en
-            // HeaderRow (el contenedor que envuelve a Title y a ChangeNote):
-            // dos vistas ANIDADAS (contenedor + hijo) con manejadores de
-            // click distintos es un problema conocido en listas de widgets
-            // — el sistema puede disparar los dos a la vez, o ninguno de
-            // forma confiable. Al ser hermanas (mismo nivel, sin superponerse),
-            // cada una responde solo a su propio toque.
-            setOnClickFillInIntent(R.id.Title, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
-            setOnClickFillInIntent(R.id.ChangeNote, PinnedNoteWidgetProvider.reconfigureFillInIntent(widgetId))
-        }
-    }
-
-    override fun getViewTypeCount() = 4
+    override fun getViewTypeCount() = 3
 
     override fun hasStableIds() = false
 

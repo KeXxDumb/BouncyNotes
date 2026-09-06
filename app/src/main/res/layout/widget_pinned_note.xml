@@ -1,32 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+    BUG (reportado, Xiaomi/MIUI): tocar el título del widget para abrir la
+    nota no hacía nada; solo con la app YA abierta en pantalla se veía el
+    efecto (a veces recién en la apertura siguiente). La causa real:
+    Android NO permite un click directo (setOnClickPendingIntent) en una
+    fila de un ListView respaldado por RemoteViewsFactory — por eso existe
+    el mecanismo de "plantilla + fill-in Intent" en primer lugar (no es
+    capricho de este proyecto, está en la documentación oficial). El título
+    era la fila 0 de ESE ListView, así que abrir la nota dependía SIEMPRE
+    de ese mecanismo — que resultó ser bastante más frágil en el launcher
+    de MIUI que un click directo de toda la vida.
+
+    Por eso el título ahora es una vista FIJA, hermana del ListView, fuera
+    de la lista (HeaderRow): así puede tener un setOnClickPendingIntent
+    directo de verdad (visto en PinnedNoteWidgetProvider/
+    LastEditedNoteWidgetProvider), igual que hace NotallyX (la app de la
+    que se sacó la estructura de este widget) para lo mismo.
+
+    El ListView de abajo queda para el CONTENIDO de la nota (texto,
+    imágenes, ítems de checklist) — ahí SÍ hace falta el mecanismo de lista
+    porque cada fila necesita en principio poder llevar su propio fill-in
+    Intent (el checkbox de un ítem de checklist, por ejemplo, tilda ESE
+    ítem puntual). Tocar una fila de contenido para abrir la nota sigue
+    yendo por ese camino más frágil — si en tu Xiaomi tocar el título abre
+    bien la nota pero tocar una línea de texto o una imagen de la nota no,
+    es exactamente esta limitación, no un bug nuevo.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/Layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
     android:background="@drawable/widget_background_light">
 
-    <ListView
-        android:id="@+id/ListView"
+    <LinearLayout
+        android:id="@+id/HeaderRow"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:divider="@null"
-        android:dividerHeight="0dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
 
-    <!-- Visible cuando el widget todavía no tiene ninguna nota asignada
-         (recién agregado, antes de terminar la configuración) o cuando la
-         nota asignada ya no existe. Tocarlo reabre el selector de notas. -->
-    <TextView
-        android:id="@+id/Empty"
+        <TextView
+            android:id="@+id/Title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="center_vertical"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textSize="15sp"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <!-- Reconfigurar qué nota muestra el widget (solo en el de nota
+             fijada; el de "última nota editada" la oculta, no hay nada que
+             elegir ahí). -->
+        <ImageView
+            android:id="@+id/ChangeNote"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/pinned_note_widget_change_note"
+            android:src="@android:drawable/ic_menu_edit" />
+
+    </LinearLayout>
+
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:background="?android:attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center"
-        android:padding="16dp"
-        android:text="@string/pinned_note_widget_select_note"
-        android:textColor="?android:attr/textColorSecondary" />
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-</FrameLayout>
+        <ListView
+            android:id="@+id/ListView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:paddingBottom="4dp" />
+
+        <!-- Visible cuando el widget todavía no tiene ninguna nota asignada
+             (recién agregado, antes de terminar la configuración) o cuando la
+             nota asignada ya no existe. Tocarlo reabre el selector de notas. -->
+        <TextView
+            android:id="@+id/Empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:padding="16dp"
+            android:text="@string/pinned_note_widget_select_note"
+            android:textColor="?android:attr/textColorSecondary" />
+
+    </FrameLayout>
+
+</LinearLayout>

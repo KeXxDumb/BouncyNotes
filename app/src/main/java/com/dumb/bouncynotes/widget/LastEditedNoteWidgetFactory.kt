@@ -1,18 +1,16 @@
 package com.dumb.bouncynotes.widget
 
 import android.content.Context
-import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dumb.bouncynotes.R
-import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
 class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsService.RemoteViewsFactory {
 
-    private var note: Note? = null
+    private var noteId: Long = 0L
     private var rows: List<NoteWidgetRow> = emptyList()
     private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
 
@@ -31,40 +29,25 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
                 .filter { it.deletedAt == null && !it.isPrivate }
                 .maxByOrNull { it.updatedAt }
         }
-        note = current
+        noteId = current?.id ?: 0L
         rows = current?.let { buildNoteWidgetRows(context, it) } ?: emptyList()
         colors = resolveWidgetColors(context)
     }
 
-    override fun getCount(): Int = 1 + rows.size
+    // Ya NO incluye una fila de header (ver widget_pinned_note.xml): el
+    // título lo pone LastEditedNoteWidgetProvider directo en la vista fija
+    // de arriba — acá solo queda el CONTENIDO de la nota.
+    override fun getCount(): Int = rows.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        if (position == 0) return getHeaderView()
-        val noteIdForClicks = note?.id ?: 0L
-        return when (val row = rows[position - 1]) {
-            is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteIdForClicks, row)
-            is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteIdForClicks, row)
-            is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteIdForClicks, row)
+        return when (val row = rows[position]) {
+            is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteId, row)
+            is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteId, row)
+            is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteId, row)
         }
     }
 
-    private fun getHeaderView(): RemoteViews {
-        val currentNote = note
-        return RemoteViews(context.packageName, R.layout.pinned_note_widget_header).apply {
-            // Nada que reconfigurar en este widget (no elige nota, siempre
-            // muestra la más reciente sola).
-            setViewVisibility(R.id.ChangeNote, View.GONE)
-            if (currentNote == null) {
-                setTextViewText(R.id.Title, "Todavía no tenés notas")
-            } else {
-                setTextViewText(R.id.Title, currentNote.title.ifBlank { "(Sin título)" })
-                setOnClickFillInIntent(R.id.Title, PinnedNoteWidgetProvider.openNoteFillInIntent(currentNote.id))
-            }
-            setTextColor(R.id.Title, colors.textPrimary)
-        }
-    }
-
-    override fun getViewTypeCount() = 4
+    override fun getViewTypeCount() = 3
 
     override fun hasStableIds() = false
 

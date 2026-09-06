@@ -17,6 +17,7 @@ import com.dumb.bouncynotes.data.SettingsCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 private const val ACTION_OPEN_NOTE = "com.dumb.bouncynotes.widget.ACTION_OPEN_NOTE"
 private const val ACTION_RECONFIGURE = "com.dumb.bouncynotes.widget.ACTION_RECONFIGURE"
@@ -165,14 +166,34 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
             val colors = resolveWidgetColors(context)
             views.setInt(R.id.Layout, "setBackgroundResource", colors.backgroundRes)
             views.setTextColor(R.id.Empty, colors.textSecondary)
+            views.setTextColor(R.id.Title, colors.textPrimary)
 
             if (noteId == null) {
+                views.setViewVisibility(R.id.HeaderRow, View.GONE)
                 views.setViewVisibility(R.id.ListView, View.GONE)
                 views.setViewVisibility(R.id.Empty, View.VISIBLE)
                 views.setOnClickPendingIntent(R.id.Empty, reconfigurePendingIntent(context, widgetId))
             } else {
+                views.setViewVisibility(R.id.HeaderRow, View.VISIBLE)
                 views.setViewVisibility(R.id.ListView, View.VISIBLE)
                 views.setViewVisibility(R.id.Empty, View.GONE)
+
+                // Antes esto lo resolvía el Factory, como la fila 0 del
+                // ListView. Ahora que el título es una vista fija (ver
+                // widget_pinned_note.xml), hace falta acá — una consulta
+                // por id de Room es prácticamente instantánea, así que un
+                // runBlocking puntual no es un problema real (mismo
+                // criterio que ya usa el propio Factory para traer la nota
+                // entera).
+                val title = runBlocking {
+                    NoteDatabase.getInstance(context).noteDao().getById(noteId)
+                }?.title?.ifBlank { "(Sin título)" } ?: ""
+                views.setTextViewText(R.id.Title, title)
+                // Click DIRECTO, no fill-in — ver el comentario largo en
+                // widget_pinned_note.xml sobre por qué esto es justo lo que
+                // arregla el bug de Xiaomi/MIUI.
+                views.setOnClickPendingIntent(R.id.Title, openNotePendingIntent(context, noteId))
+                views.setOnClickPendingIntent(R.id.ChangeNote, reconfigurePendingIntent(context, widgetId))
 
                 val serviceIntent = Intent(context, PinnedNoteWidgetService::class.java).apply {
                     putExtra(EXTRA_NOTE_ID, noteId)
@@ -187,11 +208,16 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 views.setRemoteAdapter(R.id.ListView, serviceIntent)
                 views.setEmptyView(R.id.ListView, R.id.Empty)
 
-                // Plantilla de click para las filas de la lista, SIN action
-                // fija: cada fila decide la suya propia (abrir nota vs.
-                // reconfigurar) a través de su propio fill-in Intent — si la
-                // plantilla ya trajera una action puesta, la de cada fila
-                // quedaría ignorada (fillIn() no pisa campos ya definidos).
+                // El ListView ya solo tiene CONTENIDO de la nota (texto,
+                // imágenes, ítems de checklist) — nada que reconfigure el
+                // widget ni que abra la nota desde el header, así que la
+                // plantilla ahora solo hace falta para tildar ítems de
+                // checklist en el lugar (ACTION_TOGGLE_CHECKLIST_ITEM) y,
+                // si se toca el texto de una fila, abrir la nota
+                // (ACTION_OPEN_NOTE) — eso último sigue atado a la
+                // limitación de clicks en filas de ListView explicada en
+                // widget_pinned_note.xml, a diferencia del título de
+                // arriba.
                 val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
                 val templatePendingIntent = PendingIntent.getBroadcast(
                     context, widgetId, templateIntent, pendingIntentFlags()
@@ -215,6 +241,22 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
             ids.forEach { widgetId -> updateWidget(context, manager, widgetId) }
         }
 
+        // Click directo para el título (vista fija, fuera del ListView) —
+        // no pasa por onReceive() de este provider en absoluto, así que no
+        // depende del mecanismo de listas para nada. CLEAR_TASK, mismo
+        // motivo que en sendActivityPendingIntent/MainActivity.
+        fun openNotePendingIntent(context: Context, noteId: Long): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                putExtra("openNoteId", noteId)
+                data = Uri.parse("bouncynotes://widget/mainactivity/open/$noteId")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            }
+            return PendingIntent.getActivity(
+                context, noteId.toInt(), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
         fun reconfigurePendingIntent(context: Context, widgetId: Int): PendingIntent {
             val intent = Intent(context, PinnedNoteWidgetProvider::class.java).apply {
                 action = ACTION_RECONFIGURE
@@ -225,20 +267,15 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
         }
 
         // Fill-in Intent (no PendingIntent): lo usa el Factory para las
-        // filas de la lista, que comparten la plantilla sin action de
-        // updateWidget() de arriba.
+        // filas de CONTENIDO de la lista (texto/imagen/ítem de checklist),
+        // que comparten la plantilla sin action de updateWidget() de
+        // arriba. El título YA NO usa esto — tiene su propio click directo
+        // (ver openNotePendingIntent).
         fun openNoteFillInIntent(noteId: Long): Intent =
             Intent().apply {
                 action = ACTION_OPEN_NOTE
                 putExtra(EXTRA_NOTE_ID, noteId)
                 data = Uri.parse("bouncynotes://widget/open/$noteId")
-            }
-
-        fun reconfigureFillInIntent(widgetId: Int): Intent =
-            Intent().apply {
-                action = ACTION_RECONFIGURE
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                data = Uri.parse("bouncynotes://widget/reconfigure/$widgetId")
             }
 
         fun toggleChecklistItemFillInIntent(noteId: Long, itemIndex: Int): Intent =
