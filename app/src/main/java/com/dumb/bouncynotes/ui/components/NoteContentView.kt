@@ -167,16 +167,25 @@ internal fun GalleryGrid(
 ) {
     val context = LocalContext.current
 
+    // Antes recibía un tamaño fijo en dp (150dp/100dp) para la imagen,
+    // sin importar cuánto ancho tuviera realmente disponible su columna.
+    // Con pocas imágenes en una cuadrícula (ej. un grupo de 2 con GRID_2,
+    // donde cada columna ocupa ~50% del ancho de pantalla) la miniatura se
+    // quedaba en ese tamaño fijo, mucho más chico que su columna, dejando
+    // un hueco enorme alrededor. Ahora recibe el Modifier de tamaño
+    // completo (fillMaxWidth + aspectRatio cuadrado para la cuadrícula,
+    // tamaño fijo solo para el carrusel, que sí necesita un ancho estable
+    // porque scrollea horizontal) — así la imagen ocupa TODO el ancho real
+    // de su columna, sea cual sea.
     @Composable
-    fun Thumbnail(index: Int, fileName: String, size: Dp, cornerRadius: Dp) {
-        Column {
+    fun Thumbnail(index: Int, fileName: String, imageModifier: Modifier, cornerRadius: Dp) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Box {
                 AsyncImage(
                     model = File(ImageStorage.imagesDir(context), fileName),
                     contentDescription = "Imagen ${index + 1} de ${fileNames.size}",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(size)
+                    modifier = imageModifier
                         .clip(RoundedCornerShape(cornerRadius))
                         .clickable { onImageClick(index) }
                 )
@@ -203,14 +212,14 @@ internal fun GalleryGrid(
                 CompactCaptionField(
                     value = caption,
                     onValueChange = { onCaptionChange(index, it) },
-                    modifier = Modifier.width(size).padding(top = 4.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 )
             } else if (caption.isNotBlank()) {
                 Text(
                     text = caption,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(size).padding(top = 2.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
                 )
             }
         }
@@ -225,15 +234,18 @@ internal fun GalleryGrid(
                     .padding(vertical = 8.dp)
             ) {
                 fileNames.forEachIndexed { index, fileName ->
-                    Box(modifier = Modifier.padding(end = if (index != fileNames.lastIndex) 6.dp else 0.dp)) {
-                        Thumbnail(index, fileName, size = 150.dp, cornerRadius = 14.dp)
+                    Box(
+                        modifier = Modifier
+                            .width(150.dp)
+                            .padding(end = if (index != fileNames.lastIndex) 6.dp else 0.dp)
+                    ) {
+                        Thumbnail(index, fileName, imageModifier = Modifier.size(150.dp), cornerRadius = 14.dp)
                     }
                 }
             }
         }
         GalleryLayout.GRID_2, GalleryLayout.GRID_3 -> {
             val columns = if (layout == GalleryLayout.GRID_2) 2 else 3
-            val thumbSize = if (columns == 2) 150.dp else 100.dp
             // No hace falta LazyVerticalGrid (con scroll propio) para un puñado
             // de miniaturas fijas: alcanza con filas de Row, y así el grupo
             // scrollea junto con el resto de la nota en vez de tener su propio
@@ -245,7 +257,14 @@ internal fun GalleryGrid(
                         rowFiles.forEachIndexed { colIndex, fileName ->
                             val globalIndex = rowIndex * columns + colIndex
                             Box(modifier = Modifier.weight(1f).padding(2.dp)) {
-                                Thumbnail(globalIndex, fileName, size = thumbSize, cornerRadius = 12.dp)
+                                // fillMaxWidth + aspectRatio(1f): ocupa TODO
+                                // el ancho de su columna (no un tamaño fijo
+                                // en dp) y se mantiene cuadrada.
+                                Thumbnail(
+                                    globalIndex, fileName,
+                                    imageModifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                                    cornerRadius = 12.dp
+                                )
                             }
                         }
                         // Si la última fila queda incompleta, rellenamos con

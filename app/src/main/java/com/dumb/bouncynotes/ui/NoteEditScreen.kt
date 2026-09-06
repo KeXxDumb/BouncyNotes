@@ -58,6 +58,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.filled.AlarmOff
@@ -1484,15 +1485,31 @@ fun NoteEditScreen(
                                             is EditSegment.TextSeg -> 0
                                         }
                                     }
-                                    Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                                        // Antes esto llamaba a GalleryEditorPreview, un preview
-                                        // "genérico" (siempre una fila de miniaturas) que NO
-                                        // reflejaba el formato elegido (cuadrícula 2/3, carrusel).
-                                        // Por eso, sin importar qué formato se eligiera en el
-                                        // popup, en el editor siempre se veía igual (una fila, que
-                                        // se confundía con "siempre carrusel"). Ahora reutiliza el
-                                        // mismo GalleryGrid que se usa en modo lectura, así el
-                                        // editor muestra exactamente el layout real elegido.
+                                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                        // Antes esto era una "X" chiquita en la esquina superior
+                                        // derecha del grupo entero — muy fácil de confundir con
+                                        // las X de borrado individual de cada miniatura (ver
+                                        // onDeleteImage abajo), sobre todo cuando la imagen de
+                                        // arriba a la derecha del grupo tenía las DOS superpuestas
+                                        // casi en el mismo lugar. Ahora es una barra angosta de
+                                        // ancho completo, con texto y colores de "peligro" bien
+                                        // distintos de cualquier otro botón de la nota, para que
+                                        // quede claro que esto borra el GRUPO entero.
+                                        TextButton(
+                                            onClick = { deleteMediaSegment(index) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.textButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                            ),
+                                            contentPadding = PaddingValues(vertical = 6.dp)
+                                        ) {
+                                            Text("Eliminar este grupo de imágenes", style = MaterialTheme.typography.labelMedium)
+                                            Spacer(Modifier.width(6.dp))
+                                            Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        }
+                                        Spacer(Modifier.height(4.dp))
                                         GalleryGrid(
                                             layout = segment.layout,
                                             fileNames = segment.fileNames,
@@ -1508,28 +1525,6 @@ fun NoteEditScreen(
                                                 updateContentFromSegments(newSegments)
                                             }
                                         )
-                                        // El botón de arriba a la derecha sigue
-                                        // quitando el GRUPO entero; borrar una
-                                        // imagen puntual ahora se hace con la X
-                                        // que aparece sobre cada miniatura (ver
-                                        // onDeleteImage arriba) — ya no hace
-                                        // falta ir al visor a pantalla completa
-                                        // para eso.
-                                        IconButton(
-                                            onClick = { deleteMediaSegment(index) },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(28.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.Close,
-                                                contentDescription = "Quitar grupo de imágenes",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
                                     }
                                 }
                                 is EditSegment.VideoSeg -> {
