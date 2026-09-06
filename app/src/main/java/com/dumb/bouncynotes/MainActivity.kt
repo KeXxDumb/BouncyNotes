@@ -69,16 +69,26 @@ class MainActivity : FragmentActivity() {
     //    corriendo para la actividad que se está por iniciar, no se inicia
     //    una actividad nueva; en cambio, la tarea actual simplemente se trae
     //    al frente tal cual estaba". O sea, con la app ya abierta en
-    //    background, tocar el widget NO vuelve a entregar el Intent (ni
-    //    onCreate ni onNewIntent) — solo resucita la pantalla que hubiera
-    //    quedado abierta, ignorando el "abrir esta nota". Por eso "no pasaba
-    //    nada". El recordatorio (notificación) nunca tuvo este problema
-    //    porque su Intent SÍ suma FLAG_ACTIVITY_CLEAR_TOP (ver
-    //    ReminderReceiver) — con "standard" launchMode (el que usa esta
-    //    Activity, no está declarado otro en el manifest) eso fuerza que la
-    //    instancia existente se cierre y se cree una nueva de verdad, con
-    //    onCreate() procesando el Intent nuevo. Se agregó la misma flag acá
-    //    (ver PinnedNoteWidgetProvider.ACTION_OPEN_NOTE).
+    //    background, tocar el widget NO vuelve a entregar el Intent — solo
+    //    resucita la pantalla que hubiera quedado abierta, ignorando el
+    //    "abrir esta nota". Por eso "no pasaba nada".
+    //
+    //    El primer intento de arreglo fue sumar FLAG_ACTIVITY_CLEAR_TOP,
+    //    pero el bug seguía: con launchMode "standard" (el que usa esta
+    //    Activity, no hay otro declarado en el manifest), CLEAR_TOP solo
+    //    fuerza la recreación si la actividad se encuentra DENTRO de la
+    //    tarea que se está por traer al frente — pero el comportamiento de
+    //    "traer la tarea al frente TAL CUAL estaba" de NEW_TASK (citado
+    //    arriba) tiene prioridad y corta el proceso antes de que CLEAR_TOP
+    //    llegue a aplicarse. El arreglo real es FLAG_ACTIVITY_CLEAR_TASK
+    //    (no CLEAR_TOP): en vez de buscar una instancia para reemplazar
+    //    DENTRO de la tarea existente, borra la tarea entera y arranca una
+    //    Activity nueva sí o sí — así se confirmó comparando con NotallyX
+    //    (la app de referencia de este proyecto), que usa exactamente esta
+    //    combinación para lo mismo. Como esta app es de una sola Activity,
+    //    "borrar la tarea entera" no pierde nada: el back stack real (la
+    //    lista de notas, etc.) lo maneja el NavController de Compose
+    //    ADENTRO de esta única Activity, no Android a nivel de tareas.
     //
     // 2) Aunque el Intent se procesara bien, `openNoteId` decidía el
     //    startDestination del NavHost — es decir, la nota se abría como la

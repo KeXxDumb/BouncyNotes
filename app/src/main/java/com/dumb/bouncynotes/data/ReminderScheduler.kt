@@ -225,7 +225,7 @@ object ReminderScheduler {
     // directamente, igual que la notificación.
     private fun showIntent(context: Context, noteId: Long): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("openNoteId", noteId)
         }
         return PendingIntent.getActivity(

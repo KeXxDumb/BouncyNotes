@@ -170,7 +170,7 @@ class ReminderReceiver : BroadcastReceiver() {
 
         if (contentIntentNoteId != null) {
             val openIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra("openNoteId", contentIntentNoteId)
             }
             builder.setContentIntent(

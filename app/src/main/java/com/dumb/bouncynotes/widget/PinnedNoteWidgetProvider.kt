@@ -40,23 +40,22 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
     // Por eso "abrir la nota" y "reconfigurar" se resuelven acá, no directo
     // desde el Factory.
     //
-    // BUG (reportado, seguía después del fix de CLEAR_TOP): tocar una fila
-    // seguía sin abrir nada — la nota recién aparecía la próxima vez que se
-    // abría la app a mano. Eso es la firma clásica de las restricciones de
-    // "Background Activity Launch" de Android 10+: un context.startActivity()
-    // llamado DIRECTO desde un BroadcastReceiver (que es justo lo que hacía
-    // este código) puede terminar creando la Activity en segundo plano SIN
-    // permiso para pasarla al frente — la Activity existe y ya procesó el
-    // Intent, pero no se ve hasta que algo más (como abrir la app a mano)
-    // la trae a primer plano de verdad. Por eso "la próxima vez ya abre
-    // ahí": es la MISMA instancia creada en el toque anterior.
+    // BUG (reportado): tocar una fila para abrir la nota no hacía nada —
+    // recién se abría ahí la próxima vez que se abría la app a mano (con
+    // la app ya corriendo en segundo plano). Ver el comentario largo en
+    // MainActivity (arriba de la clase) con la explicación completa: la
+    // causa real era FLAG_ACTIVITY_CLEAR_TOP, que con launchMode "standard"
+    // no alcanza a forzar la recreación de la Activity porque el
+    // comportamiento de "traer la tarea al frente tal cual estaba" de
+    // NEW_TASK tiene prioridad. Se cambió a FLAG_ACTIVITY_CLEAR_TASK,
+    // confirmado comparando con NotallyX (la app de referencia de este
+    // proyecto), que usa esa combinación para exactamente esto.
     //
-    // El arreglo: en vez de context.startActivity(...), se arma un
-    // PendingIntent.getActivity(...) y se lo manda con .send() — enviar un
-    // PendingIntent (en vez de llamar a startActivity a mano) es el patrón
-    // que Android respeta de forma confiable para pasar el permiso de
-    // "puedo abrir una Activity" que trae este click, incluso con el salto
-    // extra por el broadcast de por medio.
+    // De paso, en vez de context.startActivity(...) directo se manda un
+    // PendingIntent.getActivity(...) con .send() — no era la causa
+    // principal del bug, pero es el patrón más confiable para pasar el
+    // permiso de "abrir una Activity" cuando de por medio hay un salto por
+    // un BroadcastReceiver (como acá), así que se dejó como refuerzo.
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         when (intent.action) {
@@ -65,16 +64,7 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     putExtra("openNoteId", noteId)
                     data = Uri.parse("bouncynotes://widget/mainactivity/open/$noteId")
-                    // CLEAR_TOP además de NEW_TASK: con SOLO NEW_TASK, si la
-                    // app ya tenía una tarea abierta en segundo plano,
-                    // Android simplemente la trae al frente TAL CUAL estaba
-                    // (documentado así) sin volver a entregar este Intent —
-                    // el "abrir esta nota" se perdía en silencio. CLEAR_TOP
-                    // fuerza que se recree la Activity de verdad y procese
-                    // este Intent nuevo (ver el comentario largo en
-                    // MainActivity, arriba de la clase, con el resto de la
-                    // explicación de este bug).
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 }
                 sendActivityPendingIntent(context, noteId.toInt(), openIntent)
             }
@@ -87,7 +77,7 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                     val configIntent = Intent(context, PinnedNoteWidgetConfigActivity::class.java).apply {
                         putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
                         data = Uri.parse("bouncynotes://widget/mainactivity/reconfigure/$widgetId")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     }
                     sendActivityPendingIntent(context, widgetId, configIntent)
                 }
