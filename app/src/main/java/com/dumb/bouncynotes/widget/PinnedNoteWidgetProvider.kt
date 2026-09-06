@@ -45,7 +45,16 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     putExtra("openNoteId", noteId)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    // CLEAR_TOP además de NEW_TASK: con SOLO NEW_TASK, si la
+                    // app ya tenía una tarea abierta en segundo plano,
+                    // Android simplemente la trae al frente TAL CUAL estaba
+                    // (documentado así) sin volver a entregar este Intent —
+                    // el "abrir esta nota" se perdía en silencio. CLEAR_TOP
+                    // fuerza que se recree la Activity de verdad y procese
+                    // este Intent nuevo (ver el comentario largo en
+                    // MainActivity, arriba de la clase, con el resto de la
+                    // explicación de este bug).
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
                 context.startActivity(openIntent)
             }

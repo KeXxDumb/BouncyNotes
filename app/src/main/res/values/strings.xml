@@ -10,4 +10,7 @@
     <string name="quick_actions_widget_description">Accesos rápidos: nueva nota, nuevo checklist y reloj</string>
     <string name="quick_actions_widget_new_note">Nota</string>
     <string name="quick_actions_widget_new_checklist">Checklist</string>
+    <string name="all_notes_clock_widget_label">Reloj y notas</string>
+    <string name="all_notes_clock_widget_description">Reloj con la lista completa de tus notas (hasta 25), tocá una para abrirla</string>
+    <string name="all_notes_clock_widget_empty">Todavía no tenés notas</string>
 </resources>

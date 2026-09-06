@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Más grande que los otros dos por defecto (4x3 aprox): necesita espacio
+    para el reloj Y para que la lista scrolleable se vea con más de una o
+    dos filas a la vez. resizeMode en los dos ejes por si el usuario lo
+    quiere más chico o más grande igual.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp"
+    android:minHeight="180dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_all_notes_clock"
+    android:previewLayout="@layout/widget_all_notes_clock"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/all_notes_clock_widget_description" />

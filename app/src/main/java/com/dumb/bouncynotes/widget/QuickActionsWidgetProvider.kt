@@ -39,7 +39,12 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
         private fun newNotePendingIntent(context: Context, widgetId: Int, type: String): PendingIntent {
             val intent = Intent(context, MainActivity::class.java).apply {
                 putExtra("newNoteType", type)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                // Mismo bug/mismo fix que en PinnedNoteWidgetProvider: con
+                // SOLO NEW_TASK, si la app ya tenía una tarea en segundo
+                // plano, tocar el botón solo la resucitaba tal cual estaba
+                // (sin abrir la nota nueva). CLEAR_TOP fuerza que se
+                // procese este Intent de verdad.
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             // Los dos botones de UN MISMO widget apuntan al mismo componente
             // (MainActivity) sin action/data propios — solo difieren en un

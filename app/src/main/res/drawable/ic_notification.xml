@@ -1,0 +1,49 @@
+<!--
+    Ícono de la barra de notificaciones.
+
+    Antes esto era un PNG (drawable-nodpi/ic_notification.png) que era un
+    simple rectángulo blanco SÓLIDO — por eso se veía como un rectángulo
+    plano en la barra de notificaciones: Android dibuja los íconos de
+    notificación como una SILUETA, usando SOLO el canal alfa del drawable
+    (el color se ignora, el sistema lo tiñe él mismo). Un rectángulo blanco
+    opaco = una silueta rectangular lisa, sin ninguna forma reconocible
+    adentro.
+
+    Este reemplazo es un vector (silueta de un durazno, la mascota de la
+    app) pensado para leerse bien a los tamaños chiquitos de la barra de
+    notificaciones:
+    - Forma simple y gruesa, sin detalles finos ni líneas delgadas (se
+      pierden por completo a 24dp).
+    - Un solo color de relleno, blanco puro, alfa 100% en la forma y 0% en
+      el resto — es lo único que Android va a mirar.
+    - La forma no toca los bordes del viewBox (deja "aire" alrededor,
+      como pide la guía de Android de "safe zone" para íconos de estado).
+
+    Para diseñar uno propio: Android Studio tiene un asistente que hace
+    exactamente esta conversión a partir de un dibujo/SVG/PNG (clic derecho
+    en res > New > Image Asset > tipo "Notification Icons") — ahí mismo se
+    puede previsualizar cómo queda la silueta resultante antes de generarla.
+-->
+<vector xmlns:android="http://schemas.android.com/apis/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Cuerpo del durazno: un círculo simple. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,6
+            C16.14,6 19.5,9.36 19.5,13.5
+            C19.5,17.64 16.14,21 12,21
+            C7.86,21 4.5,17.64 4.5,13.5
+            C4.5,9.36 7.86,6 12,6
+            Z" />
+    <!-- Hojita/tallo arriba, para que se lea como durazno y no como una
+         simple pelota. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,6
+            C11.3,4.2 12.6,2.3 14.6,2
+            C14.7,3.9 13.5,5.4 12,6
+            Z" />
+</vector>

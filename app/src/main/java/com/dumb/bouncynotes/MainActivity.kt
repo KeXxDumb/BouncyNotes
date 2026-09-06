@@ -1,5 +1,6 @@
 package com.dumb.bouncynotes
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -56,16 +57,64 @@ import com.dumb.bouncynotes.ui.theme.NotesTheme
 
 class MainActivity : FragmentActivity() {
 
+    // BUG (reportado): tocar "abrir nota" desde un widget no abría nada; y
+    // cuando sí llegaba a abrirse (la primera vez, con la app cerrada), no
+    // se podía volver a la lista con el botón atrás — había que cerrar la
+    // app entera y reabrirla.
+    //
+    // Causas reales, dos bugs distintos apilados:
+    //
+    // 1) El Intent del widget solo tenía FLAG_ACTIVITY_NEW_TASK. La
+    //    documentación de esa flag es explícita: "si ya hay una tarea
+    //    corriendo para la actividad que se está por iniciar, no se inicia
+    //    una actividad nueva; en cambio, la tarea actual simplemente se trae
+    //    al frente tal cual estaba". O sea, con la app ya abierta en
+    //    background, tocar el widget NO vuelve a entregar el Intent (ni
+    //    onCreate ni onNewIntent) — solo resucita la pantalla que hubiera
+    //    quedado abierta, ignorando el "abrir esta nota". Por eso "no pasaba
+    //    nada". El recordatorio (notificación) nunca tuvo este problema
+    //    porque su Intent SÍ suma FLAG_ACTIVITY_CLEAR_TOP (ver
+    //    ReminderReceiver) — con "standard" launchMode (el que usa esta
+    //    Activity, no está declarado otro en el manifest) eso fuerza que la
+    //    instancia existente se cierre y se cree una nueva de verdad, con
+    //    onCreate() procesando el Intent nuevo. Se agregó la misma flag acá
+    //    (ver PinnedNoteWidgetProvider.ACTION_OPEN_NOTE).
+    //
+    // 2) Aunque el Intent se procesara bien, `openNoteId` decidía el
+    //    startDestination del NavHost — es decir, la nota se abría como la
+    //    RAÍZ del back stack, sin ninguna pantalla de lista debajo. Atrás
+    //    no tenía a dónde volver: cerraba la Activity directamente. Se
+    //    resolvió arrancando SIEMPRE en "list", y navegando a la nota
+    //    DESPUÉS (con un LaunchedEffect, una vez que el NavHost ya existe)
+    //    — así la lista queda como raíz real del back stack y atrás
+    //    funciona como cualquier otra navegación.
+    //
+    // `pendingOpenNoteId`/`pendingNewNoteType` viven como campos de la
+    // Activity (no dentro del Composable) para que `onNewIntent` — que NO
+    // puede tocar código dentro de `setContent {}` directamente — los pueda
+    // actualizar también, por si en el futuro algún flujo SÍ llega a
+    // entregar el Intent por ahí en vez de recrear la Activity.
+    private var pendingOpenNoteId by mutableStateOf<Long?>(null)
+    private var pendingNewNoteType by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getLongExtra("openNoteId", 0L).takeIf { it != 0L }?.let { pendingOpenNoteId = it }
+        intent.getStringExtra("newNoteType")?.let { pendingNewNoteType = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Si la actividad se abrió desde la notificación de un recordatorio,
-        // vamos directo a esa nota en vez de a la lista.
-        val openNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
+        // vamos a esa nota (por encima de la lista, no en su lugar — ver
+        // comentario de arriba).
+        pendingOpenNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
         // Si se abrió desde el widget de "acciones rápidas" (nueva nota /
-        // nuevo checklist), vamos directo a una nota en blanco de ese tipo
-        // — misma convención que ya usa el botón "+" de la lista (noteId=0
-        // significa "todavía no existe, se crea al guardar").
-        val newNoteType = intent?.getStringExtra("newNoteType")
+        // nuevo checklist), vamos a una nota en blanco de ese tipo — misma
+        // convención que ya usa el botón "+" de la lista (noteId=0 significa
+        // "todavía no existe, se crea al guardar").
+        pendingNewNoteType = intent?.getStringExtra("newNoteType")
         setContent {
             val settingsViewModel: SettingsViewModel = viewModel()
             // El parpadeo de fondo negro / valores de fábrica al abrir la
@@ -154,13 +203,34 @@ class MainActivity : FragmentActivity() {
                         if (settings.appWideBiometricLock && !biometricValid) {
                             AppLockScreen(onUnlock = { requestBiometric {} })
                         } else {
+                            // Se navega DESPUÉS de que el NavHost ya exista
+                            // (no como startDestination — ver comentario
+                            // arriba de la clase) para que "list" quede como
+                            // raíz real del back stack. Se usa
+                            // navController.navigate() directo, no
+                            // navigateSafe(): esta es una navegación
+                            // programática única disparada por el Intent,
+                            // no un toque del usuario, así que la protección
+                            // "anti doble-toque fantasma" de navigateSafe
+                            // (que exige que la pantalla actual ya esté
+                            // RESUMED) no aplica y de hecho podría llegar a
+                            // ignorar esta navegación si se ejecuta antes de
+                            // que "list" termine de asentarse.
+                            LaunchedEffect(pendingOpenNoteId) {
+                                pendingOpenNoteId?.let { id ->
+                                    navController.navigate("edit/$id?type=TEXT")
+                                    pendingOpenNoteId = null
+                                }
+                            }
+                            LaunchedEffect(pendingNewNoteType) {
+                                pendingNewNoteType?.let { type ->
+                                    navController.navigate("edit/0?type=$type")
+                                    pendingNewNoteType = null
+                                }
+                            }
                             NavHost(
                                 navController = navController,
-                                startDestination = when {
-                                    openNoteId != null -> "edit/$openNoteId?type=TEXT"
-                                    newNoteType != null -> "edit/0?type=$newNoteType"
-                                    else -> "list"
-                                }
+                                startDestination = "list"
                             ) {
                                 composable("list") {
                                     NoteListScreen(

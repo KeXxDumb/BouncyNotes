@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/Layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background_light"
+    android:orientation="vertical">
+
+    <!-- TextClock: vista nativa, se actualiza sola cada minuto — mismo
+         truco que ya usa QuickActionsWidgetProvider, no hace falta
+         programar ningún refresco propio para esto. Más chico que el de
+         Acciones rápidas porque acá comparte espacio con la lista. -->
+    <TextClock
+        android:id="@+id/Clock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center"
+        android:paddingTop="12dp"
+        android:paddingBottom="4dp"
+        android:format12Hour="h:mm a"
+        android:format24Hour="H:mm"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <ListView
+        android:id="@+id/ListView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:divider="@null"
+        android:dividerHeight="0dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp" />
+
+    <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera y
+         privadas, igual que el resto de los widgets). -->
+    <TextView
+        android:id="@+id/Empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:padding="16dp"
+        android:text="@string/all_notes_clock_widget_empty"
+        android:textColor="?android:attr/textColorSecondary" />
+
+</LinearLayout>

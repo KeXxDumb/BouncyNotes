@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.data
 
 import android.content.Context
+import com.dumb.bouncynotes.widget.AllNotesClockWidgetProvider
 import com.dumb.bouncynotes.widget.LastEditedNoteWidgetProvider
 import com.dumb.bouncynotes.widget.PinnedNoteWidgetProvider
 import kotlinx.coroutines.flow.Flow
@@ -31,6 +32,7 @@ class NoteRepository(private val dao: NoteDao, private val context: Context? = n
         context?.let {
             PinnedNoteWidgetProvider.refreshAll(it)
             LastEditedNoteWidgetProvider.refreshAll(it)
+            AllNotesClockWidgetProvider.refreshAll(it)
         }
     }
 }
