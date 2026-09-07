@@ -10,8 +10,19 @@ import kotlinx.coroutines.runBlocking
 
 class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsService.RemoteViewsFactory {
 
-    private var noteId: Long = 0L
-    private var rows: List<NoteWidgetRow> = emptyList()
+    // Antes `noteId` y `rows` eran dos `var` SEPARADOS, actualizados juntos
+    // en onDataSetChanged() pero sin ninguna garantía real de quedar
+    // siempre sincronizados entre sí (a diferencia de PinnedNoteWidgetFactory,
+    // donde noteId es un parámetro del constructor, fijo desde el vamos, sin
+    // ventana posible de desincronización). Si getViewAt() llegara a leer
+    // `noteId` en su valor inicial (0L) mientras `rows` ya tenía contenido
+    // de una nota real, cada fila terminaría abriendo la nota "0" — que
+    // MainActivity filtra explícitamente como "no hay nada que abrir"
+    // (openNoteId == 0L se descarta ahí a propósito). Agruparlos en un solo
+    // estado atómico, reemplazado de una sola vez, elimina esa ventana.
+    private data class LoadedNote(val noteId: Long, val rows: List<NoteWidgetRow>)
+
+    private var loaded: LoadedNote = LoadedNote(0L, emptyList())
     private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
 
     override fun onCreate() {}
@@ -29,18 +40,22 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
                 .filter { it.deletedAt == null && !it.isPrivate }
                 .maxByOrNull { it.updatedAt }
         }
-        noteId = current?.id ?: 0L
-        rows = current?.let { buildNoteWidgetRows(context, it) } ?: emptyList()
+        loaded = if (current != null) {
+            LoadedNote(current.id, buildNoteWidgetRows(context, current))
+        } else {
+            LoadedNote(0L, emptyList())
+        }
         colors = resolveWidgetColors(context)
     }
 
     // Ya NO incluye una fila de header (ver widget_pinned_note.xml): el
     // título lo pone LastEditedNoteWidgetProvider directo en la vista fija
     // de arriba — acá solo queda el CONTENIDO de la nota.
-    override fun getCount(): Int = rows.size
+    override fun getCount(): Int = loaded.rows.size
 
     override fun getViewAt(position: Int): RemoteViews {
-        return when (val row = rows[position]) {
+        val noteId = loaded.noteId
+        return when (val row = loaded.rows[position]) {
             is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteId, row)
             is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteId, row)
             is NoteWidgetRow.ChecklistItemRow -> getNoteWidgetChecklistRowView(context, colors, noteId, row)

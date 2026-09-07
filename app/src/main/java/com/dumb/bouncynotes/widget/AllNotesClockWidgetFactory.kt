@@ -57,11 +57,19 @@ class AllNotesClockWidgetFactory(private val context: Context) : RemoteViewsServ
 
     override fun getViewTypeCount() = 1
 
-    override fun hasStableIds() = true
+    // Antes esto era `true` con notes[position].id como id — el ÚNICO de
+    // los widgets con lista que usaba ids estables (los demás, con una sola
+    // nota fija, usan `false` + position.toLong()). Cada fila acá solo
+    // tiene UN objetivo de click (a diferencia del bug del checklist, que
+    // tenía dos), así que esta diferencia — ids estables — quedó como la
+    // única variable real distinta entre "esto no abre nada" (esta lista) y
+    // "esto sí abre" (una fila de texto/imagen suelta). Se iguala al mismo
+    // criterio que ya usan los otros factories, por las dudas.
+    override fun hasStableIds() = false
 
     override fun getLoadingView(): RemoteViews? = null
 
-    override fun getItemId(position: Int): Long = notes[position].id
+    override fun getItemId(position: Int): Long = position.toLong()
 
     // Una línea de preview simple, en texto plano — no reproduce el preview
     // "de verdad" de la lista de la app (NotePreviewContent, un

@@ -1,9 +1,12 @@
 package com.dumb.bouncynotes.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -154,6 +157,8 @@ import com.dumb.bouncynotes.data.ChecklistItem
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
+import com.dumb.bouncynotes.data.buildMediaPickerIntent
+import com.dumb.bouncynotes.data.extractPickedUris
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteImage
 import com.dumb.bouncynotes.data.NoteType
@@ -668,16 +673,34 @@ fun NoteEditScreen(
         }
     }
 
-    // Selector "clásico" (ACTION_GET_CONTENT vía GetMultipleContents): a
-    // diferencia del Photo Picker nativo (PickMultipleVisualMedia, que solo
-    // muestra la biblioteca de medios del propio sistema), este abre el
-    // selector genérico del sistema con TODAS las apps que puedan entregar
-    // contenido de ese tipo — galerías de terceros, administradores de
-    // archivos, etc. Antes esto era opcional (ajuste
-    // "useThirdPartyMediaPicker"); ahora es el único comportamiento.
+    // ACTION_GET_CONTENT armado a mano (no GetMultipleContents, el contrato
+    // que se usaba antes): ese contrato arma el Intent por dentro y no deja
+    // apuntarlo a una Activity concreta — necesario para poder saltear el
+    // chooser cuando hay una app fijada en Ajustes ("Usar siempre la misma
+    // app para elegir imágenes/video").
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetMultipleContents()
-    ) { uris: List<Uri> -> handlePickedImages(uris) }
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result -> handlePickedImages(extractPickedUris(result.resultCode, result.data)) }
+
+    // Arma el Intent según haya o no una app fijada, y si esa app fijada
+    // dejó de existir (desinstalada, etc.) cae al selector genérico en vez
+    // de crashear. No se puede limpiar el ajuste desde acá (esta pantalla
+    // solo recibe `settings` de lectura, no un mecanismo para actualizarlo
+    // como sí tiene SettingsScreen) — el usuario lo puede desactivar a mano
+    // en Ajustes si vuelve a fallar.
+    fun launchMediaPicker(launcher: ActivityResultLauncher<Intent>, mimeType: String, allowMultiple: Boolean) {
+        try {
+            launcher.launch(
+                buildMediaPickerIntent(
+                    mimeType, allowMultiple,
+                    pinnedPackage = settings.pinnedMediaPickerPackage,
+                    pinnedActivity = settings.pinnedMediaPickerActivity
+                )
+            )
+        } catch (e: ActivityNotFoundException) {
+            launcher.launch(buildMediaPickerIntent(mimeType, allowMultiple, "", ""))
+        }
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -720,8 +743,8 @@ fun NoteEditScreen(
 
     // Selector clásico para video, mismo motivo que galleryLauncher de arriba.
     val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? -> handlePickedVideo(uri) }
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result -> handlePickedVideo(extractPickedUris(result.resultCode, result.data).firstOrNull()) }
 
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
     // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
@@ -847,11 +870,11 @@ fun NoteEditScreen(
                         },
                         Triple(Icons.Filled.PhotoLibrary, "Galería (fotos y gifs)") {
                             showImageSourceDialog = false
-                            galleryLauncher.launch("image/*")
+                            launchMediaPicker(galleryLauncher, "image/*", allowMultiple = true)
                         },
                         Triple(Icons.Filled.Videocam, "Video (máx. ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB)") {
                             showImageSourceDialog = false
-                            videoLauncher.launch("video/*")
+                            launchMediaPicker(videoLauncher, "video/*", allowMultiple = false)
                         }
                     ).forEach { (icon, label, onClick) ->
                         Row(

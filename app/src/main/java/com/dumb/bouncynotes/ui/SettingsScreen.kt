@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.ui
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ContextWrapper
 import android.net.Uri
 import android.widget.Toast
@@ -96,6 +97,9 @@ import com.dumb.bouncynotes.data.FontScale
 import com.dumb.bouncynotes.data.GalleryLayout
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteLayout
+import com.dumb.bouncynotes.data.queryMediaPickerApps
+import com.dumb.bouncynotes.data.buildMediaPickerIntent
+import com.dumb.bouncynotes.data.extractPickedUris
 import com.dumb.bouncynotes.data.ReminderScheduler
 import com.dumb.bouncynotes.data.SortOrder
 import com.dumb.bouncynotes.data.TitleMode
@@ -138,6 +142,12 @@ fun SettingsScreen(
     // botón de "exportar todo" directo).
     var exportSelection by remember { mutableStateOf<Set<Long>?>(null) }
     var showExportPicker by remember { mutableStateOf(false) }
+    // Popup propio (no el del sistema) para elegir qué app fijar como
+    // predeterminada al elegir imágenes/video — ver sección "Imágenes" más
+    // abajo. La lista de apps se consulta recién al abrir el popup (no en
+    // cada composición de la pantalla), ya que consultar PackageManager no
+    // es gratis.
+    var showMediaPickerAppDialog by remember { mutableStateOf(false) }
     // Qué sección expandible está abierta ahora mismo (identificada por su
     // título, que ya es único entre las secciones). null = ninguna abierta.
     // Se comparte entre todas las ExpandableSection de esta pantalla para
@@ -183,13 +193,16 @@ fun SettingsScreen(
         }
     }
 
-    // Selector "clásico" (ACTION_GET_CONTENT): abre el chooser genérico del
-    // sistema con galerías de terceros y administradores de archivos, en vez
-    // del Photo Picker nativo (que solo muestra la biblioteca de medios del
-    // propio sistema).
+    // ACTION_GET_CONTENT armado a mano (no GetContent()/GetMultipleContents,
+    // los contratos que se usaban antes): esos contratos arman el Intent
+    // por dentro y no dejan apuntarlo a una Activity concreta — necesario
+    // para poder saltear el chooser cuando hay una app fijada en "Usar
+    // siempre la misma app para elegir imágenes/video" (ver más abajo).
     val backgroundImageLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? -> handlePickedBackgroundImage(uri) }
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        handlePickedBackgroundImage(extractPickedUris(result.resultCode, result.data).firstOrNull())
+    }
 
     if (showDisableTrashWarning) {
         AlertDialog(
@@ -288,6 +301,58 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showExportPicker = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showMediaPickerAppDialog) {
+        // Se consulta PackageManager recién acá (al abrir el popup), no en
+        // cada composición de la pantalla — remember(Unit) para que no se
+        // vuelva a consultar mientras el popup sigue abierto.
+        val apps = remember(Unit) { queryMediaPickerApps(context) }
+        AlertDialog(
+            onDismissRequest = { showMediaPickerAppDialog = false },
+            title = { Text("Elegir app para imágenes y video") },
+            text = {
+                if (apps.isEmpty()) {
+                    Text("No se encontró ninguna app compatible en este dispositivo.")
+                } else {
+                    Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                        apps.forEach { app ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onUpdate {
+                                            it.copy(
+                                                pinnedMediaPickerPackage = app.packageName,
+                                                pinnedMediaPickerActivity = app.activityName,
+                                                pinnedMediaPickerLabel = app.label
+                                            )
+                                        }
+                                        showMediaPickerAppDialog = false
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (app.icon != null) {
+                                    Image(
+                                        bitmap = app.icon,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                } else {
+                                    Spacer(Modifier.size(32.dp))
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Text(app.label, style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMediaPickerAppDialog = false }) { Text("Cerrar") }
             }
         )
     }
@@ -450,7 +515,22 @@ fun SettingsScreen(
                         }
                     } else {
                         OutlinedButton(onClick = {
-                            backgroundImageLauncher.launch("image/*")
+                            // Si la app fijada se desinstaló o dejó de
+                            // responder a esto, no crashear: se cae al
+                            // selector genérico y se limpia lo fijado para
+                            // no repetir el error la próxima vez.
+                            try {
+                                backgroundImageLauncher.launch(
+                                    buildMediaPickerIntent(
+                                        "image/*", allowMultiple = false,
+                                        pinnedPackage = settings.pinnedMediaPickerPackage,
+                                        pinnedActivity = settings.pinnedMediaPickerActivity
+                                    )
+                                )
+                            } catch (e: ActivityNotFoundException) {
+                                onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+                                backgroundImageLauncher.launch(buildMediaPickerIntent("image/*", allowMultiple = false, "", ""))
+                            }
                         }) {
                             Text("Elegir imagen de fondo")
                         }
@@ -759,6 +839,49 @@ fun SettingsScreen(
                             valueLabels = listOf("50%", "65%", "80%", "90%", "100%"),
                             selected = settings.imageQuality,
                             onSelect = { v -> onUpdate { it.copy(imageQuality = v) } }
+                        )
+                    }
+                    SettingsDivider()
+                    // Al activarlo (y no haber ninguna fijada todavía) se abre
+                    // directo el popup para elegir una — desactivarlo solo
+                    // limpia lo fijado, sin preguntar nada.
+                    SwitchSetting(
+                        label = "Usar siempre la misma app para elegir imágenes/video",
+                        checked = settings.pinnedMediaPickerPackage.isNotEmpty(),
+                        onCheckedChange = { v ->
+                            if (v) {
+                                showMediaPickerAppDialog = true
+                            } else {
+                                onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+                            }
+                        }
+                    )
+                    if (settings.pinnedMediaPickerPackage.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showMediaPickerAppDialog = true }
+                                .padding(top = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "App fijada: ${settings.pinnedMediaPickerLabel}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "Cambiar",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else {
+                        Text(
+                            "Al elegir imágenes o video se sigue mostrando el selector con todas las apps compatibles.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp)
                         )
                     }
                 }

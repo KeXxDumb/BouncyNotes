@@ -120,14 +120,23 @@ fun getNoteWidgetChecklistRowView(
         setTextColor(R.id.CheckboxGlyph, colors.textPrimary)
         setTextViewText(R.id.ChecklistText, row.text)
         setTextColor(R.id.ChecklistText, colors.textSecondary)
-        // CheckboxGlyph y ChecklistText son HERMANOS (mismo nivel, sin
-        // superponerse) — no un contenedor + un hijo — por la misma razón
-        // que Title/ChangeNote en el encabezado: dos vistas ANIDADAS con
-        // manejadores de click distintos es un problema conocido en listas
-        // de widgets.
-        setOnClickFillInIntent(
-            R.id.CheckboxGlyph,
-            PinnedNoteWidgetProvider.toggleChecklistItemFillInIntent(noteId, row.itemIndex)
-        )
-        setOnClickFillInIntent(R.id.ChecklistText, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
+        // BUG (reportado, Xiaomi/MIUI): antes ChecklistText abría la nota
+        // completa (como TextRow/ImageRow) y CheckboxGlyph tildaba el ítem
+        // — dos fill-in Intents DISTINTOS en la misma fila. Confirmado con
+        // pruebas: filas con un solo objetivo de click (TextRow, ImageRow)
+        // abren bien la nota; esta, con dos, no abre nada al tocar el
+        // texto (el casillero sigue tildando bien). Osea que una fila de
+        // colección con dos fill-in Intents separados no es confiable acá,
+        // más allá de que el layout esté bien armado (CheckboxGlyph y
+        // ChecklistText son hermanos, sin superponerse).
+        //
+        // El arreglo: los dos ahora hacen lo MISMO (tildar el ítem) — nada
+        // en esta fila intenta abrir una Activity, así que no hay riesgo de
+        // toparse con esa limitación. Para abrir la nota completa está el
+        // título del widget (fuera del ListView, con click directo — ver
+        // PinnedNoteWidgetProvider). De paso, esto agranda el área táctil
+        // para tildar de un cuadradito de 32dp a la fila entera.
+        val toggleIntent = PinnedNoteWidgetProvider.toggleChecklistItemFillInIntent(noteId, row.itemIndex)
+        setOnClickFillInIntent(R.id.CheckboxGlyph, toggleIntent)
+        setOnClickFillInIntent(R.id.ChecklistText, toggleIntent)
     }

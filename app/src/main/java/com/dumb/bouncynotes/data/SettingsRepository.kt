@@ -71,7 +71,17 @@ data class AppSettings(
     // texto elegido por el usuario, o el nombre de la pestaña actual.
     val titleMode: TitleMode = TitleMode.APP_NAME,
     val customTitleText: String = "",
-    val rightEdgeSwipeAction: RightEdgeSwipeAction = RightEdgeSwipeAction.SETTINGS
+    val rightEdgeSwipeAction: RightEdgeSwipeAction = RightEdgeSwipeAction.SETTINGS,
+    // Vacío = sin fijar, se sigue usando el selector "clásico" con todas las
+    // apps compatibles (chooser). Si se fija una app, elegir imagen/video
+    // salta el chooser del todo y abre esa app directo (Intent.setClassName
+    // con estos dos datos).
+    val pinnedMediaPickerPackage: String = "",
+    val pinnedMediaPickerActivity: String = "",
+    // Guardado aparte para no depender de volver a consultar PackageManager
+    // solo para mostrar "app fijada: X" en Ajustes (y porque el label podría
+    // cambiar de idioma o dejar de resolverse si la app se desinstala).
+    val pinnedMediaPickerLabel: String = ""
 )
 
 class SettingsRepository(private val context: Context) {
@@ -108,6 +118,9 @@ class SettingsRepository(private val context: Context) {
         val TITLE_MODE = stringPreferencesKey("title_mode")
         val CUSTOM_TITLE_TEXT = stringPreferencesKey("custom_title_text")
         val RIGHT_EDGE_SWIPE_ACTION = stringPreferencesKey("right_edge_swipe_action")
+        val PINNED_MEDIA_PICKER_PACKAGE = stringPreferencesKey("pinned_media_picker_package")
+        val PINNED_MEDIA_PICKER_ACTIVITY = stringPreferencesKey("pinned_media_picker_activity")
+        val PINNED_MEDIA_PICKER_LABEL = stringPreferencesKey("pinned_media_picker_label")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -146,7 +159,10 @@ class SettingsRepository(private val context: Context) {
             customTitleText = prefs[Keys.CUSTOM_TITLE_TEXT] ?: "",
             rightEdgeSwipeAction = runCatching {
                 RightEdgeSwipeAction.valueOf(prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] ?: "SETTINGS")
-            }.getOrDefault(RightEdgeSwipeAction.SETTINGS)
+            }.getOrDefault(RightEdgeSwipeAction.SETTINGS),
+            pinnedMediaPickerPackage = prefs[Keys.PINNED_MEDIA_PICKER_PACKAGE] ?: "",
+            pinnedMediaPickerActivity = prefs[Keys.PINNED_MEDIA_PICKER_ACTIVITY] ?: "",
+            pinnedMediaPickerLabel = prefs[Keys.PINNED_MEDIA_PICKER_LABEL] ?: ""
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -195,6 +211,9 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.TITLE_MODE] = updated.titleMode.name
             prefs[Keys.CUSTOM_TITLE_TEXT] = updated.customTitleText
             prefs[Keys.RIGHT_EDGE_SWIPE_ACTION] = updated.rightEdgeSwipeAction.name
+            prefs[Keys.PINNED_MEDIA_PICKER_PACKAGE] = updated.pinnedMediaPickerPackage
+            prefs[Keys.PINNED_MEDIA_PICKER_ACTIVITY] = updated.pinnedMediaPickerActivity
+            prefs[Keys.PINNED_MEDIA_PICKER_LABEL] = updated.pinnedMediaPickerLabel
         }
     }
 
