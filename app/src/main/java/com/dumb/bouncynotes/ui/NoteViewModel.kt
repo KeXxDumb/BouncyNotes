@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dumb.bouncynotes.data.Note
@@ -148,8 +149,21 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             // saber si el recordatorio realmente cambió — ver el comentario
             // en applyReminderScheduling.
             val previous = if (note.id != 0L) repository.getById(note.id) else null
-            val id = repository.save(toSave)
+            Log.d("BouncyNotesReminder", "save() id=${note.id} reminderAt=${note.reminderAt} " +
+                "reminderCalendarDates=${note.reminderCalendarDates} reminderCalendarRecurring=${note.reminderCalendarRecurring}")
+            val id = try {
+                repository.save(toSave)
+            } catch (e: Exception) {
+                // Antes una excepción acá (ej. de Room) se hubiera perdido en
+                // silencio dentro de la coroutine — "se guarda" que en
+                // realidad no guarda nada es exactamente ese síntoma. Se deja
+                // explícito en logcat y se relanza (no se puede seguir sin un
+                // id válido de todas formas).
+                Log.e("BouncyNotesReminder", "repository.save() tiró una excepción, la nota NO se guardó", e)
+                throw e
+            }
             val savedId = if (note.id == 0L) id else note.id
+            Log.d("BouncyNotesReminder", "repository.save() OK, savedId=$savedId")
             applyReminderScheduling(toSave.copy(id = savedId), previous)
             onDone(savedId)
         }
@@ -181,11 +195,14 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             previous.reminderCalendarDates != note.reminderCalendarDates ||
             previous.reminderCalendarRecurring != note.reminderCalendarRecurring ||
             previous.deletedAt != note.deletedAt
+        Log.d("BouncyNotesReminder", "applyReminderScheduling() id=${note.id} reminderChanged=$reminderChanged " +
+            "(previous era null=${previous == null})")
         if (!reminderChanged) return
 
         if (note.reminderAt != null && note.deletedAt == null) {
             ReminderScheduler.schedule(app, note)
         } else {
+            Log.d("BouncyNotesReminder", "reminderAt es null o la nota está en papelera, se cancela en vez de programar")
             ReminderScheduler.cancel(app, note.id)
         }
     }

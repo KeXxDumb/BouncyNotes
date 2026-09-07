@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.widget
 
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dumb.bouncynotes.R
@@ -46,6 +47,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
             LoadedNote(0L, emptyList())
         }
         colors = resolveWidgetColors(context)
+        Log.d("BouncyNotesWidget", "LastEditedNoteWidgetFactory.onDataSetChanged() noteId=${loaded.noteId} filas=${loaded.rows.size}")
     }
 
     // Ya NO incluye una fila de header (ver widget_pinned_note.xml): el
@@ -55,6 +57,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
 
     override fun getViewAt(position: Int): RemoteViews {
         val noteId = loaded.noteId
+        Log.d("BouncyNotesWidget", "LastEditedNoteWidgetFactory.getViewAt($position) noteId=$noteId tipo=${loaded.rows[position]::class.simpleName}")
         return when (val row = loaded.rows[position]) {
             is NoteWidgetRow.TextRow -> getNoteWidgetTextRowView(context, colors, noteId, row)
             is NoteWidgetRow.ImageRow -> getNoteWidgetImageRowView(context, noteId, row)

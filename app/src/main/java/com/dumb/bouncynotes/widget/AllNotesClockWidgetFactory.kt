@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.widget
 
 import android.content.Context
+import android.util.Log
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dumb.bouncynotes.R
@@ -40,12 +41,14 @@ class AllNotesClockWidgetFactory(private val context: Context) : RemoteViewsServ
                 .take(MAX_NOTES)
         }
         colors = resolveWidgetColors(context)
+        Log.d("BouncyNotesWidget", "AllNotesClockWidgetFactory.onDataSetChanged() notas=${notes.size} ids=${notes.map { it.id }}")
     }
 
     override fun getCount(): Int = notes.size
 
     override fun getViewAt(position: Int): RemoteViews {
         val note = notes[position]
+        Log.d("BouncyNotesWidget", "AllNotesClockWidgetFactory.getViewAt($position) noteId=${note.id}")
         return RemoteViews(context.packageName, R.layout.widget_note_summary_row).apply {
             setTextViewText(R.id.RowTitle, (if (note.pinned) "📌 " else "") + note.title.ifBlank { "(Sin título)" })
             setTextColor(R.id.RowTitle, colors.textPrimary)

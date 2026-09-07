@@ -1023,6 +1023,11 @@ fun NoteEditScreen(
             initialCalendarRecurring = current.reminderCalendarRecurring,
             onDismiss = { showReminderSheet = false },
             onConfirm = { millis, days, calendarDates, calendarRecurring ->
+                android.util.Log.d(
+                    "BouncyNotesReminder",
+                    "onConfirm recibido: millis=$millis days=$days calendarDates=$calendarDates " +
+                        "calendarRecurring=$calendarRecurring (nota id=${current.id})"
+                )
                 // Antes esto solo tocaba current.reminderAt en memoria: el
                 // guardado real (y con él, ReminderScheduler.schedule) recién
                 // pasaba al salir de la pantalla con la flecha/back. Si el
@@ -2059,6 +2064,22 @@ private fun ReminderPickerSheet(
                     )
                     Spacer(Modifier.height(10.dp))
 
+                    // Material3 no tiene una variante de DatePicker que
+                    // oculte el año (solo existe el selector completo) —
+                    // no se puede sacar de la UI sin construir un selector
+                    // propio desde cero. Como paso intermedio, se aclara acá
+                    // que el año elegido abajo no importa en este modo (el
+                    // código YA lo ignora al calcular cuándo suena, ver
+                    // ReminderScheduler.nextCalendarTrigger).
+                    if (calendarRecurring) {
+                        Text(
+                            "El año que elijas abajo no importa en este modo — solo se usan el mes y el día.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+
                     if (calendarDates.isNotEmpty()) {
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
@@ -2099,9 +2120,13 @@ private fun ReminderPickerSheet(
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
-                            selectedDateAsMillis()?.let { millis ->
-                                calendarDates = calendarDates + millis
-                            }
+                            val millis = selectedDateAsMillis()
+                            android.util.Log.d(
+                                "BouncyNotesReminder",
+                                "Agregar fecha tocado: selectedDateAsMillis()=$millis " +
+                                    "(datePickerState.selectedDateMillis=${datePickerState.selectedDateMillis}, hour=$hour, minute=$minute)"
+                            )
+                            millis?.let { calendarDates = calendarDates + it }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -2179,6 +2204,11 @@ private fun ReminderPickerSheet(
                                 // fechas sirve como resumen, se usa la más
                                 // próxima nada más por prolijidad.
                                 val summary = calendarDates.min()
+                                android.util.Log.d(
+                                    "BouncyNotesReminder",
+                                    "Guardar (modo calendario) tocado: calendarDates=$calendarDates " +
+                                        "calendarRecurring=$calendarRecurring summary=$summary"
+                                )
                                 // Guardar en este modo vacía el de días de la
                                 // semana (mutuamente excluyentes): se pasa
                                 // selectedDays = emptySet() a propósito.

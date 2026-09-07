@@ -2,6 +2,7 @@ package com.dumb.bouncynotes
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -110,7 +111,9 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getLongExtra("openNoteId", 0L).takeIf { it != 0L }?.let { pendingOpenNoteId = it }
+        val rawOpenNoteId = intent.getLongExtra("openNoteId", 0L)
+        Log.d("BouncyNotesWidget", "MainActivity.onNewIntent() openNoteId=$rawOpenNoteId newNoteType=${intent.getStringExtra("newNoteType")}")
+        rawOpenNoteId.takeIf { it != 0L }?.let { pendingOpenNoteId = it }
         intent.getStringExtra("newNoteType")?.let { pendingNewNoteType = it }
     }
 
@@ -119,7 +122,9 @@ class MainActivity : FragmentActivity() {
         // Si la actividad se abrió desde la notificación de un recordatorio,
         // vamos a esa nota (por encima de la lista, no en su lugar — ver
         // comentario de arriba).
-        pendingOpenNoteId = intent?.getLongExtra("openNoteId", 0L)?.takeIf { it != 0L }
+        val rawOpenNoteId = intent?.getLongExtra("openNoteId", 0L) ?: 0L
+        Log.d("BouncyNotesWidget", "MainActivity.onCreate() openNoteId=$rawOpenNoteId newNoteType=${intent?.getStringExtra("newNoteType")}")
+        pendingOpenNoteId = rawOpenNoteId.takeIf { it != 0L }
         // Si se abrió desde el widget de "acciones rápidas" (nueva nota /
         // nuevo checklist), vamos a una nota en blanco de ese tipo — misma
         // convención que ya usa el botón "+" de la lista (noteId=0 significa
@@ -228,6 +233,7 @@ class MainActivity : FragmentActivity() {
                             // que "list" termine de asentarse.
                             LaunchedEffect(pendingOpenNoteId) {
                                 pendingOpenNoteId?.let { id ->
+                                    Log.d("BouncyNotesWidget", "LaunchedEffect navegando a edit/$id?type=TEXT")
                                     navController.navigate("edit/$id?type=TEXT")
                                     pendingOpenNoteId = null
                                 }

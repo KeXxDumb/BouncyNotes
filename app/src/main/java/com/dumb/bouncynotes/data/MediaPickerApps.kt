@@ -3,7 +3,6 @@ package com.dumb.bouncynotes.data
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -67,7 +66,16 @@ fun queryMediaPickerApps(context: Context): List<PickableApp> {
         type = "*/*"
         addCategory(Intent.CATEGORY_OPENABLE)
     }
-    val resolveInfos = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+    // Antes esto usaba MATCH_DEFAULT_ONLY, que exige que la Activity
+    // declare la categoría CATEGORY_DEFAULT en su intent-filter — pensado
+    // para resolver UNA sola actividad "por defecto" (como hace
+    // resolveActivity()), no para armar una lista de candidatos. Muchos
+    // administradores de archivos (MiXplorer, por ejemplo) exponen su
+    // Activity de ACTION_GET_CONTENT sin esa categoría, así que quedaban
+    // afuera — el chooser real del sistema NO filtra así, muestra
+    // cualquier Activity que matchee action+type+category, tenga o no
+    // CATEGORY_DEFAULT. Sin flags (0) reproduce ese mismo comportamiento.
+    val resolveInfos = pm.queryIntentActivities(intent, 0)
     return resolveInfos
         .distinctBy { it.activityInfo.packageName + "/" + it.activityInfo.name }
         .map { info ->

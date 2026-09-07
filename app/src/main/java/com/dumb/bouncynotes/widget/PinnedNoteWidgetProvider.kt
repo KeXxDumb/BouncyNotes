@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
 import com.dumb.bouncynotes.MainActivity
@@ -23,6 +24,9 @@ private const val ACTION_OPEN_NOTE = "com.dumb.bouncynotes.widget.ACTION_OPEN_NO
 private const val ACTION_RECONFIGURE = "com.dumb.bouncynotes.widget.ACTION_RECONFIGURE"
 private const val ACTION_TOGGLE_CHECKLIST_ITEM = "com.dumb.bouncynotes.widget.ACTION_TOGGLE_CHECKLIST_ITEM"
 const val EXTRA_NOTE_ID = "com.dumb.bouncynotes.widget.EXTRA_NOTE_ID"
+// Filtrar logcat con: adb logcat -s BouncyNotesWidget
+// (o "grep BouncyNotesWidget" sobre un logcat ya volcado a archivo).
+private const val TAG_WIDGET = "BouncyNotesWidget"
 private const val EXTRA_ITEM_INDEX = "com.dumb.bouncynotes.widget.EXTRA_ITEM_INDEX"
 
 class PinnedNoteWidgetProvider : AppWidgetProvider() {
@@ -59,9 +63,14 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
     // un BroadcastReceiver (como acá), así que se dejó como refuerzo.
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        Log.d(TAG_WIDGET, "onReceive() action=${intent.action} noteId=${intent.getLongExtra(EXTRA_NOTE_ID, -1L)}")
         when (intent.action) {
             ACTION_OPEN_NOTE -> {
                 val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
+                Log.d(TAG_WIDGET, "ACTION_OPEN_NOTE noteId=$noteId")
+                if (noteId == 0L) {
+                    Log.w(TAG_WIDGET, "noteId llegó en 0 — MainActivity va a IGNORAR esto (0L = \"nada que abrir\")")
+                }
                 val openIntent = Intent(context, MainActivity::class.java).apply {
                     putExtra("openNoteId", noteId)
                     data = Uri.parse("bouncynotes://widget/mainactivity/open/$noteId")
@@ -117,7 +126,9 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
         )
         try {
             pendingIntent.send()
+            Log.d(TAG_WIDGET, "sendActivityPendingIntent() .send() OK, requestCode=$requestCode data=${activityIntent.data}")
         } catch (e: PendingIntent.CanceledException) {
+            Log.e(TAG_WIDGET, "PendingIntent.send() tiró CanceledException, cae a startActivity() directo", e)
             // No debería pasar nunca (lo acabamos de crear nosotros mismos),
             // pero si el sistema lo cancela por lo que sea, mejor intentar
             // el camino directo que quedarse sin abrir nada.
@@ -271,12 +282,14 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
         // que comparten la plantilla sin action de updateWidget() de
         // arriba. El título YA NO usa esto — tiene su propio click directo
         // (ver openNotePendingIntent).
-        fun openNoteFillInIntent(noteId: Long): Intent =
-            Intent().apply {
+        fun openNoteFillInIntent(noteId: Long): Intent {
+            Log.d(TAG_WIDGET, "openNoteFillInIntent() construido con noteId=$noteId")
+            return Intent().apply {
                 action = ACTION_OPEN_NOTE
                 putExtra(EXTRA_NOTE_ID, noteId)
                 data = Uri.parse("bouncynotes://widget/open/$noteId")
             }
+        }
 
         fun toggleChecklistItemFillInIntent(noteId: Long, itemIndex: Int): Intent =
             Intent().apply {

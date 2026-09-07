@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import com.dumb.bouncynotes.MainActivity
 import java.util.Calendar
 
@@ -78,6 +79,15 @@ import java.util.Calendar
 //     entonces ya la veía en el pasado. Arreglado en NoteViewModel: solo se
 //     toca AlarmManager cuando el recordatorio realmente cambió.
 object ReminderScheduler {
+
+    // Filtrar logcat con: adb logcat -s BouncyNotesReminder
+    // (o, sin ADB, "grep BouncyNotesReminder" sobre un logcat ya volcado a
+    // archivo). Se agregó porque el bug "el modo calendario no guarda nada"
+    // no se pudo reproducir por revisión de código sola — con esto, el
+    // próximo repro debería mostrar EXACTAMENTE en qué paso se cae:
+    // ¿nunca llega a schedule()? ¿llega pero mainTrigger sale null/pasado?
+    // ¿AlarmManager tira una excepción?
+    private const val TAG = "BouncyNotesReminder"
 
     private const val ADVANCE_MILLIS = 60L * 60L * 1000L // 1 hora
     private const val ADVANCE_REQUEST_CODE_OFFSET = 1_000_000
@@ -187,29 +197,59 @@ object ReminderScheduler {
     }
 
     fun schedule(context: Context, note: Note) {
+        Log.d(TAG, "schedule() nota id=${note.id} reminderAt=${note.reminderAt} " +
+            "reminderDays=${note.reminderDays} reminderCalendarDates=${note.reminderCalendarDates} " +
+            "reminderCalendarRecurring=${note.reminderCalendarRecurring}")
         cancel(context, note.id)
 
         val mainTrigger: Long
         val calendarAnchor: Long?
         when {
             note.reminderDays.isNotEmpty() -> {
-                val anchor = note.reminderAt ?: return
-                mainTrigger = nextOccurrence(anchor, note.reminderDays) ?: return
+                val anchor = note.reminderAt
+                if (anchor == null) {
+                    Log.w(TAG, "modo días de la semana pero reminderAt es null, no se programa nada")
+                    return
+                }
+                val next = nextOccurrence(anchor, note.reminderDays)
+                if (next == null) {
+                    Log.w(TAG, "nextOccurrence() devolvió null (no debería pasar nunca), no se programa nada")
+                    return
+                }
+                mainTrigger = next
                 calendarAnchor = null
+                Log.d(TAG, "modo días de la semana -> próxima ocurrencia: $mainTrigger (${java.util.Date(mainTrigger)})")
             }
             note.reminderCalendarDates.isNotEmpty() -> {
-                val (anchor, trigger) = nextCalendarTrigger(note.reminderCalendarDates, note.reminderCalendarRecurring) ?: return
+                val result = nextCalendarTrigger(note.reminderCalendarDates, note.reminderCalendarRecurring)
+                if (result == null) {
+                    // Pasa si TODAS las fechas del set ya quedaron en el pasado
+                    // (modo "una vez") — es un estado válido, no un error.
+                    Log.w(TAG, "modo calendario: nextCalendarTrigger() devolvió null (¿todas las fechas ya pasaron?), no se programa nada")
+                    return
+                }
+                val (anchor, trigger) = result
                 mainTrigger = trigger
                 calendarAnchor = anchor
+                Log.d(TAG, "modo calendario -> ancla=$anchor trigger=$trigger (${java.util.Date(trigger)})")
             }
             else -> {
-                mainTrigger = note.reminderAt ?: return
+                val anchor = note.reminderAt
+                if (anchor == null) {
+                    Log.w(TAG, "modo simple pero reminderAt es null, no se programa nada")
+                    return
+                }
+                mainTrigger = anchor
                 calendarAnchor = null
+                Log.d(TAG, "modo simple -> trigger=$mainTrigger (${java.util.Date(mainTrigger)})")
             }
         }
 
         if (mainTrigger > System.currentTimeMillis()) {
+            Log.d(TAG, "programando alarma principal para nota ${note.id}")
             scheduleOne(context, note.id, mainTrigger, isAdvance = false, calendarAnchor = calendarAnchor)
+        } else {
+            Log.w(TAG, "mainTrigger ($mainTrigger) ya quedó en el pasado respecto de ahora (${System.currentTimeMillis()}), NO se programa la alarma principal")
         }
         val advanceAt = mainTrigger - ADVANCE_MILLIS
         // Si el recordatorio se programó con menos de 1 hora de anticipación,
@@ -249,10 +289,13 @@ object ReminderScheduler {
             if (!isAdvance) {
                 val info = AlarmManager.AlarmClockInfo(triggerAt, showIntent(context, noteId))
                 alarmManager.setAlarmClock(info, pi)
+                Log.d(TAG, "setAlarmClock OK: nota=$noteId triggerAt=$triggerAt (${java.util.Date(triggerAt)})")
             } else {
                 alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                Log.d(TAG, "setExactAndAllowWhileIdle OK (aviso 1h antes): nota=$noteId triggerAt=$triggerAt")
             }
         } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException al programar (¿falta el permiso de alarmas exactas?), cae a set() no exacto", e)
             alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
         }
     }
