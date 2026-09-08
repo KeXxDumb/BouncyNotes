@@ -11,6 +11,7 @@ import android.view.View
 import android.widget.RemoteViews
 import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.NoteType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -66,15 +67,31 @@ class LastEditedNoteWidgetProvider : AppWidgetProvider() {
             }
             views.setRemoteAdapter(R.id.ListView, serviceIntent)
 
-            // El ListView ya solo tiene CONTENIDO de la nota — reusa el
-            // mecanismo de "abrir nota"/"tildar ítem" del widget de nota
-            // fijada (PinnedNoteWidgetProvider resuelve esas actions de
-            // forma genérica, sin depender de qué widget lo haya disparado)
-            // — no hace falta duplicar ese receiver acá.
-            val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
-            val templatePendingIntent = PendingIntent.getBroadcast(
-                context, widgetId, templateIntent, PinnedNoteWidgetProvider.pendingIntentFlags()
-            )
+            val templatePendingIntent = if (current?.type == NoteType.CHECKLIST) {
+                // Mismo motivo que en PinnedNoteWidgetProvider: las notas de
+                // checklist siguen necesitando la plantilla de broadcast
+                // (para poder tildar por índice de ítem).
+                val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
+                PendingIntent.getBroadcast(context, widgetId, templateIntent, PinnedNoteWidgetProvider.pendingIntentFlags())
+            } else if (current != null) {
+                // BUG (reportado, Xiaomi/MIUI, confirmado con logcat): ver
+                // el comentario largo en PinnedNoteWidgetProvider — tocar
+                // una fila de contenido de texto no abría la nota. Como acá
+                // TODAS las filas de una nota de texto abren la MISMA nota
+                // fija, no hace falta el mecanismo de plantilla+fill-in
+                // para nada: la plantilla es directo el mismo
+                // PendingIntent.getActivity() ya confiable que usa el
+                // título de arriba.
+                PinnedNoteWidgetProvider.openNotePendingIntent(context, current.id)
+            } else {
+                // Sin notas todavía: no hay nada que abrir, pero
+                // setPendingIntentTemplate exige un PendingIntent válido —
+                // se deja uno inofensivo (abre la nota "0", que
+                // MainActivity ya descarta) ya que getCount() da 0 de
+                // todas formas (no hay filas que puedan dispararlo).
+                val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
+                PendingIntent.getBroadcast(context, widgetId, templateIntent, PinnedNoteWidgetProvider.pendingIntentFlags())
+            }
             views.setPendingIntentTemplate(R.id.ListView, templatePendingIntent)
 
             appWidgetManager.updateAppWidget(widgetId, views)

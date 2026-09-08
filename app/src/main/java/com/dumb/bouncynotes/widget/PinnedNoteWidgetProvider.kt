@@ -14,6 +14,7 @@ import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteRepository
+import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.SettingsCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -196,10 +197,10 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 // runBlocking puntual no es un problema real (mismo
                 // criterio que ya usa el propio Factory para traer la nota
                 // entera).
-                val title = runBlocking {
+                val note = runBlocking {
                     NoteDatabase.getInstance(context).noteDao().getById(noteId)
-                }?.title?.ifBlank { "(Sin título)" } ?: ""
-                views.setTextViewText(R.id.Title, title)
+                }
+                views.setTextViewText(R.id.Title, note?.title?.ifBlank { "(Sin título)" } ?: "")
                 // Click DIRECTO, no fill-in — ver el comentario largo en
                 // widget_pinned_note.xml sobre por qué esto es justo lo que
                 // arregla el bug de Xiaomi/MIUI.
@@ -219,20 +220,39 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 views.setRemoteAdapter(R.id.ListView, serviceIntent)
                 views.setEmptyView(R.id.ListView, R.id.Empty)
 
-                // El ListView ya solo tiene CONTENIDO de la nota (texto,
-                // imágenes, ítems de checklist) — nada que reconfigure el
-                // widget ni que abra la nota desde el header, así que la
-                // plantilla ahora solo hace falta para tildar ítems de
-                // checklist en el lugar (ACTION_TOGGLE_CHECKLIST_ITEM) y,
-                // si se toca el texto de una fila, abrir la nota
-                // (ACTION_OPEN_NOTE) — eso último sigue atado a la
-                // limitación de clicks en filas de ListView explicada en
-                // widget_pinned_note.xml, a diferencia del título de
-                // arriba.
-                val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
-                val templatePendingIntent = PendingIntent.getBroadcast(
-                    context, widgetId, templateIntent, pendingIntentFlags()
-                )
+                // BUG (reportado, Xiaomi/MIUI, confirmado con logcat):
+                // tocar una fila de CONTENIDO (texto/imagen) para abrir la
+                // nota no hacía nada — el log mostraba
+                // "sendActivityPendingIntent() .send() OK" (sin excepción)
+                // pero jamás un MainActivity.onCreate()/onNewIntent()
+                // después: el sistema acepta el envío del PendingIntent
+                // pero bloquea en silencio que la Activity se muestre.
+                // Encaja con las restricciones de "Background Activity
+                // Launch" — más estrictas para un PendingIntent de
+                // BROADCAST que dispara un startActivity() DENTRO de
+                // onReceive() (justo lo que hacía ACTION_OPEN_NOTE) que
+                // para un PendingIntent de Activity DIRECTO.
+                //
+                // El arreglo: ya que este widget siempre muestra UNA sola
+                // nota fija, TODAS las filas de una nota de tipo TEXTO
+                // quieren hacer lo MISMO al tocarse (abrir esta nota
+                // puntual) — no hace falta el mecanismo de
+                // "plantilla + fill-in Intent" en absoluto para eso: la
+                // plantilla puede ser directamente el mismo
+                // PendingIntent.getActivity() ya probado y confiable que
+                // usa el título (openNotePendingIntent). Las notas de tipo
+                // CHECKLIST siguen necesitando la plantilla de broadcast
+                // (ACTION_TOGGLE_CHECKLIST_ITEM), porque ahí cada fila SÍ
+                // necesita distinguirse por índice de ítem — pero esas
+                // filas ya no intentan abrir la nota al tocar el texto
+                // (arreglado antes: tocar el texto tilda, igual que el
+                // casillero), así que no les pega este problema.
+                val templatePendingIntent = if (note?.type == NoteType.CHECKLIST) {
+                    val templateIntent = Intent(context, PinnedNoteWidgetProvider::class.java)
+                    PendingIntent.getBroadcast(context, widgetId, templateIntent, pendingIntentFlags())
+                } else {
+                    openNotePendingIntent(context, noteId)
+                }
                 views.setPendingIntentTemplate(R.id.ListView, templatePendingIntent)
             }
 

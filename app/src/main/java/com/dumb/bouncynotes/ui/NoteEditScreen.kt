@@ -1925,21 +1925,34 @@ private fun ReminderPickerSheet(
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        // BUG CRÍTICO (reportado): guardar un recordatorio de calendario no
+        // guardaba nada. Causa real, confirmada con logcat: el botón
+        // "Guardar" de ESTE sheet nunca se llegaba a tocar — combinar
+        // .animateContentSize() directo con .verticalScroll() en el MISMO
+        // Modifier es una combinación con un problema conocido en Compose:
+        // verticalScroll mide su contenido con alto "infinito" (sin límite)
+        // para saber cuánto hay para scrollear, pero animateContentSize
+        // anima ese alto en dos pasadas — cuando el contenido crece (por
+        // ejemplo, al tocar "Agregar fecha" y sumar un chip a la lista), el
+        // scroll puede quedar con los límites calculados ANTES de que
+        // termine de crecer, dejando la parte de abajo (el botón "Guardar")
+        // inalcanzable por scroll aunque esté ahí, en el árbol de layout.
+        // El log lo mostraba clarito: "Agregar fecha tocado" se registraba
+        // bien, pero nunca llegaba el "onConfirm recibido" — la nota se
+        // terminaba guardando por el botón normal de la nota (que no toca
+        // el recordatorio para nada), sin que el diálogo llegara a
+        // confirmarse nunca.
+        //
+        // El arreglo: separar las dos responsabilidades en dos Column
+        // anidadas — la de AFUERA solo scrollea (sin animar tamaño), la de
+        // ADENTRO (el contenido real) es la que anima su propio tamaño. Así
+        // verticalScroll mide sobre un contenido que ya terminó de animarse,
+        // en vez de mezclarse con la animación.
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 24.dp)
                 .verticalScroll(rememberScrollState())
-                // Cambiar entre modo "días de la semana" (chips, sin
-                // DatePicker) y "calendario" (toggle + lista de fechas +
-                // DatePicker completo) cambia mucho el alto del contenido de
-                // golpe. Sin animateContentSize(), el ModalBottomSheet no se
-                // reacomodaba solo a ese nuevo alto — quedaba con el tamaño
-                // viejo (recortando contenido nuevo, o dejando un hueco de
-                // más) hasta que el usuario lo arrastraba a mano para que
-                // Compose volviera a medirlo. Con esto, el cambio de alto se
-                // anima solo, sin intervención del usuario.
-                .animateContentSize()
                 // La hora ya no se elige con teclado (ver TimeWheelPicker,
                 // el "disco numérico" de más abajo), pero se deja
                 // imePadding() igual como red de seguridad: si el sheet
@@ -1947,6 +1960,7 @@ private fun ReminderPickerSheet(
                 // quedar tapado por el teclado.
                 .imePadding()
         ) {
+        Column(modifier = Modifier.animateContentSize()) {
             Text("Recordatorio", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.height(8.dp))
 
@@ -2230,7 +2244,8 @@ private fun ReminderPickerSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 12.dp)
             )
-        }
+        } // cierra el Column interno (animateContentSize)
+        } // cierra el Column externo (verticalScroll)
     }
 }
 
