@@ -175,10 +175,11 @@
         </receiver>
 
         <!-- Reloj + lista de TODAS las notas (hasta 25 filas), sin Activity
-             de configuración: no hay nada que elegir. Ya NO usa
-             RemoteViewsService/RemoteViewsFactory (ver el comentario largo
-             en AllNotesClockWidgetProvider.kt) — las filas se arman a mano
-             directo en el propio provider, no hace falta un service. -->
+             de configuración: no hay nada que elegir. Usa ListView +
+             RemoteViewsFactory (AllNotesClockWidgetService) para poder
+             scrollear — ver el comentario largo en
+             AllNotesClockWidgetProvider.kt sobre por qué esto SÍ es seguro
+             frente al bug de MIUI que afectaba al mecanismo de broadcast. -->
         <receiver
             android:name=".widget.AllNotesClockWidgetProvider"
             android:exported="false"
@@ -190,6 +191,14 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/all_notes_clock_widget_info" />
         </receiver>
+
+        <!-- Igual criterio que PinnedNoteWidgetService/LastEditedNoteWidgetService:
+             solo el propio sistema puede bindearse a este servicio, ninguna
+             otra app. -->
+        <service
+            android:name=".widget.AllNotesClockWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
 
         <!-- Se abre al agregar el widget a la pantalla de inicio (para
              elegir qué nota le corresponde) y también al tocar el ícono de

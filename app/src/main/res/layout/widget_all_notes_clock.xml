@@ -1,4 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    ListView + RemoteViewsFactory (AllNotesClockWidgetService/Factory), NO
+    un LinearLayout armado a mano: ListView SÍ está soportado dentro de un
+    RemoteViews de widget de pantalla de inicio (a diferencia de ScrollView,
+    que NO lo está — eso seguía siendo cierto, no era el diagnóstico
+    equivocado). Lo que sí estaba mal era la conclusión de que "cada fila
+    abre una nota distinta" obligaba a resignar el scroll: un ListView
+    respaldado por RemoteViewsFactory SÍ puede diferenciar cada fila,
+    combinando una plantilla de PendingIntent con el fill-in Intent propio
+    de cada fila (mecanismo oficial de Android) — ver el comentario largo en
+    AllNotesClockWidgetProvider.openNoteTemplatePendingIntent() y en
+    AllNotesClockWidgetFactory.getViewAt() para el detalle completo de por
+    qué esta combinación puntual (plantilla de ACTIVITY, no de broadcast) no
+    repite el bug de MIUI que sí tenía el viejo ACTION_OPEN_NOTE.
+
+    FrameLayout + ListView/Empty superpuestos: mismo patrón que
+    widget_pinned_note.xml, para que setEmptyView() pueda alternar entre
+    los dos automáticamente.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/Layout"
     android:layout_width="match_parent"
@@ -23,60 +42,31 @@
         android:textSize="20sp"
         android:textStyle="bold" />
 
-    <!--
-        ScrollView + LinearLayout en vez de ListView + RemoteViewsFactory.
-
-        BUG (reportado, Xiaomi/MIUI, confirmado con logcat): tocar una fila
-        no abría nada — el log mostraba "sendActivityPendingIntent() .send()
-        OK" (sin excepción) pero nunca un MainActivity.onCreate()/
-        onNewIntent() después: el sistema aceptaba el envío del
-        PendingIntent pero bloqueaba en silencio que la Activity se
-        mostrara. Encaja con las restricciones de "Background Activity
-        Launch", más estrictas para un PendingIntent de BROADCAST que
-        dispara startActivity() dentro de onReceive() (lo que exige el
-        mecanismo de plantilla+fill-in de un ListView) que para un
-        PendingIntent de Activity DIRECTO.
-
-        A diferencia de "Nota fijada"/"Última nota editada" (que muestran
-        SIEMPRE la misma nota, así que se pudo poner un único
-        PendingIntent directo como plantilla de todo el ListView), acá cada
-        fila abre una nota DISTINTA — no hay una plantilla única posible.
-        La solución real es dejar de usar un ListView/RemoteViewsFactory
-        del todo: las filas se agregan a mano (RemoteViews.addView(), ver
-        AllNotesClockWidgetProvider) dentro de este LinearLayout, cada una
-        con su propio PendingIntent.getActivity() directo — al no ser
-        elementos de un adaptador, SÍ pueden tener click directo cada una,
-        sin ningún broadcast de por medio.
-
-        El costo: ya no hay carga perezosa (las ~25 notas se arman todas de
-        una, no bajo demanda al scrollear) — para filas de texto simple esto
-        no pesa nada real, y gana confiabilidad total en el click.
-    -->
-    <ScrollView
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <LinearLayout
-            android:id="@+id/RowsContainer"
+        <ListView
+            android:id="@+id/ListView"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
+            android:layout_height="match_parent"
+            android:divider="@null"
+            android:dividerHeight="0dp"
             android:paddingTop="4dp"
             android:paddingBottom="4dp" />
 
-    </ScrollView>
+        <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera
+             y privadas, igual que el resto de los widgets). -->
+        <TextView
+            android:id="@+id/Empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:padding="16dp"
+            android:text="@string/all_notes_clock_widget_empty"
+            android:textColor="?android:attr/textColorSecondary" />
 
-    <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera y
-         privadas, igual que el resto de los widgets). -->
-    <TextView
-        android:id="@+id/Empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:padding="16dp"
-        android:text="@string/all_notes_clock_widget_empty"
-        android:textColor="?android:attr/textColorSecondary" />
+    </FrameLayout>
 
 </LinearLayout>
