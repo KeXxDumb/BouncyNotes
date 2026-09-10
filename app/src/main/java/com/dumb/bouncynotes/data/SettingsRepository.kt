@@ -232,6 +232,17 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.WIDGET_THEME_MODE] = updated.widgetThemeMode.name
             prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
         }
+        // BUG (reportado): "Acciones rápidas" no reflejaba el tema/
+        // transparencia de widgets al cambiarlos. Causa real: SettingsCache
+        // (el caché sincrónico que leen los widgets, ver
+        // resolveWidgetColors) se actualiza de forma ASÍNCRONA, reaccionando
+        // al Flow de más arriba (.onEach { SettingsCache.save(...) }) — un
+        // refreshAll() llamado ACÁ, inmediatamente después de escribir en el
+        // DataStore, corre antes de que ese Flow llegue a reemitir y
+        // actualizar el caché. Los widgets terminaban leyendo el valor
+        // VIEJO. Se escribe el caché a mano, sincrónico, ANTES de refrescar,
+        // para no depender de esa carrera.
+        SettingsCache.save(context, updated)
         // Los widgets no observan el DataStore solos — sin esto, un cambio
         // de tema/transparencia acá se vería recién en el próximo
         // save/delete de una nota (lo que sea que dispare un refresh por

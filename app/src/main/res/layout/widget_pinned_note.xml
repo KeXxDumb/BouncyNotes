@@ -72,8 +72,15 @@
     <!-- Divisor entre el título (fijo, fuera de la lista) y el contenido
          de la nota — el color se aplica desde Kotlin
          (views.setInt(R.id.HeaderDivider, "setBackgroundColor", ...)),
-         ver WidgetColors.divider. -->
-    <View
+         ver WidgetColors.divider.
+
+         BUG (reportado): usar <View> acá rompía TODO el widget ("no se
+         pudo agregar", sin preview ni siquiera en la lista del launcher) —
+         RemoteViews para widgets de pantalla de inicio no tiene a
+         android.view.View en su lista de vistas permitidas (mismo tipo de
+         problema que ScrollView antes). Un LinearLayout vacío con
+         background SÍ está permitido y se ve exactamente igual. -->
+    <LinearLayout
         android:id="@+id/HeaderDivider"
         android:layout_width="match_parent"
         android:layout_height="1dp" />

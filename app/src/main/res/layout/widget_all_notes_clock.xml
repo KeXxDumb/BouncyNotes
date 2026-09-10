@@ -24,8 +24,11 @@
         android:textStyle="bold" />
 
     <!-- Divisor entre el reloj y la lista de notas — mismo criterio que
-         HeaderDivider en widget_pinned_note.xml. -->
-    <View
+         HeaderDivider en widget_pinned_note.xml (LinearLayout vacío, NO
+         View: RemoteViews para widgets de pantalla de inicio no tiene a
+         android.view.View en su lista de vistas permitidas — rompía TODO
+         el widget al agregarlo). -->
+    <LinearLayout
         android:id="@+id/HeaderDivider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
