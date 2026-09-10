@@ -176,9 +176,10 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
             // se resuelve claro/oscuro a mano, con el mismo criterio que
             // ya usa MainActivity, y se aplica color por color.
             val colors = resolveWidgetColors(context)
-            views.setInt(R.id.Layout, "setBackgroundResource", colors.backgroundRes)
+            applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Empty, colors.textSecondary)
             views.setTextColor(R.id.Title, colors.textPrimary)
+            views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
 
             if (noteId == null) {
                 views.setViewVisibility(R.id.HeaderRow, View.GONE)

@@ -81,7 +81,16 @@ data class AppSettings(
     // Guardado aparte para no depender de volver a consultar PackageManager
     // solo para mostrar "app fijada: X" en Ajustes (y porque el label podría
     // cambiar de idioma o dejar de resolverse si la app se desinstala).
-    val pinnedMediaPickerLabel: String = ""
+    val pinnedMediaPickerLabel: String = "",
+    // Independiente del tema de la app (settings.themeMode): los widgets
+    // viven en la pantalla de inicio, sobre el fondo/wallpaper del usuario,
+    // así que puede convenir un tema distinto al de la app en sí.
+    val widgetThemeMode: ThemeMode = ThemeMode.SYSTEM,
+    // Solo afecta el FONDO (la tarjeta/rectángulo detrás del contenido) —
+    // texto, íconos y divisores se calculan igual que siempre según
+    // widgetThemeMode, para que seguir siendo legibles sobre cualquier
+    // wallpaper.
+    val widgetTransparentBackground: Boolean = false
 )
 
 class SettingsRepository(private val context: Context) {
@@ -121,6 +130,8 @@ class SettingsRepository(private val context: Context) {
         val PINNED_MEDIA_PICKER_PACKAGE = stringPreferencesKey("pinned_media_picker_package")
         val PINNED_MEDIA_PICKER_ACTIVITY = stringPreferencesKey("pinned_media_picker_activity")
         val PINNED_MEDIA_PICKER_LABEL = stringPreferencesKey("pinned_media_picker_label")
+        val WIDGET_THEME_MODE = stringPreferencesKey("widget_theme_mode")
+        val WIDGET_TRANSPARENT_BACKGROUND = booleanPreferencesKey("widget_transparent_background")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -162,7 +173,11 @@ class SettingsRepository(private val context: Context) {
             }.getOrDefault(RightEdgeSwipeAction.SETTINGS),
             pinnedMediaPickerPackage = prefs[Keys.PINNED_MEDIA_PICKER_PACKAGE] ?: "",
             pinnedMediaPickerActivity = prefs[Keys.PINNED_MEDIA_PICKER_ACTIVITY] ?: "",
-            pinnedMediaPickerLabel = prefs[Keys.PINNED_MEDIA_PICKER_LABEL] ?: ""
+            pinnedMediaPickerLabel = prefs[Keys.PINNED_MEDIA_PICKER_LABEL] ?: "",
+            widgetThemeMode = runCatching {
+                ThemeMode.valueOf(prefs[Keys.WIDGET_THEME_MODE] ?: "SYSTEM")
+            }.getOrDefault(ThemeMode.SYSTEM),
+            widgetTransparentBackground = prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] ?: false
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -214,7 +229,17 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.PINNED_MEDIA_PICKER_PACKAGE] = updated.pinnedMediaPickerPackage
             prefs[Keys.PINNED_MEDIA_PICKER_ACTIVITY] = updated.pinnedMediaPickerActivity
             prefs[Keys.PINNED_MEDIA_PICKER_LABEL] = updated.pinnedMediaPickerLabel
+            prefs[Keys.WIDGET_THEME_MODE] = updated.widgetThemeMode.name
+            prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
         }
+        // Los widgets no observan el DataStore solos — sin esto, un cambio
+        // de tema/transparencia acá se vería recién en el próximo
+        // save/delete de una nota (lo que sea que dispare un refresh por
+        // otro motivo), no al tocar el ajuste.
+        com.dumb.bouncynotes.widget.PinnedNoteWidgetProvider.refreshAll(context)
+        com.dumb.bouncynotes.widget.LastEditedNoteWidgetProvider.refreshAll(context)
+        com.dumb.bouncynotes.widget.AllNotesClockWidgetProvider.refreshAll(context)
+        com.dumb.bouncynotes.widget.QuickActionsWidgetProvider.refreshAll(context)
     }
 
     suspend fun setLastViewMode(mode: String) {

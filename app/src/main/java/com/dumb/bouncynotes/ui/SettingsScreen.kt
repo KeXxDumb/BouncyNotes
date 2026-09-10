@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -817,6 +818,37 @@ fun SettingsScreen(
                             modifier = Modifier.padding(top = 4.dp)
                         )
                     }
+                }
+            }
+
+            item {
+                ExpandableSection(
+                    title = "Widgets",
+                    icon = Icons.Filled.Widgets,
+                    expanded = expandedSectionTitle == "Widgets",
+                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Widgets") null else "Widgets" }
+                ) {
+                    // Independiente del tema de la app (arriba, en
+                    // "Apariencia"): un widget vive sobre el wallpaper del
+                    // usuario en la pantalla de inicio, así que puede
+                    // convenir un tema distinto ahí.
+                    CycleSetting(
+                        label = "Tema de los widgets",
+                        options = listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro"),
+                        selected = settings.widgetThemeMode,
+                        onSelect = { v -> onUpdate { it.copy(widgetThemeMode = v) } }
+                    )
+                    SwitchSetting(
+                        label = "Fondo transparente",
+                        checked = settings.widgetTransparentBackground,
+                        onCheckedChange = { v -> onUpdate { it.copy(widgetTransparentBackground = v) } }
+                    )
+                    Text(
+                        "Solo afecta el fondo (se ve el wallpaper detrás) — el texto y los íconos se acomodan igual, según el tema elegido arriba, para que sigan siendo legibles.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 

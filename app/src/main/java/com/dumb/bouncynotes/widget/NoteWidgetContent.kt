@@ -116,6 +116,11 @@ fun getNoteWidgetChecklistRowView(
     row: NoteWidgetRow.ChecklistItemRow
 ): RemoteViews =
     RemoteViews(context.packageName, R.layout.pinned_note_widget_checklist_row).apply {
+        // Divisor arriba de la fila, igual que el checklist real de la nota
+        // (ChecklistEditor) — se oculta para el primer ítem, no tiene
+        // sentido separarlo de nada.
+        setViewVisibility(R.id.RowDivider, if (row.itemIndex == 0) android.view.View.GONE else android.view.View.VISIBLE)
+        setInt(R.id.RowDivider, "setBackgroundColor", colors.divider)
         setTextViewText(R.id.CheckboxGlyph, if (row.checked) "☑" else "☐")
         setTextColor(R.id.CheckboxGlyph, colors.textPrimary)
         setTextViewText(R.id.ChecklistText, row.text)

@@ -69,6 +69,15 @@
 
     </LinearLayout>
 
+    <!-- Divisor entre el título (fijo, fuera de la lista) y el contenido
+         de la nota — el color se aplica desde Kotlin
+         (views.setInt(R.id.HeaderDivider, "setBackgroundColor", ...)),
+         ver WidgetColors.divider. -->
+    <View
+        android:id="@+id/HeaderDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp" />
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

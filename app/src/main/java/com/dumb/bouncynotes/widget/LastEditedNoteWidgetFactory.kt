@@ -24,7 +24,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
     private data class LoadedNote(val noteId: Long, val rows: List<NoteWidgetRow>)
 
     private var loaded: LoadedNote = LoadedNote(0L, emptyList())
-    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
+    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, false)
 
     override fun onCreate() {}
 

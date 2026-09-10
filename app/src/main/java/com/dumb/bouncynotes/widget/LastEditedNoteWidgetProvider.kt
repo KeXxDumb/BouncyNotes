@@ -26,8 +26,9 @@ class LastEditedNoteWidgetProvider : AppWidgetProvider() {
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_note)
             val colors = resolveWidgetColors(context)
-            views.setInt(R.id.Layout, "setBackgroundResource", colors.backgroundRes)
+            applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Title, colors.textPrimary)
+            views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
 
             // Este widget no tiene Activity de configuración: siempre
             // muestra la lista (el estado "Empty" es propio del widget de

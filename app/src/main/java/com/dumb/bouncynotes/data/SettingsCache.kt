@@ -62,6 +62,8 @@ object SettingsCache {
         const val PINNED_MEDIA_PICKER_PACKAGE = "pinned_media_picker_package"
         const val PINNED_MEDIA_PICKER_ACTIVITY = "pinned_media_picker_activity"
         const val PINNED_MEDIA_PICKER_LABEL = "pinned_media_picker_label"
+        const val WIDGET_THEME_MODE = "widget_theme_mode"
+        const val WIDGET_TRANSPARENT_BACKGROUND = "widget_transparent_background"
     }
 
     /** Lectura 100% sincrónica. Segura de llamar antes de setContent(). */
@@ -102,7 +104,9 @@ object SettingsCache {
             rightEdgeSwipeAction = runCatching { RightEdgeSwipeAction.valueOf(prefs.getString(K.RIGHT_EDGE_SWIPE_ACTION, null) ?: d.rightEdgeSwipeAction.name) }.getOrDefault(d.rightEdgeSwipeAction),
             pinnedMediaPickerPackage = prefs.getString(K.PINNED_MEDIA_PICKER_PACKAGE, d.pinnedMediaPickerPackage) ?: d.pinnedMediaPickerPackage,
             pinnedMediaPickerActivity = prefs.getString(K.PINNED_MEDIA_PICKER_ACTIVITY, d.pinnedMediaPickerActivity) ?: d.pinnedMediaPickerActivity,
-            pinnedMediaPickerLabel = prefs.getString(K.PINNED_MEDIA_PICKER_LABEL, d.pinnedMediaPickerLabel) ?: d.pinnedMediaPickerLabel
+            pinnedMediaPickerLabel = prefs.getString(K.PINNED_MEDIA_PICKER_LABEL, d.pinnedMediaPickerLabel) ?: d.pinnedMediaPickerLabel,
+            widgetThemeMode = runCatching { ThemeMode.valueOf(prefs.getString(K.WIDGET_THEME_MODE, null) ?: d.widgetThemeMode.name) }.getOrDefault(d.widgetThemeMode),
+            widgetTransparentBackground = prefs.getBoolean(K.WIDGET_TRANSPARENT_BACKGROUND, d.widgetTransparentBackground)
         )
     }
 
@@ -149,6 +153,8 @@ object SettingsCache {
             putString(K.PINNED_MEDIA_PICKER_PACKAGE, settings.pinnedMediaPickerPackage)
             putString(K.PINNED_MEDIA_PICKER_ACTIVITY, settings.pinnedMediaPickerActivity)
             putString(K.PINNED_MEDIA_PICKER_LABEL, settings.pinnedMediaPickerLabel)
+            putString(K.WIDGET_THEME_MODE, settings.widgetThemeMode.name)
+            putBoolean(K.WIDGET_TRANSPARENT_BACKGROUND, settings.widgetTransparentBackground)
             apply()
         }
     }

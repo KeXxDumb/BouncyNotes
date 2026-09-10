@@ -14,7 +14,7 @@ class PinnedNoteWidgetFactory(
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private var rows: List<NoteWidgetRow> = emptyList()
-    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0)
+    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, false)
 
     override fun onCreate() {}
 

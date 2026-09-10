@@ -3,6 +3,7 @@ package com.dumb.bouncynotes.widget
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
@@ -20,15 +21,35 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_quick_actions)
             val colors = resolveWidgetColors(context)
-            views.setInt(R.id.Layout, "setBackgroundResource", colors.backgroundRes)
+            applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.NewNoteLabel, colors.textPrimary)
             views.setTextColor(R.id.NewChecklistLabel, colors.textPrimary)
+            // Botones más "notorios" (pedido): antes solo tenían el ripple
+            // de selectableItemBackground al tocar, sin ningún límite
+            // visible en reposo. Ahora tienen una píldora semitransparente
+            // de fondo siempre visible, más el ícono con el mismo tinte que
+            // el texto (antes quedaba con el color de ícono por defecto del
+            // sistema, sin relación con el tema claro/oscuro del widget).
+            views.setInt(R.id.NewNoteButton, "setBackgroundResource", colors.buttonBackgroundRes)
+            views.setInt(R.id.NewChecklistButton, "setBackgroundResource", colors.buttonBackgroundRes)
+            views.setInt(R.id.NewNoteIcon, "setColorFilter", colors.textPrimary)
+            views.setInt(R.id.NewChecklistIcon, "setColorFilter", colors.textPrimary)
 
             views.setOnClickPendingIntent(R.id.NewNoteButton, newNotePendingIntent(context, widgetId, "TEXT"))
             views.setOnClickPendingIntent(R.id.NewChecklistButton, newNotePendingIntent(context, widgetId, "CHECKLIST"))
 
             appWidgetManager.updateAppWidget(widgetId, views)
+        }
+
+        // No existía hasta ahora (este widget nunca necesitó refrescarse
+        // solo, ya que sus dos botones no dependen de ninguna nota) — hace
+        // falta para poder actualizar la apariencia (tema/transparencia)
+        // al tocar esos ajustes en la app, igual que los otros tres widgets.
+        fun refreshAll(context: Context) {
+            val manager = AppWidgetManager.getInstance(context)
+            val ids = manager.getAppWidgetIds(ComponentName(context, QuickActionsWidgetProvider::class.java))
+            ids.forEach { widgetId -> updateWidget(context, manager, widgetId) }
         }
 
         // No hay lista acá (ni RemoteViewsService/Factory): son solo dos

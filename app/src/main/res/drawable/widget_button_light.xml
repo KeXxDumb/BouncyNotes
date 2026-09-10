@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Botones más "notorios" (pedido): antes solo tenían el ripple de
+     selectableItemBackground, sin ningún límite visible en reposo. Este
+     fondo (una píldora semitransparente) les da un contorno visible
+     siempre, no solo al tocar. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="16dp" />
+    <solid android:color="#33000000" />
+</shape>
