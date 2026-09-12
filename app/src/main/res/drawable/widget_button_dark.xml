@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ver el comentario en widget_button_light.xml (bajado de 20% a 10% de
+     opacidad, se veía demasiado marcado). -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
     <corners android:radius="16dp" />
-    <solid android:color="#33FFFFFF" />
+    <solid android:color="#1AFFFFFF" />
 </shape>

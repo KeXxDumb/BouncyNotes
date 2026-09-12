@@ -1,95 +1,94 @@
 package com.dumb.bouncynotes.widget
 
+import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
-import android.util.Log
-import android.view.View
+import android.content.Intent
+import android.net.Uri
 import android.widget.RemoteViews
+import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
-import com.dumb.bouncynotes.data.ContentPart
-import com.dumb.bouncynotes.data.Note
-import com.dumb.bouncynotes.data.NoteDatabase
-import com.dumb.bouncynotes.data.NoteType
-import com.dumb.bouncynotes.data.parseNoteContent
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
-// Límite pedido: como mucho 25 notas en la lista, sin importar cuántas
-// tenga el usuario en total (un widget viaja por Binder con un límite chico
-// de tamaño total — 25 filas de una sola línea de texto entra sin problema,
-// pero no tendría sentido intentar listarlas TODAS si hay cientos).
-private const val MAX_NOTES = 25
-
-// Reloj + lista de TODAS las notas (hasta 25). Sin Activity de
-// configuración: no hay nada que elegir.
+// Reloj + lista scrolleable de TODAS las notas (hasta 25). Sin Activity de
+// configuración para elegir NOTA (no hay nada que elegir, siempre son
+// todas) — pero SÍ tiene una para la apariencia (tema/fondo), ver
+// WidgetAppearanceConfigActivity.
 //
-// BUG (reportado, Xiaomi/MIUI, confirmado con logcat): tocar una fila no
+// BUG YA RESUELTO (Xiaomi/MIUI, confirmado con logcat): tocar una fila no
 // abría nada — "sendActivityPendingIntent() .send() OK" sin excepción,
-// pero nunca un MainActivity.onCreate()/onNewIntent() después. Encaja con
-// las restricciones de "Background Activity Launch", más estrictas para
-// un PendingIntent de BROADCAST que dispara startActivity() dentro de
-// onReceive() (lo que exigía el ListView + RemoteViewsFactory de antes)
-// que para un PendingIntent de Activity DIRECTO.
+// pero nunca un MainActivity.onCreate()/onNewIntent() después. Encajaba
+// con las restricciones de "Background Activity Launch", más estrictas
+// para un PendingIntent de BROADCAST que dispara startActivity() dentro de
+// onReceive() que para uno de Activity DIRECTO.
 //
-// A diferencia de "Nota fijada"/"Última nota editada" (siempre la MISMA
-// nota, así que alcanzaba un único PendingIntent directo como plantilla de
-// todo el ListView), acá cada fila abre una nota DISTINTA — no existe una
-// plantilla única posible para eso. La solución real: dejar de usar
-// ListView/RemoteViewsFactory del todo. Las filas se agregan a mano
-// (RemoteViews.addView(), ver abajo) dentro de un LinearLayout envuelto en
-// ScrollView (ver widget_all_notes_clock.xml) — al no ser elementos de un
-// adaptador, cada una SÍ puede tener su propio click directo, sin ningún
-// broadcast de por medio. El costo: ya no hay carga perezosa (las ~25
-// notas se arman todas de una), pero para filas de texto simple eso no
-// pesa nada real.
+// Se probó sacar el ListView del todo (filas fijas con click directo cada
+// una) para evitar el broadcast, pero eso también sacaba el scroll de
+// verdad (ScrollView no está permitido en RemoteViews para widgets de
+// pantalla de inicio) — quedaba sin poder scrollear la lista.
+//
+// La solución real, que da las DOS cosas (scroll de verdad Y clicks
+// confiables): la plantilla del ListView (setPendingIntentTemplate) puede
+// ser un PendingIntent.getActivity() DIRECTO (no getBroadcast()) siempre
+// que la única diferencia entre filas sean EXTRAS del Intent — porque
+// Intent.fillIn() sí combina extras del fill-in de cada fila con el
+// Intent de la plantilla (a diferencia de action/data/component, que la
+// plantilla ya trae fijos y fillIn() no pisa). Como cada fila solo necesita
+// avisar "abrí ESTA nota" (un extra más, openNoteId), no hace falta que la
+// plantilla en sí sea distinta por fila — sigue siendo, en el fondo, la
+// MISMA clase de click directo que ya funciona de forma confiable en el
+// título de "Nota fijada"/"Última nota editada", sin pasar por ningún
+// receiver ni broadcast.
 class AllNotesClockWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         appWidgetIds.forEach { widgetId -> updateWidget(context, appWidgetManager, widgetId) }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        appWidgetIds.forEach { widgetId -> WidgetAppearancePrefs.removeWidget(context, widgetId) }
+    }
+
     companion object {
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_all_notes_clock)
-            val colors = resolveWidgetColors(context)
+            val colors = resolveWidgetColors(context, widgetId)
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.Empty, colors.textSecondary)
             views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
+            views.setOnClickPendingIntent(
+                R.id.ChangeGear,
+                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
+            )
 
-            // dao.getAll() ya viene ordenado "fijadas primero, después por
-            // updatedAt" (mismo orden que la lista de la app).
-            val notes = runBlocking {
-                NoteDatabase.getInstance(context).noteDao().getAll().first()
-                    .filter { it.deletedAt == null && !it.isPrivate }
-                    .take(MAX_NOTES)
+            val serviceIntent = Intent(context, AllNotesClockWidgetService::class.java).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                data = Uri.parse("bouncynotes://widget/allnotes/$widgetId")
             }
-            Log.d("BouncyNotesWidget", "AllNotesClockWidgetProvider notas=${notes.size} ids=${notes.map { it.id }}")
+            views.setRemoteAdapter(R.id.ListView, serviceIntent)
+            views.setEmptyView(R.id.ListView, R.id.Empty)
 
-            views.removeAllViews(R.id.RowsContainer)
-            if (notes.isEmpty()) {
-                views.setViewVisibility(R.id.Empty, View.VISIBLE)
-            } else {
-                views.setViewVisibility(R.id.Empty, View.GONE)
-                notes.forEach { note ->
-                    val row = RemoteViews(context.packageName, R.layout.widget_note_summary_row).apply {
-                        setTextViewText(R.id.RowTitle, (if (note.pinned) "📌 " else "") + note.title.ifBlank { "(Sin título)" })
-                        setTextColor(R.id.RowTitle, colors.textPrimary)
-                        setTextViewText(R.id.RowPreview, notePreviewLine(note))
-                        setTextColor(R.id.RowPreview, colors.textSecondary)
-                        // Click DIRECTO — ver el comentario largo arriba de
-                        // la clase sobre por qué esto es justo lo que
-                        // arregla el bug de Xiaomi/MIUI.
-                        setOnClickPendingIntent(R.id.Row, PinnedNoteWidgetProvider.openNotePendingIntent(context, note.id))
-                    }
-                    views.addView(R.id.RowsContainer, row)
-                }
+            // Plantilla de Activity DIRECTA — ver el comentario grande
+            // arriba de la clase. Sin openNoteId puesto acá: cada fila lo
+            // suma como extra vía su propio fill-in Intent
+            // (AllNotesClockWidgetFactory.getViewAt).
+            val openIntentTemplate = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                // Identidad única por INSTANCIA de widget (no por nota, acá
+                // varía por fila) — alcanza con el propio widgetId.
+                data = Uri.parse("bouncynotes://widget/allnotes/mainactivity/$widgetId")
             }
+            val templatePendingIntent = PendingIntent.getActivity(
+                context, widgetId, openIntentTemplate,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            views.setPendingIntentTemplate(R.id.ListView, templatePendingIntent)
 
             appWidgetManager.updateAppWidget(widgetId, views)
+            appWidgetManager.notifyAppWidgetViewDataChanged(widgetId, R.id.ListView)
         }
 
         // La llama NoteRepository después de cualquier save/delete/purgeOldTrash
@@ -99,24 +98,6 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, AllNotesClockWidgetProvider::class.java))
             ids.forEach { widgetId -> updateWidget(context, manager, widgetId) }
-        }
-
-        // Una línea de preview simple, en texto plano — no reproduce el
-        // preview "de verdad" de la lista de la app (NotePreviewContent, un
-        // @Composable, no usable acá) a propósito: alcanza con dar una idea
-        // del contenido para decidir si tocar la fila.
-        private fun notePreviewLine(note: Note): String {
-            if (note.type == NoteType.CHECKLIST) {
-                val total = note.checklistItems.size
-                val checked = note.checklistItems.count { it.checked }
-                return if (total == 0) "Checklist vacío" else "$checked/$total marcados"
-            }
-            val firstText = parseNoteContent(note.content)
-                .filterIsInstance<ContentPart.TextPart>()
-                .map { it.text.trim() }
-                .firstOrNull { it.isNotEmpty() }
-            val line = firstText?.lineSequence()?.firstOrNull()?.trim()
-            return if (line.isNullOrEmpty()) "(Sin contenido de texto)" else line
         }
     }
 }

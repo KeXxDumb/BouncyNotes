@@ -232,25 +232,20 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.WIDGET_THEME_MODE] = updated.widgetThemeMode.name
             prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
         }
-        // BUG (reportado): "Acciones rápidas" no reflejaba el tema/
-        // transparencia de widgets al cambiarlos. Causa real: SettingsCache
-        // (el caché sincrónico que leen los widgets, ver
-        // resolveWidgetColors) se actualiza de forma ASÍNCRONA, reaccionando
-        // al Flow de más arriba (.onEach { SettingsCache.save(...) }) — un
-        // refreshAll() llamado ACÁ, inmediatamente después de escribir en el
-        // DataStore, corre antes de que ese Flow llegue a reemitir y
-        // actualizar el caché. Los widgets terminaban leyendo el valor
-        // VIEJO. Se escribe el caché a mano, sincrónico, ANTES de refrescar,
-        // para no depender de esa carrera.
+        // BUG (ya resuelto) que motivó agregar esto: SettingsCache (el
+        // caché sincrónico que usan varias cosas fuera de Compose, como el
+        // autoSortChecked que lee el toggle de checklist del widget) se
+        // actualiza de forma ASÍNCRONA, reaccionando al Flow de más arriba
+        // (.onEach { SettingsCache.save(...) }) — sin esto, un código que
+        // lee el caché justo después de un update() podía encontrarse el
+        // valor VIEJO, todavía no propagado. Se escribe el caché a mano,
+        // sincrónico, para no depender de esa carrera.
+        //
+        // (La apariencia de cada widget en sí YA NO sale de acá — pasó a
+        // configurarse por widget individual, ver WidgetAppearancePrefs —
+        // así que ya no hace falta refrescarlos en cada cambio de
+        // cualquier ajuste de la app.)
         SettingsCache.save(context, updated)
-        // Los widgets no observan el DataStore solos — sin esto, un cambio
-        // de tema/transparencia acá se vería recién en el próximo
-        // save/delete de una nota (lo que sea que dispare un refresh por
-        // otro motivo), no al tocar el ajuste.
-        com.dumb.bouncynotes.widget.PinnedNoteWidgetProvider.refreshAll(context)
-        com.dumb.bouncynotes.widget.LastEditedNoteWidgetProvider.refreshAll(context)
-        com.dumb.bouncynotes.widget.AllNotesClockWidgetProvider.refreshAll(context)
-        com.dumb.bouncynotes.widget.QuickActionsWidgetProvider.refreshAll(context)
     }
 
     suspend fun setLastViewMode(mode: String) {

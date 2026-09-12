@@ -22,6 +22,7 @@
     android:initialLayout="@layout/widget_pinned_note"
     android:previewLayout="@layout/widget_pinned_note"
     android:configure="com.dumb.bouncynotes.widget.PinnedNoteWidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/pinned_note_widget_description" />

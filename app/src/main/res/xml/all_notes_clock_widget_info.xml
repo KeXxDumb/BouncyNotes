@@ -4,6 +4,9 @@
     para el reloj Y para que la lista scrolleable se vea con más de una o
     dos filas a la vez. resizeMode en los dos ejes por si el usuario lo
     quiere más chico o más grande igual.
+
+    configure/widgetFeatures: ver el comentario en
+    last_edited_note_widget_info.xml (misma config activity compartida).
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
@@ -13,6 +16,8 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_all_notes_clock"
     android:previewLayout="@layout/widget_all_notes_clock"
+    android:configure="com.dumb.bouncynotes.widget.WidgetAppearanceConfigActivity"
+    android:widgetFeatures="reconfigurable"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/all_notes_clock_widget_description" />

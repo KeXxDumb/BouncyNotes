@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.widget.RemoteViews
-import com.dumb.bouncynotes.data.SettingsCache
 import com.dumb.bouncynotes.data.ThemeMode
 
 data class WidgetColors(
@@ -13,10 +12,12 @@ data class WidgetColors(
     val textSecondary: Int,
     val divider: Int,
     val buttonBackgroundRes: Int,
-    // Solo afecta el fondo (ver applyWidgetBackground más abajo) — texto,
-    // divisores y botones se calculan igual, sin importar esto, para que
-    // sigan siendo legibles sobre cualquier wallpaper.
-    val transparentBackground: Boolean
+    // Solo lo usa applyWidgetBackground para decidir CÓMO aplicar
+    // backgroundRes (o si en cambio hay que dejarlo transparente del
+    // todo) — texto/divisor/botones no dependen de esto, siguen
+    // calculándose igual sea cual sea el modo de fondo, para que sigan
+    // siendo legibles sobre cualquier wallpaper.
+    val backgroundMode: WidgetBackgroundMode
 )
 
 private const val TEXT_PRIMARY_LIGHT = 0xFF1C1B1F.toInt()
@@ -32,16 +33,16 @@ private const val TEXT_SECONDARY_DARK = 0xFFCAC4D0.toInt()
 private const val DIVIDER_LIGHT = 0x4D000000
 private const val DIVIDER_DARK = 0x4DFFFFFF.toInt()
 
-// Independiente del tema de la app en sí (settings.themeMode): un widget
-// vive sobre el wallpaper del usuario, en la pantalla de inicio, así que
-// puede convenir elegir un tema distinto ahí (ver Ajustes > Widgets). No
-// se puede leer ?android:attr/colorBackground de un tema propio de forma
-// confiable desde un widget — así que se resuelve a mano, leyendo el mismo
-// caché sincrónico (SettingsCache) que ya existía para pintar el primer
-// frame de la app sin parpadeo.
-fun resolveWidgetColors(context: Context): WidgetColors {
-    val settings = SettingsCache.read(context)
-    val dark = when (settings.widgetThemeMode) {
+// Apariencia de ESTE widget puntual (widgetId) — independiente del tema de
+// la app en sí (settings.themeMode) y de cualquier otro widget: cada
+// instancia se configura por separado (ver WidgetAppearancePrefs y las
+// Activities de configuración de cada widget). No se puede leer
+// ?android:attr/colorBackground de un tema propio de forma confiable desde
+// un widget, así que se resuelve a mano.
+fun resolveWidgetColors(context: Context, widgetId: Int): WidgetColors {
+    val themeMode = WidgetAppearancePrefs.getThemeMode(context, widgetId)
+    val backgroundMode = WidgetAppearancePrefs.getBackgroundMode(context, widgetId)
+    val dark = when (themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
         ThemeMode.SYSTEM -> {
@@ -56,7 +57,7 @@ fun resolveWidgetColors(context: Context): WidgetColors {
             textSecondary = TEXT_SECONDARY_DARK,
             divider = DIVIDER_DARK,
             buttonBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_button_dark,
-            transparentBackground = settings.widgetTransparentBackground
+            backgroundMode = backgroundMode
         )
     } else {
         WidgetColors(
@@ -65,20 +66,29 @@ fun resolveWidgetColors(context: Context): WidgetColors {
             textSecondary = TEXT_SECONDARY_LIGHT,
             divider = DIVIDER_LIGHT,
             buttonBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_button_light,
-            transparentBackground = settings.widgetTransparentBackground
+            backgroundMode = backgroundMode
         )
     }
 }
 
 // Un solo lugar para aplicar el fondo del contenedor raíz de un widget —
-// así "transparente" queda resuelto una sola vez, en vez de repetir el
-// if/else en cada uno de los 4 providers. Transparente = sin la tarjeta de
-// fondo (ni clara ni oscura) para que se vea el wallpaper detrás; el resto
-// de los colores (texto, divisor, botones) no cambian.
+// así los 3 modos quedan resueltos una sola vez, en vez de repetir el
+// if/else en cada uno de los 4 providers.
 fun applyWidgetBackground(views: RemoteViews, layoutId: Int, colors: WidgetColors) {
-    if (colors.transparentBackground) {
-        views.setInt(layoutId, "setBackgroundColor", Color.TRANSPARENT)
-    } else {
-        views.setInt(layoutId, "setBackgroundResource", colors.backgroundRes)
+    when (colors.backgroundMode) {
+        WidgetBackgroundMode.SOLID -> views.setInt(layoutId, "setBackgroundResource", colors.backgroundRes)
+        // Reusa el MISMO drawable que SOLID (respeta el tema elegido, con
+        // sus esquinas redondeadas) pero dibujado con poca opacidad en vez
+        // de intentar mezclar colores a mano acá — más simple y
+        // predecible: ver widget_background_*_translucent.xml.
+        WidgetBackgroundMode.TRANSLUCENT -> {
+            val translucentRes = if (colors.backgroundRes == com.dumb.bouncynotes.R.drawable.widget_background_dark) {
+                com.dumb.bouncynotes.R.drawable.widget_background_dark_translucent
+            } else {
+                com.dumb.bouncynotes.R.drawable.widget_background_light_translucent
+            }
+            views.setInt(layoutId, "setBackgroundResource", translucentRes)
+        }
+        WidgetBackgroundMode.INVISIBLE -> views.setInt(layoutId, "setBackgroundColor", Color.TRANSPARENT)
     }
 }

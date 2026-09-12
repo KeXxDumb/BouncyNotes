@@ -10,16 +10,35 @@
     <!-- TextClock es una vista nativa de Android: se actualiza sola cada
          minuto sin que la app tenga que hacer nada — a diferencia de un
          widget de Compose/Glance, acá no hace falta programar ningún
-         refresco periódico para esto. -->
-    <TextClock
-        android:id="@+id/Clock"
-        android:layout_width="wrap_content"
+         refresco periódico para esto. ChangeGear (ícono de ajustes) cubre
+         versiones viejas de Android, antes de "reconfigurable" (ver
+         quick_actions_widget_info.xml, que da la opción nativa al mantener
+         presionado el widget en Android 12+). -->
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:format12Hour="h:mm a"
-        android:format24Hour="H:mm"
-        android:textSize="26sp"
-        android:textStyle="bold" />
+        android:orientation="horizontal">
+
+        <TextClock
+            android:id="@+id/Clock"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="center_vertical"
+            android:format12Hour="h:mm a"
+            android:format24Hour="H:mm"
+            android:textSize="26sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/ChangeGear"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center_vertical"
+            android:contentDescription="@string/widget_configure_appearance"
+            android:src="@android:drawable/ic_menu_manage" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

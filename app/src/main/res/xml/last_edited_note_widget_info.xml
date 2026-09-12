@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Sin android:configure: a diferencia del widget de "nota fijada", este
-    no necesita elegir nada al agregarlo — siempre muestra la nota con
-    updatedAt más reciente, sin importar cuál sea.
+    android:configure apunta a la config activity COMPARTIDA con los otros
+    dos widgets que tampoco eligen nota (ver WidgetAppearanceConfigActivity)
+    — acá solo se configura apariencia (tema/fondo), no hay ninguna nota
+    para elegir, siempre muestra la más reciente sola.
+
+    widgetFeatures="reconfigurable" (Android 12+): agrega la opción
+    "Configurar" al mantener presionado el widget, además del ícono de
+    ajustes propio del widget (ver ChangeNote en widget_pinned_note.xml,
+    reusado acá para abrir esta misma pantalla) que cubre versiones viejas
+    de Android.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
@@ -12,6 +19,8 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_pinned_note"
     android:previewLayout="@layout/widget_pinned_note"
+    android:configure="com.dumb.bouncynotes.widget.WidgetAppearanceConfigActivity"
+    android:widgetFeatures="reconfigurable"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/last_edited_note_widget_description" />

@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 private const val ACTION_OPEN_NOTE = "com.dumb.bouncynotes.widget.ACTION_OPEN_NOTE"
-private const val ACTION_RECONFIGURE = "com.dumb.bouncynotes.widget.ACTION_RECONFIGURE"
 private const val ACTION_TOGGLE_CHECKLIST_ITEM = "com.dumb.bouncynotes.widget.ACTION_TOGGLE_CHECKLIST_ITEM"
 const val EXTRA_NOTE_ID = "com.dumb.bouncynotes.widget.EXTRA_NOTE_ID"
 // Filtrar logcat con: adb logcat -s BouncyNotesWidget
@@ -37,7 +36,10 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        appWidgetIds.forEach { widgetId -> PinnedNoteWidgetPrefs.removeWidget(context, widgetId) }
+        appWidgetIds.forEach { widgetId ->
+            PinnedNoteWidgetPrefs.removeWidget(context, widgetId)
+            WidgetAppearancePrefs.removeWidget(context, widgetId)
+        }
     }
 
     // Los clicks dentro de la lista del widget (ListView + RemoteViewsService)
@@ -78,20 +80,6 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 }
                 sendActivityPendingIntent(context, noteId.toInt(), openIntent)
-            }
-            ACTION_RECONFIGURE -> {
-                val widgetId = intent.getIntExtra(
-                    AppWidgetManager.EXTRA_APPWIDGET_ID,
-                    AppWidgetManager.INVALID_APPWIDGET_ID
-                )
-                if (widgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
-                    val configIntent = Intent(context, PinnedNoteWidgetConfigActivity::class.java).apply {
-                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                        data = Uri.parse("bouncynotes://widget/mainactivity/reconfigure/$widgetId")
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                    }
-                    sendActivityPendingIntent(context, widgetId, configIntent)
-                }
             }
             ACTION_TOGGLE_CHECKLIST_ITEM -> {
                 val noteId = intent.getLongExtra(EXTRA_NOTE_ID, 0L)
@@ -175,7 +163,7 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
             // Un widget no puede usar el theming de Compose de la app —
             // se resuelve claro/oscuro a mano, con el mismo criterio que
             // ya usa MainActivity, y se aplica color por color.
-            val colors = resolveWidgetColors(context)
+            val colors = resolveWidgetColors(context, widgetId)
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Empty, colors.textSecondary)
             views.setTextColor(R.id.Title, colors.textPrimary)
@@ -185,7 +173,10 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.HeaderRow, View.GONE)
                 views.setViewVisibility(R.id.ListView, View.GONE)
                 views.setViewVisibility(R.id.Empty, View.VISIBLE)
-                views.setOnClickPendingIntent(R.id.Empty, reconfigurePendingIntent(context, widgetId))
+                views.setOnClickPendingIntent(
+                    R.id.Empty,
+                    configureActivityPendingIntent(context, widgetId, PinnedNoteWidgetConfigActivity::class.java)
+                )
             } else {
                 views.setViewVisibility(R.id.HeaderRow, View.VISIBLE)
                 views.setViewVisibility(R.id.ListView, View.VISIBLE)
@@ -206,7 +197,14 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 // widget_pinned_note.xml sobre por qué esto es justo lo que
                 // arregla el bug de Xiaomi/MIUI.
                 views.setOnClickPendingIntent(R.id.Title, openNotePendingIntent(context, noteId))
-                views.setOnClickPendingIntent(R.id.ChangeNote, reconfigurePendingIntent(context, widgetId))
+                // Click DIRECTO también para reconfigurar (antes iba por
+                // ACTION_RECONFIGURE, un broadcast) — mismo criterio que
+                // openNotePendingIntent, para no depender de ningún
+                // receiver de por medio.
+                views.setOnClickPendingIntent(
+                    R.id.ChangeNote,
+                    configureActivityPendingIntent(context, widgetId, PinnedNoteWidgetConfigActivity::class.java)
+                )
 
                 val serviceIntent = Intent(context, PinnedNoteWidgetService::class.java).apply {
                     putExtra(EXTRA_NOTE_ID, noteId)
@@ -287,15 +285,6 @@ class PinnedNoteWidgetProvider : AppWidgetProvider() {
                 context, noteId.toInt(), intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-        }
-
-        fun reconfigurePendingIntent(context: Context, widgetId: Int): PendingIntent {
-            val intent = Intent(context, PinnedNoteWidgetProvider::class.java).apply {
-                action = ACTION_RECONFIGURE
-                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                data = Uri.parse("bouncynotes://widget/reconfigure/$widgetId")
-            }
-            return PendingIntent.getBroadcast(context, widgetId, intent, pendingIntentFlags())
         }
 
         // Fill-in Intent (no PendingIntent): lo usa el Factory para las

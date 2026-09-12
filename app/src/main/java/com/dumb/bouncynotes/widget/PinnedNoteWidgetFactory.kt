@@ -14,7 +14,7 @@ class PinnedNoteWidgetFactory(
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private var rows: List<NoteWidgetRow> = emptyList()
-    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, false)
+    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, WidgetBackgroundMode.SOLID)
 
     override fun onCreate() {}
 
@@ -28,7 +28,7 @@ class PinnedNoteWidgetFactory(
     override fun onDataSetChanged() {
         val current = runBlocking { NoteDatabase.getInstance(context).noteDao().getById(noteId) }
         rows = current?.let { buildNoteWidgetRows(context, it) } ?: emptyList()
-        colors = resolveWidgetColors(context)
+        colors = resolveWidgetColors(context, widgetId)
     }
 
     // Ya NO incluye una fila de header (ver widget_pinned_note.xml): el

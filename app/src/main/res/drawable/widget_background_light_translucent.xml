@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mismo look que widget_background_light.xml (esquinas de 16dp) pero con
+     poca opacidad ("transparente", pedido) en vez de invisible del todo:
+     se sigue viendo el wallpaper de atrás, pero con una base clara encima. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="16dp" />
+    <solid android:color="#59FFFBFE" />
+</shape>

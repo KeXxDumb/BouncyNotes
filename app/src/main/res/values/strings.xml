@@ -13,4 +13,5 @@
     <string name="all_notes_clock_widget_label">Reloj y notas</string>
     <string name="all_notes_clock_widget_description">Reloj con la lista completa de tus notas (hasta 25), tocá una para abrirla</string>
     <string name="all_notes_clock_widget_empty">Todavía no tenés notas</string>
+    <string name="widget_configure_appearance">Configurar apariencia del widget</string>
 </resources>

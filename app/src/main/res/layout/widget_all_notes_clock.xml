@@ -6,22 +6,41 @@
     android:background="@drawable/widget_background_light"
     android:orientation="vertical">
 
-    <!-- TextClock: vista nativa, se actualiza sola cada minuto — mismo
-         truco que ya usa QuickActionsWidgetProvider, no hace falta
-         programar ningún refresco propio para esto. Más chico que el de
-         Acciones rápidas porque acá comparte espacio con la lista. -->
-    <TextClock
-        android:id="@+id/Clock"
+    <!-- TextClock (vista nativa, se actualiza sola cada minuto) + ícono de
+         ajustes para abrir la configuración de apariencia — ChangeGear
+         cubre versiones viejas de Android (antes de "reconfigurable", ver
+         all_notes_clock_widget_info.xml, que da la opción nativa al
+         mantener presionado el widget en Android 12+). -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:gravity="center"
+        android:orientation="horizontal"
         android:paddingTop="12dp"
         android:paddingBottom="4dp"
-        android:format12Hour="h:mm a"
-        android:format24Hour="H:mm"
-        android:textSize="20sp"
-        android:textStyle="bold" />
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
+
+        <TextClock
+            android:id="@+id/Clock"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="center_vertical"
+            android:gravity="center"
+            android:format12Hour="h:mm a"
+            android:format24Hour="H:mm"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <ImageView
+            android:id="@+id/ChangeGear"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_gravity="center_vertical"
+            android:contentDescription="@string/widget_configure_appearance"
+            android:src="@android:drawable/ic_menu_manage" />
+
+    </LinearLayout>
 
     <!-- Divisor entre el reloj y la lista de notas — mismo criterio que
          HeaderDivider en widget_pinned_note.xml (LinearLayout vacío, NO
@@ -35,50 +54,22 @@
         android:layout_marginTop="4dp" />
 
     <!--
-        LinearLayout simple (SIN ScrollView) en vez de ListView +
-        RemoteViewsFactory.
-
-        BUG (reportado, Xiaomi/MIUI, confirmado con logcat): tocar una fila
-        no abría nada — el log mostraba "sendActivityPendingIntent() .send()
-        OK" (sin excepción) pero nunca un MainActivity.onCreate()/
-        onNewIntent() después: el sistema aceptaba el envío del
-        PendingIntent pero bloqueaba en silencio que la Activity se
-        mostrara. Encaja con las restricciones de "Background Activity
-        Launch", más estrictas para un PendingIntent de BROADCAST que
-        dispara startActivity() dentro de onReceive() (lo que exige el
-        mecanismo de plantilla+fill-in de un ListView) que para un
-        PendingIntent de Activity DIRECTO.
-
-        A diferencia de "Nota fijada"/"Última nota editada" (que muestran
-        SIEMPRE la misma nota, así que se pudo poner un único
-        PendingIntent directo como plantilla de todo el ListView), acá cada
-        fila abre una nota DISTINTA — no hay una plantilla única posible.
-        La solución real es dejar de usar un ListView/RemoteViewsFactory
-        del todo: las filas se agregan a mano (RemoteViews.addView(), ver
-        AllNotesClockWidgetProvider) dentro de este LinearLayout, cada una
-        con su propio PendingIntent.getActivity() directo — al no ser
-        elementos de un adaptador, SÍ pueden tener click directo cada una,
-        sin ningún broadcast de por medio.
-
-        BUG DE SEGUIMIENTO (el primer intento de este arreglo envolvía esto
-        en un ScrollView): RemoteViews para widgets de pantalla de inicio
-        NO soporta ScrollView — la lista blanca de contenedores permitidos
-        es FrameLayout/LinearLayout/RelativeLayout/GridLayout nada más.
-        Un ScrollView ahí hace que el layout entero falle al inflarse, lo
-        que rompía TANTO el preview en la lista de widgets (que el sistema
-        arma inflando este XML crudo, sin correr código) COMO agregar el
-        widget de verdad ("No se pudo agregar el widget"). Por eso ahora es
-        un LinearLayout simple, sin scroll — las filas que no entran en el
-        alto actual del widget quedan recortadas (no hay error, solo no se
-        ven) hasta que el usuario agranda el widget con resizeMode
-        vertical, que ya está habilitado.
+        ListView + RemoteViewsFactory de nuevo (se había sacado por el bug
+        de clicks rotos en Xiaomi/MIUI, ver el historial en
+        AllNotesClockWidgetProvider.kt) — ScrollView no está permitido en
+        RemoteViews para widgets de pantalla de inicio, así que sin
+        ListView no hay forma de scrollear de verdad. El bug de clicks se
+        resolvió de otra forma (plantilla de Activity DIRECTA con datos por
+        extra, ver el comentario grande en el provider), así que se puede
+        volver a tener las dos cosas: scroll real Y clicks confiables.
     -->
-    <LinearLayout
-        android:id="@+id/RowsContainer"
+    <ListView
+        android:id="@+id/ListView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical"
+        android:divider="@null"
+        android:dividerHeight="0dp"
         android:paddingTop="4dp"
         android:paddingBottom="4dp" />
 

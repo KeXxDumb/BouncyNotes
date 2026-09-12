@@ -9,7 +9,7 @@ import com.dumb.bouncynotes.data.NoteDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
-class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsService.RemoteViewsFactory {
+class LastEditedNoteWidgetFactory(private val context: Context, private val widgetId: Int) : RemoteViewsService.RemoteViewsFactory {
 
     // Antes `noteId` y `rows` eran dos `var` SEPARADOS, actualizados juntos
     // en onDataSetChanged() pero sin ninguna garantía real de quedar
@@ -24,7 +24,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
     private data class LoadedNote(val noteId: Long, val rows: List<NoteWidgetRow>)
 
     private var loaded: LoadedNote = LoadedNote(0L, emptyList())
-    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, false)
+    private var colors: WidgetColors = WidgetColors(R.drawable.widget_background_light, 0, 0, 0, 0, WidgetBackgroundMode.SOLID)
 
     override fun onCreate() {}
 
@@ -46,7 +46,7 @@ class LastEditedNoteWidgetFactory(private val context: Context) : RemoteViewsSer
         } else {
             LoadedNote(0L, emptyList())
         }
-        colors = resolveWidgetColors(context)
+        colors = resolveWidgetColors(context, widgetId)
         Log.d("BouncyNotesWidget", "LastEditedNoteWidgetFactory.onDataSetChanged() noteId=${loaded.noteId} filas=${loaded.rows.size}")
     }
 

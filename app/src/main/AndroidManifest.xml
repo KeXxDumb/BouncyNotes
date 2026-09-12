@@ -174,11 +174,11 @@
                 android:resource="@xml/quick_actions_widget_info" />
         </receiver>
 
-        <!-- Reloj + lista de TODAS las notas (hasta 25 filas), sin Activity
-             de configuración: no hay nada que elegir. Ya NO usa
-             RemoteViewsService/RemoteViewsFactory (ver el comentario largo
-             en AllNotesClockWidgetProvider.kt) — las filas se arman a mano
-             directo en el propio provider, no hace falta un service. -->
+        <!-- Reloj + lista de TODAS las notas (hasta 25 filas). Tiene
+             Activity de configuración (apariencia únicamente, no hay
+             ninguna nota que elegir acá) — ver
+             WidgetAppearanceConfigActivity, compartida con los otros dos
+             widgets que tampoco eligen nota. -->
         <receiver
             android:name=".widget.AllNotesClockWidgetProvider"
             android:exported="false"
@@ -191,14 +191,33 @@
                 android:resource="@xml/all_notes_clock_widget_info" />
         </receiver>
 
+        <service
+            android:name=".widget.AllNotesClockWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
         <!-- Se abre al agregar el widget a la pantalla de inicio (para
-             elegir qué nota le corresponde) y también al tocar el ícono de
-             "cambiar nota" del encabezado, para reconfigurar sin tener que
-             quitar y volver a agregar el widget. exported=false: las
-             acciones APPWIDGET_CONFIGURE las dispara el sistema, no hace
-             falta exponerla a otras apps. -->
+             elegir qué nota le corresponde Y la apariencia) y también al
+             tocar el ícono de "cambiar nota" del encabezado, para
+             reconfigurar sin tener que quitar y volver a agregar el
+             widget. exported=false: las acciones APPWIDGET_CONFIGURE las
+             dispara el sistema, no hace falta exponerla a otras apps. -->
         <activity
             android:name=".widget.PinnedNoteWidgetConfigActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Notes">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Compartida por los tres widgets que NO eligen nota (Última nota
+             editada, Reloj y notas, Acciones rápidas): acá solo hay
+             apariencia (tema/fondo) para configurar, así que alcanza con
+             UNA sola Activity reusada por los tres — ver
+             WidgetAppearanceConfigActivity.kt. -->
+        <activity
+            android:name=".widget.WidgetAppearanceConfigActivity"
             android:exported="false"
             android:theme="@style/Theme.Notes">
             <intent-filter>

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- configure/widgetFeatures: ver el comentario en
+     last_edited_note_widget_info.xml (misma config activity compartida). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
     android:minHeight="90dp"
@@ -7,6 +9,8 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_quick_actions"
     android:previewLayout="@layout/widget_quick_actions"
+    android:configure="com.dumb.bouncynotes.widget.WidgetAppearanceConfigActivity"
+    android:widgetFeatures="reconfigurable"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/quick_actions_widget_description" />

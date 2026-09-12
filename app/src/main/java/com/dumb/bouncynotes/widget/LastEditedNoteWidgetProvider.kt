@@ -21,11 +21,15 @@ class LastEditedNoteWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { widgetId -> updateWidget(context, appWidgetManager, widgetId) }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        appWidgetIds.forEach { widgetId -> WidgetAppearancePrefs.removeWidget(context, widgetId) }
+    }
+
     companion object {
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_note)
-            val colors = resolveWidgetColors(context)
+            val colors = resolveWidgetColors(context, widgetId)
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Title, colors.textPrimary)
             views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
@@ -36,10 +40,14 @@ class LastEditedNoteWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.HeaderRow, View.VISIBLE)
             views.setViewVisibility(R.id.ListView, View.VISIBLE)
             views.setViewVisibility(R.id.Empty, View.GONE)
-            // Nada que reconfigurar acá (no elige nota, siempre la más
-            // reciente sola) — a diferencia del widget de nota fijada, que
-            // sí lo necesita.
-            views.setViewVisibility(R.id.ChangeNote, View.GONE)
+            // Nada que reconfigurar sobre qué NOTA mostrar (siempre la más
+            // reciente sola) — pero sí hay apariencia para configurar, así
+            // que ChangeNote se reusa para abrir esa pantalla en vez de
+            // ocultarse del todo.
+            views.setOnClickPendingIntent(
+                R.id.ChangeNote,
+                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
+            )
 
             // Mismo criterio que ya usaba el Factory antes de este fix: el
             // máximo updatedAt de verdad (dao.getAll() trae fijadas primero,

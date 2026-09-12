@@ -16,11 +16,15 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
         appWidgetIds.forEach { widgetId -> updateWidget(context, appWidgetManager, widgetId) }
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        appWidgetIds.forEach { widgetId -> WidgetAppearancePrefs.removeWidget(context, widgetId) }
+    }
+
     companion object {
 
         fun updateWidget(context: Context, appWidgetManager: AppWidgetManager, widgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_quick_actions)
-            val colors = resolveWidgetColors(context)
+            val colors = resolveWidgetColors(context, widgetId)
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.NewNoteLabel, colors.textPrimary)
@@ -38,6 +42,10 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
 
             views.setOnClickPendingIntent(R.id.NewNoteButton, newNotePendingIntent(context, widgetId, "TEXT"))
             views.setOnClickPendingIntent(R.id.NewChecklistButton, newNotePendingIntent(context, widgetId, "CHECKLIST"))
+            views.setOnClickPendingIntent(
+                R.id.ChangeGear,
+                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
+            )
 
             appWidgetManager.updateAppWidget(widgetId, views)
         }
