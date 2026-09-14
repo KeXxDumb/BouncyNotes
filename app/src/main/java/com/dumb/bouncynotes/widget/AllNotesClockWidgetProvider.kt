@@ -59,10 +59,6 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.Empty, colors.textSecondary)
             views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
-            views.setOnClickPendingIntent(
-                R.id.ChangeGear,
-                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
-            )
 
             val serviceIntent = Intent(context, AllNotesClockWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -83,7 +79,18 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             }
             val templatePendingIntent = PendingIntent.getActivity(
                 context, widgetId, openIntentTemplate,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                // BUG (reportado): tocar una fila solo abría la app, sin ir
+                // a la nota específica. Causa real: una plantilla de
+                // ListView (setPendingIntentTemplate) necesita
+                // FLAG_MUTABLE, no FLAG_IMMUTABLE — con IMMUTABLE el
+                // sistema no puede completarla con el fill-in Intent de
+                // cada fila (el openNoteId), así que se disparaba la
+                // plantilla base tal cual, sin ningún dato agregado. Los
+                // clicks DIRECTOS de este proyecto (Title, ChangeNote,
+                // etc., que nunca se completan con nada más) sí usan
+                // IMMUTABLE correctamente — esto era la única plantilla
+                // real que necesitaba MUTABLE.
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
             views.setPendingIntentTemplate(R.id.ListView, templatePendingIntent)
 

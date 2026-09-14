@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.dumb.bouncynotes.data.SettingsCache
 import com.dumb.bouncynotes.data.ThemeMode
 
 // Modo de fondo del widget, independiente de claro/oscuro/sistema:
@@ -34,10 +35,16 @@ object WidgetAppearancePrefs {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getThemeMode(context: Context, widgetId: Int): ThemeMode =
-        runCatching {
-            ThemeMode.valueOf(prefs(context).getString(themeKeyFor(widgetId), null) ?: ThemeMode.SYSTEM.name)
-        }.getOrDefault(ThemeMode.SYSTEM)
+    // Pedido: no hay que mostrar ningún ajuste de entrada — un widget recién
+    // agregado, sin configurar nunca, debe verse como una extensión natural
+    // de la app: mismo tema que la app (settings.themeMode), no "Sistema"
+    // fijo por separado. Solo se aparta de esto si el usuario reconfigura
+    // este widget puntual a mano (long press > Configurar).
+    fun getThemeMode(context: Context, widgetId: Int): ThemeMode {
+        val stored = prefs(context).getString(themeKeyFor(widgetId), null)
+            ?: return SettingsCache.read(context).themeMode
+        return runCatching { ThemeMode.valueOf(stored) }.getOrDefault(SettingsCache.read(context).themeMode)
+    }
 
     fun getBackgroundMode(context: Context, widgetId: Int): WidgetBackgroundMode =
         runCatching {

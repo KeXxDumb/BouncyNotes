@@ -196,26 +196,24 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
-        <!-- Se abre al agregar el widget a la pantalla de inicio (para
-             elegir qué nota le corresponde Y la apariencia) y también al
-             tocar el ícono de "cambiar nota" del encabezado, para
-             reconfigurar sin tener que quitar y volver a agregar el
-             widget. exported=false: las acciones APPWIDGET_CONFIGURE las
-             dispara el sistema, no hace falta exponerla a otras apps. -->
+        <!-- Elegir NOTA nada más — la apariencia se separó a
+             WidgetAppearanceConfigActivity (abajo), compartida por los
+             cuatro widgets y reachable con long press > Configurar. Esta
+             Activity YA NO es android:configure de este widget (ver
+             pinned_note_widget_info.xml) — se abre con un PendingIntent
+             directo propio desde el ícono "cambiar nota" o el estado
+             "Empty" (sin nota todavía) del propio widget, por eso no
+             necesita ningún intent-filter de APPWIDGET_CONFIGURE. -->
         <activity
             android:name=".widget.PinnedNoteWidgetConfigActivity"
             android:exported="false"
-            android:theme="@style/Theme.Notes">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.Notes" />
 
-        <!-- Compartida por los tres widgets que NO eligen nota (Última nota
-             editada, Reloj y notas, Acciones rápidas): acá solo hay
-             apariencia (tema/fondo) para configurar, así que alcanza con
-             UNA sola Activity reusada por los tres — ver
-             WidgetAppearanceConfigActivity.kt. -->
+        <!-- Compartida por los CUATRO widgets — acá solo hay apariencia
+             (tema/fondo) para configurar, nunca elegir nota. Se abre tanto
+             al agregar cualquiera de los cuatro widgets (android:configure
+             en cada *_widget_info.xml) como al reconfigurarlos después
+             (long press > Configurar) — ver WidgetAppearanceConfigActivity.kt. -->
         <activity
             android:name=".widget.WidgetAppearanceConfigActivity"
             android:exported="false"

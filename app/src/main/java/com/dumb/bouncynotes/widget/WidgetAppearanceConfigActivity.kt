@@ -27,16 +27,14 @@ import com.dumb.bouncynotes.data.ThemeMode
 import com.dumb.bouncynotes.ui.SettingsViewModel
 import com.dumb.bouncynotes.ui.theme.NotesTheme
 
-// Config activity COMPARTIDA por los tres widgets que no eligen nota
-// (Última nota editada, Reloj y notas, Acciones rápidas) — a diferencia de
-// "Nota fijada" (que además necesita elegir CUÁL nota, ver
-// PinnedNoteWidgetConfigActivity, que tiene su propia config activity), acá
-// lo único que hay que configurar es la apariencia, así que alcanza con
-// UNA sola Activity reusada por los tres en vez de triplicar el mismo
-// código. Se abre tanto al agregar el widget (android:configure) como al
-// reconfigurarlo después (long press > Configurar, o el ícono de ajustes
-// del propio widget en versiones viejas de Android — ver
-// configureActivityPendingIntent).
+// Config activity COMPARTIDA por los CUATRO widgets — acá solo hay
+// apariencia (tema/fondo) para configurar, nunca elegir nota (eso es aparte
+// para "Nota fijada", con su propio botón ChangeNote/Empty dentro del
+// widget — ver PinnedNoteWidgetProvider — separado a propósito de esta
+// pantalla). Se abre tanto al agregar cualquiera de los cuatro widgets
+// (android:configure) como al reconfigurarlo después (long press >
+// Configurar) — sin ningún ícono propio dentro del widget para esto,
+// redundante con esa opción nativa.
 class WidgetAppearanceConfigActivity : ComponentActivity() {
 
     private var appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID
@@ -70,7 +68,10 @@ class WidgetAppearanceConfigActivity : ComponentActivity() {
                 // Se lee el valor YA guardado (si se está reconfigurando un
                 // widget existente, no uno recién agregado) para que la
                 // pantalla arranque mostrando lo que ya estaba elegido, no
-                // los valores por defecto siempre.
+                // los valores por defecto siempre. Si nunca se configuró
+                // nada, el valor "por defecto" que se lee acá ya sigue el
+                // tema de la app (ver WidgetAppearancePrefs), no un
+                // "Sistema" fijo aparte.
                 var themeMode by remember { mutableStateOf(WidgetAppearancePrefs.getThemeMode(this, appWidgetId)) }
                 var backgroundMode by remember { mutableStateOf(WidgetAppearancePrefs.getBackgroundMode(this, appWidgetId)) }
                 ConfigScreen(
@@ -87,13 +88,15 @@ class WidgetAppearanceConfigActivity : ComponentActivity() {
     private fun saveAndFinish(themeMode: ThemeMode, backgroundMode: WidgetBackgroundMode) {
         WidgetAppearancePrefs.setAppearance(this, appWidgetId, themeMode, backgroundMode)
 
-        // Esta Activity es compartida por tres providers distintos — hay
-        // que fijarse cuál de los tres es DUEÑO de este appWidgetId puntual
-        // (AppWidgetManager lo sabe) para refrescar el correcto. Refrescar
-        // el equivocado pintaría temporalmente el layout de un widget
-        // distinto encima de este id hasta el próximo refresco real.
+        // Esta Activity es compartida por los CUATRO providers — hay que
+        // fijarse cuál es DUEÑO de este appWidgetId puntual (AppWidgetManager
+        // lo sabe) para refrescar el correcto. Refrescar el equivocado
+        // pintaría temporalmente el layout de un widget distinto encima de
+        // este id hasta el próximo refresco real.
         val manager = AppWidgetManager.getInstance(this)
         when (manager.getAppWidgetInfo(appWidgetId)?.provider?.className) {
+            PinnedNoteWidgetProvider::class.java.name ->
+                PinnedNoteWidgetProvider.updateWidget(this, manager, appWidgetId)
             LastEditedNoteWidgetProvider::class.java.name ->
                 LastEditedNoteWidgetProvider.updateWidget(this, manager, appWidgetId)
             AllNotesClockWidgetProvider::class.java.name ->

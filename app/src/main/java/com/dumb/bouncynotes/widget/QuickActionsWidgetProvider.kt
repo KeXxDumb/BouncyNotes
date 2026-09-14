@@ -42,10 +42,6 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
 
             views.setOnClickPendingIntent(R.id.NewNoteButton, newNotePendingIntent(context, widgetId, "TEXT"))
             views.setOnClickPendingIntent(R.id.NewChecklistButton, newNotePendingIntent(context, widgetId, "CHECKLIST"))
-            views.setOnClickPendingIntent(
-                R.id.ChangeGear,
-                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
-            )
 
             appWidgetManager.updateAppWidget(widgetId, views)
         }

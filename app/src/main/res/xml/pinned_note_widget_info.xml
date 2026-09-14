@@ -12,6 +12,13 @@
     updatePeriodMillis="0": no hay refresco periódico automático del
     sistema. El refresco lo dispara la propia app (NoteRepository, después
     de cada save/delete) llamando a PinnedNoteWidgetProvider.refreshAll().
+
+    android:configure apunta a la pantalla de APARIENCIA nada más (la misma
+    compartida con los otros tres widgets) — elegir NOTA es aparte, con su
+    propio botón dentro del widget (ChangeNote/Empty, ver
+    PinnedNoteWidgetProvider), no por acá. Así "long press > Configurar"
+    hace lo mismo en los cuatro widgets (solo apariencia), sin mezclar la
+    elección de nota ahí.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="110dp"
@@ -21,7 +28,7 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_pinned_note"
     android:previewLayout="@layout/widget_pinned_note"
-    android:configure="com.dumb.bouncynotes.widget.PinnedNoteWidgetConfigActivity"
+    android:configure="com.dumb.bouncynotes.widget.WidgetAppearanceConfigActivity"
     android:widgetFeatures="reconfigurable"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"

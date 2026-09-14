@@ -41,13 +41,11 @@ class LastEditedNoteWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.ListView, View.VISIBLE)
             views.setViewVisibility(R.id.Empty, View.GONE)
             // Nada que reconfigurar sobre qué NOTA mostrar (siempre la más
-            // reciente sola) — pero sí hay apariencia para configurar, así
-            // que ChangeNote se reusa para abrir esa pantalla en vez de
-            // ocultarse del todo.
-            views.setOnClickPendingIntent(
-                R.id.ChangeNote,
-                configureActivityPendingIntent(context, widgetId, WidgetAppearanceConfigActivity::class.java)
-            )
+            // reciente sola), y la apariencia ya no tiene un botón propio
+            // acá — se accede con long press > Configurar (ver
+            // widgetFeatures="reconfigurable" en el widget-info), que ya
+            // hace exactamente esto sin duplicar el acceso.
+            views.setViewVisibility(R.id.ChangeNote, View.GONE)
 
             // Mismo criterio que ya usaba el Factory antes de este fix: el
             // máximo updatedAt de verdad (dao.getAll() trae fijadas primero,

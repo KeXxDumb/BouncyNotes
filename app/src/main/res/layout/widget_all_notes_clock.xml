@@ -6,41 +6,22 @@
     android:background="@drawable/widget_background_light"
     android:orientation="vertical">
 
-    <!-- TextClock (vista nativa, se actualiza sola cada minuto) + ícono de
-         ajustes para abrir la configuración de apariencia — ChangeGear
-         cubre versiones viejas de Android (antes de "reconfigurable", ver
-         all_notes_clock_widget_info.xml, que da la opción nativa al
-         mantener presionado el widget en Android 12+). -->
-    <LinearLayout
+    <!-- TextClock: vista nativa, se actualiza sola cada minuto. La
+         apariencia se configura con long press > Configurar (ver
+         widgetFeatures="reconfigurable" en el widget-info) — sin ícono
+         propio en el widget, redundante con eso. -->
+    <TextClock
+        android:id="@+id/Clock"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center"
         android:paddingTop="12dp"
         android:paddingBottom="4dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
-
-        <TextClock
-            android:id="@+id/Clock"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_gravity="center_vertical"
-            android:gravity="center"
-            android:format12Hour="h:mm a"
-            android:format24Hour="H:mm"
-            android:textSize="20sp"
-            android:textStyle="bold" />
-
-        <ImageView
-            android:id="@+id/ChangeGear"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:layout_gravity="center_vertical"
-            android:contentDescription="@string/widget_configure_appearance"
-            android:src="@android:drawable/ic_menu_manage" />
-
-    </LinearLayout>
+        android:format12Hour="h:mm a"
+        android:format24Hour="H:mm"
+        android:textSize="20sp"
+        android:textStyle="bold" />
 
     <!-- Divisor entre el reloj y la lista de notas — mismo criterio que
          HeaderDivider en widget_pinned_note.xml (LinearLayout vacío, NO
