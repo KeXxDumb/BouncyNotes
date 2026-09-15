@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -49,10 +50,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.dumb.bouncynotes.data.NoteImage
 import com.dumb.bouncynotes.ui.components.NoteVideoPlayer
+import com.dumb.bouncynotes.ui.components.rememberVideoThumbnail
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -242,10 +245,23 @@ fun ImageViewerScreen(
                                 .clickable { scope.launch { pagerState.animateScrollToPage(index) } }
                         ) {
                             if (media.isVideo) {
+                                // Frame real del video en vez de un cuadro
+                                // gris fijo — mientras se decodifica (o si
+                                // falla) se ve el mismo gris con el ícono de
+                                // play que antes, ahora como fallback.
+                                val thumbnail = rememberVideoThumbnail(LocalContext.current, File(media.path).name)
                                 Box(
                                     modifier = Modifier.fillMaxSize().background(Color.DarkGray),
                                     contentAlignment = Alignment.Center
                                 ) {
+                                    if (thumbnail != null) {
+                                        Image(
+                                            bitmap = thumbnail,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
                                     Icon(Icons.Filled.PlayCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                                 }
                             } else {

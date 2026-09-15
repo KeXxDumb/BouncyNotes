@@ -17,6 +17,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -119,6 +120,7 @@ import com.dumb.bouncynotes.data.TitleMode
 import com.dumb.bouncynotes.data.WelcomeMessages
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.stripFormattingMarkers
+import com.dumb.bouncynotes.ui.components.rememberVideoThumbnail
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -937,6 +939,12 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
             }
             is ContentPart.VideoPart -> {
                 if (!showMedia) continue
+                // Frame real decodificado del video (ver
+                // rememberVideoThumbnail) en vez de un cuadro negro fijo —
+                // mientras se decodifica (o si falla) se ve el mismo fondo
+                // negro con el ícono de play que antes, ahora como fallback
+                // y no como estado permanente.
+                val thumbnail = rememberVideoThumbnail(context, part.fileName)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -945,9 +953,17 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
                         .background(Color.Black.copy(alpha = 0.85f)),
                     contentAlignment = Alignment.Center
                 ) {
+                    if (thumbnail != null) {
+                        Image(
+                            bitmap = thumbnail,
+                            contentDescription = "Video",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                     Icon(
                         Icons.Filled.PlayCircle,
-                        contentDescription = "Video",
+                        contentDescription = if (thumbnail == null) "Video" else null,
                         tint = Color.White,
                         modifier = Modifier.size(40.dp)
                     )
