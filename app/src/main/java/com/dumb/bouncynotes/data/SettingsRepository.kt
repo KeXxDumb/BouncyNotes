@@ -99,14 +99,9 @@ data class AppSettings(
     val showBackgroundInNotes: Boolean = false,
     // Si está activo, backgroundImagePath deja de elegirse a mano en
     // Ajustes: en cada apertura de la app (proceso nuevo, no cada rotación
-    // de pantalla) se sortea uno al azar de este pool y se guarda ahí.
-    val backgroundImageRotationEnabled: Boolean = false,
-    // Nombres de archivo (mismo formato/carpeta que backgroundImagePath,
-    // ImageStorage.imagesDir) que forman el pool para el sorteo de arriba.
-    // Guardado como un string único separado por comas (mismo criterio que
-    // ya se usa para los nombres de archivo de un grupo de imágenes en
-    // MarkdownContent.kt) en vez de agregar un tipo de dato nuevo a
-    // DataStore.
+    // de pantalla) se sortea uno al azar de este pool y se guarda ahí. La
+    // rotación es automática según el tamaño del pool (ver SettingsScreen):
+    // 0 imágenes = sin fondo, 1 = esa siempre, 2+ = se sortea una al abrir.
     val backgroundImagePaths: List<String> = emptyList()
 )
 
@@ -150,7 +145,6 @@ class SettingsRepository(private val context: Context) {
         val WIDGET_THEME_MODE = stringPreferencesKey("widget_theme_mode")
         val WIDGET_TRANSPARENT_BACKGROUND = booleanPreferencesKey("widget_transparent_background")
         val SHOW_BACKGROUND_IN_NOTES = booleanPreferencesKey("show_background_in_notes")
-        val BACKGROUND_IMAGE_ROTATION_ENABLED = booleanPreferencesKey("background_image_rotation_enabled")
         val BACKGROUND_IMAGE_POOL = stringPreferencesKey("background_image_pool")
     }
 
@@ -199,7 +193,6 @@ class SettingsRepository(private val context: Context) {
             }.getOrDefault(ThemeMode.SYSTEM),
             widgetTransparentBackground = prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] ?: false,
             showBackgroundInNotes = prefs[Keys.SHOW_BACKGROUND_IN_NOTES] ?: false,
-            backgroundImageRotationEnabled = prefs[Keys.BACKGROUND_IMAGE_ROTATION_ENABLED] ?: false,
             backgroundImagePaths = prefs[Keys.BACKGROUND_IMAGE_POOL]
                 ?.split(",")
                 ?.filter { it.isNotBlank() }
@@ -258,7 +251,6 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.WIDGET_THEME_MODE] = updated.widgetThemeMode.name
             prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
             prefs[Keys.SHOW_BACKGROUND_IN_NOTES] = updated.showBackgroundInNotes
-            prefs[Keys.BACKGROUND_IMAGE_ROTATION_ENABLED] = updated.backgroundImageRotationEnabled
             prefs[Keys.BACKGROUND_IMAGE_POOL] = updated.backgroundImagePaths.joinToString(",")
         }
         // BUG (ya resuelto) que motivó agregar esto: SettingsCache (el

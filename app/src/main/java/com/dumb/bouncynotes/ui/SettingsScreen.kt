@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
@@ -187,25 +188,44 @@ fun SettingsScreen(
         }
     }
 
-    fun handlePickedBackgroundImage(uri: Uri?) {
-        if (uri != null) {
-            val fileName = ImageStorage.copyFromUri(context, uri)
-            if (fileName != null) {
-                onUpdate { it.copy(backgroundImagePath = fileName) }
-            }
-        }
-    }
-
-    // Agrega varias imágenes al POOL de rotación (a diferencia de
-    // handlePickedBackgroundImage, que reemplaza la única imagen fija). Se
-    // agregan al final de la lista existente, sin duplicar si el usuario
-    // llega a elegir dos veces el mismo archivo original (comparación por
-    // nombre ya copiado, no por Uri original).
-    fun handlePickedBackgroundImagePool(uris: List<Uri>) {
+    // Único picker para el fondo de imagen (ver comentario grande más abajo
+    // sobre por qué se unificó): elegir 1 imagen la activa directo, elegir
+    // varias (o agregar más después con "+") activa la rotación
+    // automáticamente — no hay un switch aparte que haya que acordarse de
+    // prender.
+    fun handlePickedBackgroundImages(uris: List<Uri>) {
         if (uris.isEmpty()) return
         val newFileNames = uris.mapNotNull { ImageStorage.copyFromUri(context, it) }
         if (newFileNames.isEmpty()) return
-        onUpdate { s -> s.copy(backgroundImagePaths = (s.backgroundImagePaths + newFileNames).distinct()) }
+        onUpdate { s ->
+            val newPool = (s.backgroundImagePaths + newFileNames).distinct()
+            // Si todavía no había una imagen activa (pool vacío antes de
+            // este agregado) o la que estaba activa ya no está en el pool
+            // (se borró), activamos una ya mismo — así elegir la primera
+            // imagen ya "prende" el fondo, sin un paso aparte.
+            val newPath = if (s.backgroundImagePath == null || s.backgroundImagePath !in newPool) {
+                newPool.randomOrNull()
+            } else {
+                s.backgroundImagePath
+            }
+            s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
+        }
+    }
+
+    // Saca una imagen del pool. Si era la que estaba activa en pantalla,
+    // hay que elegir otra ya mismo (o apagar el fondo si no queda ninguna)
+    // — si no, backgroundImagePath quedaría apuntando a un archivo que ya
+    // no está ni en el pool ni en disco.
+    fun removeBackgroundImage(fileName: String) {
+        onUpdate { s ->
+            val newPool = s.backgroundImagePaths - fileName
+            val newPath = when {
+                newPool.isEmpty() -> null
+                s.backgroundImagePath == fileName -> newPool.random()
+                else -> s.backgroundImagePath
+            }
+            s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
+        }
     }
 
     // ACTION_GET_CONTENT armado a mano (no GetContent()/GetMultipleContents,
@@ -216,13 +236,25 @@ fun SettingsScreen(
     val backgroundImageLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        handlePickedBackgroundImage(extractPickedUris(result.resultCode, result.data).firstOrNull())
+        handlePickedBackgroundImages(extractPickedUris(result.resultCode, result.data))
     }
 
-    val backgroundImagePoolLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        handlePickedBackgroundImagePool(extractPickedUris(result.resultCode, result.data))
+    fun launchBackgroundImagePicker() {
+        // Si la app fijada se desinstaló o dejó de responder a esto, no
+        // crashear: se cae al selector genérico y se limpia lo fijado para
+        // no repetir el error la próxima vez.
+        try {
+            backgroundImageLauncher.launch(
+                buildMediaPickerIntent(
+                    "image/*", allowMultiple = true,
+                    pinnedPackage = settings.pinnedMediaPickerPackage,
+                    pinnedActivity = settings.pinnedMediaPickerActivity
+                )
+            )
+        } catch (e: ActivityNotFoundException) {
+            onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+            backgroundImageLauncher.launch(buildMediaPickerIntent("image/*", allowMultiple = true, "", ""))
+        }
     }
 
     if (showDisableTrashWarning) {
@@ -470,21 +502,66 @@ fun SettingsScreen(
                     SettingsDivider()
                     Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Spacer(Modifier.height(4.dp))
-                    if (settings.backgroundImagePath != null) {
+                    // Unificado: un solo pool de imágenes (antes había un
+                    // selector de una sola imagen y, aparte, un switch de
+                    // "rotación" con su propio selector múltiple — dos
+                    // flujos para lo mismo). Ahora: elegir la primera
+                    // imagen ya activa el fondo directo, y "+" para sumar
+                    // más activa la rotación automáticamente en cuanto hay
+                    // 2 o más (ver removeBackgroundImage/
+                    // handlePickedBackgroundImages más arriba y el sorteo
+                    // en MainActivity) — sin un paso aparte que haya que
+                    // acordarse de prender.
+                    if (settings.backgroundImagePaths.isNotEmpty()) {
                         BackgroundPreviewMockup(settings = settings, context = context)
                         Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
-                            AsyncImage(
-                                model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            TextButton(onClick = { onUpdate { it.copy(backgroundImagePath = null) } }) {
-                                Text("Quitar imagen")
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(settings.backgroundImagePaths, key = { it }) { fileName ->
+                                Box(modifier = Modifier.size(64.dp)) {
+                                    AsyncImage(
+                                        model = File(ImageStorage.imagesDir(context), fileName),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                                    )
+                                    IconButton(
+                                        onClick = { removeBackgroundImage(fileName) },
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(22.dp)
+                                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Close,
+                                            contentDescription = "Quitar imagen",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { launchBackgroundImagePicker() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Filled.Add, contentDescription = "Agregar imagen")
+                                }
                             }
                         }
+                        if (settings.backgroundImagePaths.size > 1) {
+                            Text(
+                                "Con más de una imagen, se sortea una al azar cada vez que se abre la app (no cada vez que se gira la pantalla).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         SwitchSetting(
                             label = "Monocromática (usa el color del tema)",
                             checked = settings.backgroundMonochrome,
@@ -535,96 +612,18 @@ fun SettingsScreen(
                             )
                         }
                         SettingsDivider()
-                        // Muestra la MISMA imagen/opacidad también adentro de
-                        // cada nota (NoteEditScreen), no solo en esta lista —
-                        // con un oscurecido fijo extra (opacidad configurada
-                        // + 15 puntos, tope 100%) para que el texto de la
-                        // nota siga siendo legible sobre la imagen.
+                        // Muestra la MISMA imagen también adentro de cada
+                        // nota (NoteEditScreen), no solo en esta lista — con
+                        // una opacidad un poco más baja (ver
+                        // NoteBackgroundImage.opacityReduction) para que el
+                        // texto de la nota siga siendo legible.
                         SwitchSetting(
                             label = "Mostrar también adentro de las notas",
                             checked = settings.showBackgroundInNotes,
                             onCheckedChange = { v -> onUpdate { it.copy(showBackgroundInNotes = v) } }
                         )
-                        SettingsDivider()
-                        SwitchSetting(
-                            label = "Alternar entre varias imágenes al abrir la app",
-                            checked = settings.backgroundImageRotationEnabled,
-                            onCheckedChange = { v -> onUpdate { it.copy(backgroundImageRotationEnabled = v) } }
-                        )
-                        if (settings.backgroundImageRotationEnabled) {
-                            Text(
-                                "Cada vez que se abre la app (no cada vez que se gira la pantalla) se elige una al azar de esta lista.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
-                            )
-                            if (settings.backgroundImagePaths.isNotEmpty()) {
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(settings.backgroundImagePaths, key = { it }) { fileName ->
-                                        Box(modifier = Modifier.size(64.dp)) {
-                                            AsyncImage(
-                                                model = File(ImageStorage.imagesDir(context), fileName),
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
-                                            )
-                                            IconButton(
-                                                onClick = {
-                                                    onUpdate { s -> s.copy(backgroundImagePaths = s.backgroundImagePaths - fileName) }
-                                                },
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .size(22.dp)
-                                                    .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                                            ) {
-                                                Icon(
-                                                    Icons.Filled.Close,
-                                                    contentDescription = "Quitar del pool",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                            }
-                            OutlinedButton(onClick = {
-                                try {
-                                    backgroundImagePoolLauncher.launch(
-                                        buildMediaPickerIntent(
-                                            "image/*", allowMultiple = true,
-                                            pinnedPackage = settings.pinnedMediaPickerPackage,
-                                            pinnedActivity = settings.pinnedMediaPickerActivity
-                                        )
-                                    )
-                                } catch (e: ActivityNotFoundException) {
-                                    onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
-                                    backgroundImagePoolLauncher.launch(buildMediaPickerIntent("image/*", allowMultiple = true, "", ""))
-                                }
-                            }) {
-                                Text("Agregar imágenes")
-                            }
-                        }
                     } else {
-                        OutlinedButton(onClick = {
-                            // Si la app fijada se desinstaló o dejó de
-                            // responder a esto, no crashear: se cae al
-                            // selector genérico y se limpia lo fijado para
-                            // no repetir el error la próxima vez.
-                            try {
-                                backgroundImageLauncher.launch(
-                                    buildMediaPickerIntent(
-                                        "image/*", allowMultiple = false,
-                                        pinnedPackage = settings.pinnedMediaPickerPackage,
-                                        pinnedActivity = settings.pinnedMediaPickerActivity
-                                    )
-                                )
-                            } catch (e: ActivityNotFoundException) {
-                                onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
-                                backgroundImageLauncher.launch(buildMediaPickerIntent("image/*", allowMultiple = false, "", ""))
-                            }
-                        }) {
+                        OutlinedButton(onClick = { launchBackgroundImagePicker() }) {
                             Text("Elegir imagen de fondo")
                         }
                     }

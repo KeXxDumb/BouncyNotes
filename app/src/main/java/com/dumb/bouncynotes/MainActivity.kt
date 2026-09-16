@@ -164,7 +164,10 @@ class MainActivity : FragmentActivity() {
             LaunchedEffect(Unit) {
                 if (!backgroundRotatedThisProcess) {
                     backgroundRotatedThisProcess = true
-                    if (settings.backgroundImageRotationEnabled && settings.backgroundImagePaths.isNotEmpty()) {
+                    // Rotación automática según el tamaño del pool (ver
+                    // SettingsScreen: 0 = sin fondo, 1 = esa siempre, 2+ =
+                    // sortea) — ya no depende de un switch aparte.
+                    if (settings.backgroundImagePaths.size > 1) {
                         val chosen = settings.backgroundImagePaths.random()
                         settingsViewModel.update { it.copy(backgroundImagePath = chosen) }
                     }

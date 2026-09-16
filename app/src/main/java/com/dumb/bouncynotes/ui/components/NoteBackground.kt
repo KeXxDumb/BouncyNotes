@@ -24,32 +24,41 @@ import java.io.File
 // ahora es compartido: si settings.showBackgroundInNotes está activo,
 // NoteEditScreen también lo dibuja detrás de una nota individual.
 //
-// extraDarkeningAlpha agrega una capa negra PLANA encima de la imagen, aparte
-// de settings.backgroundImageOpacity (que es la opacidad de la imagen en sí,
-// y se mantiene igual en los dos lugares para que no "cambie de aspecto" al
-// entrar a una nota). Adentro de una nota hay bastante más texto para leer
-// que en la lista, así que conviene un fondo más apagado ahí — en vez de
-// tocar el número que el usuario configuró (que se vería distinto también en
-// la lista), se sobrepone este oscurecido fijo aparte, solo en notas.
+// opacityReduction resta puntos a settings.backgroundImageOpacity SOLO para
+// esta pantalla (la lista sigue mostrando la opacidad configurada tal cual).
+// BUG encontrado en la primera versión de esto: en vez de restar, se
+// superponía una capa NEGRA aparte con alpha = opacidad configurada + 0.15
+// — con la opacidad en 75%, esa capa quedaba al 90% de negro sólido ENCIMA
+// de la imagen ya dibujada, así que el resultado visible terminaba siendo
+// altísimamente más oscuro que "un poco" (se veía como si la opacidad
+// estuviera en 15-25%, no en 75%): dos capas de opacidad no suman, se
+// MULTIPLICAN (visibilidad final ≈ opacidad × (1 − capa_negra)), así que
+// sumar 15 puntos a la capa negra en vez de a la opacidad de la imagen
+// aplastaba el resultado mucho más de lo esperado, y encima el efecto crecía
+// cuanto más alta ya estuviera la opacidad configurada. Restarle unos pocos
+// puntos directo a la MISMA opacidad de la imagen (una sola capa, un solo
+// alpha, sin componer dos) es lineal y predecible: 75% en la lista se ve
+// como 60% en la nota, no como 15%.
 @Composable
 fun NoteBackgroundImage(
     settings: AppSettings,
     context: Context,
-    extraDarkeningAlpha: Float = 0f
+    opacityReduction: Float = 0f
 ) {
     val path = settings.backgroundImagePath ?: return
-    if (settings.backgroundMonochrome) {
-        // BUG reportado: con el modo monocromático activo, mientras la
-        // imagen todavía no terminó de cargar (o si algún borde quedara sin
-        // cubrir) se veía el color "surface" de la paleta del tema — es el
-        // color de la Surface base de MainActivity, que se ve A TRAVÉS
-        // mientras no hay nada más pintado encima todavía. En modo
-        // monocromático la idea es una foto en blanco y negro sobre un
-        // fondo oscuro parejo, así que ese respaldo tiene que ser negro
-        // plano siempre, no un color que cambia según el color semilla
-        // elegido en Ajustes.
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-    }
+    // Respaldo opaco SIEMPRE presente (antes solo existía para el modo
+    // monocromático) mientras Coil todavía no terminó de decodificar el
+    // archivo de disco: sin esto, durante ese instante se ve lo que sea que
+    // haya debajo del Scaffold (que acá es transparente a propósito, ver
+    // NoteListScreen/NoteEditScreen) — un "flash" de la pantalla sin fondo
+    // apenas se abre la app, ya que Coil no pinta nada en el primer frame,
+    // recién cuando termina de leer y decodificar el bitmap.
+    Box(
+        modifier = Modifier.fillMaxSize().background(
+            if (settings.backgroundMonochrome) Color.Black else MaterialTheme.colorScheme.background
+        )
+    )
+    val effectiveOpacity = (settings.backgroundImageOpacity - opacityReduction).coerceIn(0f, 1f)
     AsyncImage(
         model = File(ImageStorage.imagesDir(context), path),
         contentDescription = null,
@@ -63,11 +72,8 @@ fun NoteBackgroundImage(
         // imagen (ya teñida o no) esté completamente dibujada.
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer(alpha = settings.backgroundImageOpacity)
+            .graphicsLayer(alpha = effectiveOpacity)
     )
-    if (extraDarkeningAlpha > 0f) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = extraDarkeningAlpha)))
-    }
     if (settings.backgroundFade) {
         // Un radialGradient dibuja un círculo, así que en una imagen
         // rectangular solo se nota el desvanecido cerca de las esquinas; los

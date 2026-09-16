@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -110,24 +111,10 @@ fun ImageViewerScreen(
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color.White)
                     }
                 },
-                actions = {
-                    IconButton(onClick = {
-                        onSaveToDevice(pagerState.currentPage) { ok ->
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    if (ok) "Guardado en el dispositivo" else "No se pudo guardar"
-                                )
-                            }
-                        }
-                    }) {
-                        Icon(Icons.Filled.Download, contentDescription = "Guardar en el dispositivo", tint = Color.White)
-                    }
-                    if (canDelete) {
-                        IconButton(onClick = { onDelete(pagerState.currentPage) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = Color.White)
-                        }
-                    }
-                },
+                // Guardar/eliminar se movieron abajo (ver el Row justo
+                // después del visor de la imagen/video): con la mano
+                // sosteniendo el celular, la esquina inferior se alcanza
+                // mucho más cómodo que la barra de arriba.
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
@@ -138,6 +125,21 @@ fun ImageViewerScreen(
                 .padding(padding)
                 .background(Color.Black)
         ) {
+            fun saveCurrentToDevice() {
+                onSaveToDevice(pagerState.currentPage) { ok ->
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            if (ok) "Guardado en el dispositivo" else "No se pudo guardar"
+                        )
+                    }
+                }
+            }
+            // null si canDelete es false: NoteVideoPlayer oculta el botón de
+            // eliminar por completo cuando esto es null, en vez de mostrarlo
+            // deshabilitado (mismo criterio que ya usaba el visor con
+            // canDelete antes de este cambio).
+            val deleteCurrentOrNull: (() -> Unit)? =
+                if (canDelete) { { onDelete(pagerState.currentPage) } } else null
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 HorizontalPager(
                     state = pagerState,
@@ -148,7 +150,13 @@ fun ImageViewerScreen(
                         NoteVideoPlayer(
                             fileName = File(media.path).name,
                             modifier = Modifier.fillMaxSize(),
-                            isActive = pagerState.currentPage == page
+                            isActive = pagerState.currentPage == page,
+                            // Guardar/eliminar viven en la barra propia del
+                            // reproductor (junto a velocidad y mute) en vez
+                            // de en el Row genérico de abajo — ese Row solo
+                            // se muestra para imágenes (ver más abajo).
+                            onSaveToDevice = { saveCurrentToDevice() },
+                            onDelete = deleteCurrentOrNull
                         )
                     } else {
                         var scale by remember(page) { mutableStateOf(1f) }
@@ -206,6 +214,27 @@ fun ImageViewerScreen(
                             .background(Color.Black.copy(alpha = 0.35f), CircleShape)
                     ) {
                         Icon(Icons.Filled.ChevronRight, contentDescription = "Siguiente", tint = Color.White)
+                    }
+                }
+            }
+
+            // Guardar/eliminar para IMÁGENES: para video, los mismos botones
+            // ya están en la barra propia de NoteVideoPlayer (ver arriba), así
+            // que este Row genérico solo hace falta acá.
+            val currentIsVideo = images.getOrNull(pagerState.currentPage)?.isVideo == true
+            if (!currentIsVideo) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { saveCurrentToDevice() }) {
+                        Icon(Icons.Filled.Download, contentDescription = "Guardar en el dispositivo", tint = Color.White)
+                    }
+                    if (canDelete) {
+                        IconButton(onClick = { deleteCurrentOrNull?.invoke() }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = Color.White)
+                        }
                     }
                 }
             }

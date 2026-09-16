@@ -65,7 +65,6 @@ object SettingsCache {
         const val WIDGET_THEME_MODE = "widget_theme_mode"
         const val WIDGET_TRANSPARENT_BACKGROUND = "widget_transparent_background"
         const val SHOW_BACKGROUND_IN_NOTES = "show_background_in_notes"
-        const val BACKGROUND_IMAGE_ROTATION_ENABLED = "background_image_rotation_enabled"
         const val BACKGROUND_IMAGE_POOL = "background_image_pool"
     }
 
@@ -111,7 +110,6 @@ object SettingsCache {
             widgetThemeMode = runCatching { ThemeMode.valueOf(prefs.getString(K.WIDGET_THEME_MODE, null) ?: d.widgetThemeMode.name) }.getOrDefault(d.widgetThemeMode),
             widgetTransparentBackground = prefs.getBoolean(K.WIDGET_TRANSPARENT_BACKGROUND, d.widgetTransparentBackground),
             showBackgroundInNotes = prefs.getBoolean(K.SHOW_BACKGROUND_IN_NOTES, d.showBackgroundInNotes),
-            backgroundImageRotationEnabled = prefs.getBoolean(K.BACKGROUND_IMAGE_ROTATION_ENABLED, d.backgroundImageRotationEnabled),
             backgroundImagePaths = (prefs.getString(K.BACKGROUND_IMAGE_POOL, null) ?: "")
                 .split(",")
                 .filter { it.isNotBlank() }
@@ -164,7 +162,6 @@ object SettingsCache {
             putString(K.WIDGET_THEME_MODE, settings.widgetThemeMode.name)
             putBoolean(K.WIDGET_TRANSPARENT_BACKGROUND, settings.widgetTransparentBackground)
             putBoolean(K.SHOW_BACKGROUND_IN_NOTES, settings.showBackgroundInNotes)
-            putBoolean(K.BACKGROUND_IMAGE_ROTATION_ENABLED, settings.backgroundImageRotationEnabled)
             putString(K.BACKGROUND_IMAGE_POOL, settings.backgroundImagePaths.joinToString(","))
             apply()
         }

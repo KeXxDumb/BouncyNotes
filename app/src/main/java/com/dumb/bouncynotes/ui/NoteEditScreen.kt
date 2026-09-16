@@ -1307,15 +1307,17 @@ fun NoteEditScreen(
         Box(modifier = Modifier.fillMaxSize()) {
         if (settings.showBackgroundInNotes) {
             // Mismo componente que dibuja el fondo en la lista de notas
-            // (NoteBackgroundImage), con la MISMA imagen y opacidad
-            // configuradas — pero acá se le suma un oscurecido fijo (+15
-            // puntos porcentuales sobre la opacidad configurada, tope 100%)
-            // porque una nota individual tiene mucho más texto para leer
-            // que una tarjeta de la lista.
+            // (NoteBackgroundImage), con la MISMA imagen — pero acá se le
+            // resta un poco a la opacidad configurada (una nota tiene mucho
+            // más texto para leer que una tarjeta de la lista). Antes esto
+            // sumaba una capa negra aparte y terminaba aplastando la imagen
+            // mucho más de lo esperado (ver comentario grande en
+            // NoteBackgroundImage.kt) — restar unos puntos a la MISMA
+            // opacidad es lineal y predecible.
             NoteBackgroundImage(
                 settings = settings,
                 context = context,
-                extraDarkeningAlpha = (settings.backgroundImageOpacity + 0.15f).coerceIn(0f, 1f)
+                opacityReduction = 0.15f
             )
         }
         Column(
