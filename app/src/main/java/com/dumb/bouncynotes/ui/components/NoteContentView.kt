@@ -120,15 +120,18 @@ fun LazyListScope.NoteContentView(context: Context, content: String, onImageClic
                 }
             }
             is ContentPart.VideoPart -> {
+                val occurrenceIndex = imageOccurrence
                 imageOccurrence++
                 item(key = "video-$partIndex") {
                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                        NoteVideoPlayer(
+                        VideoThumbnailPreview(
+                            context = context,
                             fileName = part.fileName,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(16f / 9f)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(16.dp)),
+                            onClick = { onImageClick(occurrenceIndex) }
                         )
                         if (part.caption.isNotBlank()) {
                             Text(

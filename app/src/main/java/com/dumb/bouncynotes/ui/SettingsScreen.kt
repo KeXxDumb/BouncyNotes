@@ -29,11 +29,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
@@ -193,6 +196,18 @@ fun SettingsScreen(
         }
     }
 
+    // Agrega varias imágenes al POOL de rotación (a diferencia de
+    // handlePickedBackgroundImage, que reemplaza la única imagen fija). Se
+    // agregan al final de la lista existente, sin duplicar si el usuario
+    // llega a elegir dos veces el mismo archivo original (comparación por
+    // nombre ya copiado, no por Uri original).
+    fun handlePickedBackgroundImagePool(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val newFileNames = uris.mapNotNull { ImageStorage.copyFromUri(context, it) }
+        if (newFileNames.isEmpty()) return
+        onUpdate { s -> s.copy(backgroundImagePaths = (s.backgroundImagePaths + newFileNames).distinct()) }
+    }
+
     // ACTION_GET_CONTENT armado a mano (no GetContent()/GetMultipleContents,
     // los contratos que se usaban antes): esos contratos arman el Intent
     // por dentro y no dejan apuntarlo a una Activity concreta — necesario
@@ -202,6 +217,12 @@ fun SettingsScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         handlePickedBackgroundImage(extractPickedUris(result.resultCode, result.data).firstOrNull())
+    }
+
+    val backgroundImagePoolLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        handlePickedBackgroundImagePool(extractPickedUris(result.resultCode, result.data))
     }
 
     if (showDisableTrashWarning) {
@@ -512,6 +533,78 @@ fun SettingsScreen(
                                 onValueChange = { v -> onUpdate { it.copy(topBarOpacity = v) } },
                                 valueRange = 0f..1f
                             )
+                        }
+                        SettingsDivider()
+                        // Muestra la MISMA imagen/opacidad también adentro de
+                        // cada nota (NoteEditScreen), no solo en esta lista —
+                        // con un oscurecido fijo extra (opacidad configurada
+                        // + 15 puntos, tope 100%) para que el texto de la
+                        // nota siga siendo legible sobre la imagen.
+                        SwitchSetting(
+                            label = "Mostrar también adentro de las notas",
+                            checked = settings.showBackgroundInNotes,
+                            onCheckedChange = { v -> onUpdate { it.copy(showBackgroundInNotes = v) } }
+                        )
+                        SettingsDivider()
+                        SwitchSetting(
+                            label = "Alternar entre varias imágenes al abrir la app",
+                            checked = settings.backgroundImageRotationEnabled,
+                            onCheckedChange = { v -> onUpdate { it.copy(backgroundImageRotationEnabled = v) } }
+                        )
+                        if (settings.backgroundImageRotationEnabled) {
+                            Text(
+                                "Cada vez que se abre la app (no cada vez que se gira la pantalla) se elige una al azar de esta lista.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)
+                            )
+                            if (settings.backgroundImagePaths.isNotEmpty()) {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(settings.backgroundImagePaths, key = { it }) { fileName ->
+                                        Box(modifier = Modifier.size(64.dp)) {
+                                            AsyncImage(
+                                                model = File(ImageStorage.imagesDir(context), fileName),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                                            )
+                                            IconButton(
+                                                onClick = {
+                                                    onUpdate { s -> s.copy(backgroundImagePaths = s.backgroundImagePaths - fileName) }
+                                                },
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .size(22.dp)
+                                                    .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Close,
+                                                    contentDescription = "Quitar del pool",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            OutlinedButton(onClick = {
+                                try {
+                                    backgroundImagePoolLauncher.launch(
+                                        buildMediaPickerIntent(
+                                            "image/*", allowMultiple = true,
+                                            pinnedPackage = settings.pinnedMediaPickerPackage,
+                                            pinnedActivity = settings.pinnedMediaPickerActivity
+                                        )
+                                    )
+                                } catch (e: ActivityNotFoundException) {
+                                    onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+                                    backgroundImagePoolLauncher.launch(buildMediaPickerIntent("image/*", allowMultiple = true, "", ""))
+                                }
+                            }) {
+                                Text("Agregar imágenes")
+                            }
                         }
                     } else {
                         OutlinedButton(onClick = {

@@ -108,6 +108,20 @@ class MainActivity : FragmentActivity() {
     private var pendingOpenNoteId by mutableStateOf<Long?>(null)
     private var pendingNewNoteType by mutableStateOf<String?>(null)
 
+    companion object {
+        // Vive en un companion object (estático, en memoria) a propósito:
+        // sobrevive a que la Activity se recree (girar la pantalla, cambios
+        // de configuración — pasa SIEMPRE en esta app, no hay
+        // android:configChanges en el manifest, ver bug #11 en
+        // estado-actual.md) pero se resetea solo cuando el PROCESO entero
+        // muere y se relanza, que es lo que de verdad significa "abrir la
+        // app" para el sorteo de imagen de fondo. Si esto viviera en
+        // rememberSaveable o en el ViewModel, girar la pantalla (que
+        // recrea la Activity pero NO el proceso) volvería a sortear una
+        // imagen distinta en cada rotación, no en cada apertura real.
+        private var backgroundRotatedThisProcess = false
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -141,6 +155,21 @@ class MainActivity : FragmentActivity() {
             // composición ya tiene el tema/colores/fondo correctos, sin
             // tener que distinguir "todavía no sé" de "ya sé".
             val settings by settingsViewModel.settings.collectAsState()
+
+            // Sorteo de fondo de imagen (ver comentario del companion
+            // object de arriba sobre por qué el guard vive ahí y no acá).
+            // Corre como mucho una vez por proceso; si la rotación no está
+            // activa o el pool está vacío, no hace nada (queda el
+            // backgroundImagePath que ya estuviera guardado de antes).
+            LaunchedEffect(Unit) {
+                if (!backgroundRotatedThisProcess) {
+                    backgroundRotatedThisProcess = true
+                    if (settings.backgroundImageRotationEnabled && settings.backgroundImagePaths.isNotEmpty()) {
+                        val chosen = settings.backgroundImagePaths.random()
+                        settingsViewModel.update { it.copy(backgroundImagePath = chosen) }
+                    }
+                }
+            }
 
             LaunchedEffect(settings.hideFromRecents) {
                 if (settings.hideFromRecents) {

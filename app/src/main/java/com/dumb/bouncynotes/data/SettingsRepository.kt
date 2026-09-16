@@ -90,7 +90,24 @@ data class AppSettings(
     // texto, íconos y divisores se calculan igual que siempre según
     // widgetThemeMode, para que seguir siendo legibles sobre cualquier
     // wallpaper.
-    val widgetTransparentBackground: Boolean = false
+    val widgetTransparentBackground: Boolean = false,
+    // Muestra la misma imagen de fondo (con su misma opacidad configurada
+    // arriba) también adentro de una nota individual, no solo en la lista.
+    // Al estar activo, se le suma un oscurecido fijo aparte (ver
+    // NoteBackgroundImage.extraDarkeningAlpha) porque adentro de una nota
+    // hay mucho más texto para leer que en la lista.
+    val showBackgroundInNotes: Boolean = false,
+    // Si está activo, backgroundImagePath deja de elegirse a mano en
+    // Ajustes: en cada apertura de la app (proceso nuevo, no cada rotación
+    // de pantalla) se sortea uno al azar de este pool y se guarda ahí.
+    val backgroundImageRotationEnabled: Boolean = false,
+    // Nombres de archivo (mismo formato/carpeta que backgroundImagePath,
+    // ImageStorage.imagesDir) que forman el pool para el sorteo de arriba.
+    // Guardado como un string único separado por comas (mismo criterio que
+    // ya se usa para los nombres de archivo de un grupo de imágenes en
+    // MarkdownContent.kt) en vez de agregar un tipo de dato nuevo a
+    // DataStore.
+    val backgroundImagePaths: List<String> = emptyList()
 )
 
 class SettingsRepository(private val context: Context) {
@@ -132,6 +149,9 @@ class SettingsRepository(private val context: Context) {
         val PINNED_MEDIA_PICKER_LABEL = stringPreferencesKey("pinned_media_picker_label")
         val WIDGET_THEME_MODE = stringPreferencesKey("widget_theme_mode")
         val WIDGET_TRANSPARENT_BACKGROUND = booleanPreferencesKey("widget_transparent_background")
+        val SHOW_BACKGROUND_IN_NOTES = booleanPreferencesKey("show_background_in_notes")
+        val BACKGROUND_IMAGE_ROTATION_ENABLED = booleanPreferencesKey("background_image_rotation_enabled")
+        val BACKGROUND_IMAGE_POOL = stringPreferencesKey("background_image_pool")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -177,7 +197,13 @@ class SettingsRepository(private val context: Context) {
             widgetThemeMode = runCatching {
                 ThemeMode.valueOf(prefs[Keys.WIDGET_THEME_MODE] ?: "SYSTEM")
             }.getOrDefault(ThemeMode.SYSTEM),
-            widgetTransparentBackground = prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] ?: false
+            widgetTransparentBackground = prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] ?: false,
+            showBackgroundInNotes = prefs[Keys.SHOW_BACKGROUND_IN_NOTES] ?: false,
+            backgroundImageRotationEnabled = prefs[Keys.BACKGROUND_IMAGE_ROTATION_ENABLED] ?: false,
+            backgroundImagePaths = prefs[Keys.BACKGROUND_IMAGE_POOL]
+                ?.split(",")
+                ?.filter { it.isNotBlank() }
+                ?: emptyList()
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -231,6 +257,9 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.PINNED_MEDIA_PICKER_LABEL] = updated.pinnedMediaPickerLabel
             prefs[Keys.WIDGET_THEME_MODE] = updated.widgetThemeMode.name
             prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
+            prefs[Keys.SHOW_BACKGROUND_IN_NOTES] = updated.showBackgroundInNotes
+            prefs[Keys.BACKGROUND_IMAGE_ROTATION_ENABLED] = updated.backgroundImageRotationEnabled
+            prefs[Keys.BACKGROUND_IMAGE_POOL] = updated.backgroundImagePaths.joinToString(",")
         }
         // BUG (ya resuelto) que motivó agregar esto: SettingsCache (el
         // caché sincrónico que usan varias cosas fuera de Compose, como el

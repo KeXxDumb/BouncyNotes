@@ -121,6 +121,7 @@ import com.dumb.bouncynotes.data.WelcomeMessages
 import com.dumb.bouncynotes.data.parseNoteContent
 import com.dumb.bouncynotes.data.stripFormattingMarkers
 import com.dumb.bouncynotes.ui.components.rememberVideoThumbnail
+import com.dumb.bouncynotes.ui.components.NoteBackgroundImage
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -228,102 +229,7 @@ fun NoteListScreen(
                 }
             }
     ) {
-        if (settings.backgroundImagePath != null) {
-            if (settings.backgroundMonochrome) {
-                // BUG reportado: con el modo monocromático activo, mientras la
-                // imagen todavía no terminó de cargar (o si algún borde
-                // quedara sin cubrir) se veía el color "surface" de la
-                // paleta del tema — es el color de la Surface base de
-                // MainActivity, que se ve A TRAVÉS mientras no hay nada más
-                // pintado encima todavía. En modo monocromático la idea es
-                // una foto en blanco y negro sobre un fondo oscuro parejo,
-                // así que ese respaldo tiene que ser negro plano siempre,
-                // no un color que cambia según el color semilla elegido en
-                // Ajustes (en modo normal esto no se notaba tanto porque,
-                // con tema oscuro, esa "surface" ya se ve parecida a negro
-                // de casualidad).
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-            }
-            AsyncImage(
-                model = File(ImageStorage.imagesDir(context), settings.backgroundImagePath),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                colorFilter = if (settings.backgroundMonochrome) {
-                    ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
-                } else null,
-                // BUG encontrado: antes esto usaba el parámetro `alpha` propio
-                // de AsyncImage (alpha = settings.backgroundImageOpacity) para
-                // desvanecer. Con "usar color del tema" desactivado se veía
-                // bien, pero activado, el resultado era raro: a 0% no se veía
-                // nada (bien) pero a un 1% ya se veía el color del tema a
-                // pleno brillo. La causa es cómo Skia combina, en un mismo
-                // draw, el colorFilter de tinte (BlendMode.Color) con el
-                // parámetro de alpha del Paint — la imagen de base sí se
-                // desvanecía, pero el tinte de color no lo hacía en la misma
-                // proporción. La solución es no depender de esa combinación:
-                // graphicsLayer aplica el alpha como una capa de composición
-                // APARTE, después de que la imagen (ya teñida o no) esté
-                // completamente dibujada — ahí sí desvanece parejo tanto la
-                // imagen como el tinte, porque para ese punto ya son un solo
-                // resultado final, no dos operaciones combinándose en un draw.
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(alpha = settings.backgroundImageOpacity)
-            )
-            if (settings.backgroundFade) {
-                // Un radialGradient dibuja un círculo, así que en una imagen
-                // rectangular solo se nota el desvanecido cerca de las esquinas (que
-                // es donde el círculo realmente se acerca al borde); los bordes
-                // superior/inferior/laterales quedaban casi sin desvanecer. En vez de
-                // un círculo, desvanecemos cada borde por separado con un degradado
-                // lineal (arriba, abajo, izquierda, derecha); donde se superponen
-                // (las esquinas) el desvanecido se nota un poco más fuerte, que es
-                // justamente el efecto de viñeta esperado.
-                val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .drawWithCache {
-                            val fadeWidth = size.width * 0.35f
-                            val fadeHeight = size.height * 0.35f
-                            onDrawBehind {
-                                // Izquierda
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
-                                        startX = 0f,
-                                        endX = fadeWidth
-                                    )
-                                )
-                                // Derecha
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
-                                        startX = size.width - fadeWidth,
-                                        endX = size.width
-                                    )
-                                )
-                                // Arriba
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
-                                        startY = 0f,
-                                        endY = fadeHeight
-                                    )
-                                )
-                                // Abajo
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
-                                        startY = size.height - fadeHeight,
-                                        endY = size.height
-                                    )
-                                )
-                            }
-                        }
-                )
-            }
-        }
+        NoteBackgroundImage(settings = settings, context = context)
 
     ModalNavigationDrawer(
         drawerState = drawerState,

@@ -11,6 +11,7 @@ import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.parseNoteContent
+import com.dumb.bouncynotes.data.stripFormattingMarkers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 
@@ -84,6 +85,10 @@ class AllNotesClockWidgetFactory(private val context: Context, private val widge
             .map { it.text.trim() }
             .firstOrNull { it.isNotEmpty() }
         val line = firstText?.lineSequence()?.firstOrNull()?.trim()
-        return if (line.isNullOrEmpty()) "(Sin contenido de texto)" else line
+        // Línea de una sola línea, truncada por la propia fila del widget:
+        // no vale la pena parsear los marcadores a spans acá (como sí hace
+        // buildInlineSpannable en las filas completas de los otros dos
+        // widgets) — alcanza con no mostrar los asteriscos/tildes crudos.
+        return if (line.isNullOrEmpty()) "(Sin contenido de texto)" else stripFormattingMarkers(line)
     }
 }

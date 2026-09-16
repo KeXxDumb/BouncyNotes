@@ -107,6 +107,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -176,8 +177,9 @@ import com.dumb.bouncynotes.ui.components.CompactCaptionField
 import com.dumb.bouncynotes.ui.components.FlatTextField
 import com.dumb.bouncynotes.ui.components.GalleryGrid
 import com.dumb.bouncynotes.ui.components.NoteContentView
-import com.dumb.bouncynotes.ui.components.NoteVideoPlayer
+import com.dumb.bouncynotes.ui.components.NoteBackgroundImage
 import com.dumb.bouncynotes.ui.components.RgbColorPicker
+import com.dumb.bouncynotes.ui.components.VideoThumbnailPreview
 import com.dumb.bouncynotes.ui.components.rememberImageAspectRatio
 import java.io.File
 
@@ -1095,6 +1097,12 @@ fun NoteEditScreen(
     val bottomBarCompensation = bottomBarHeight + bottomBarNavInset + 12.dp
 
     Scaffold(
+        // containerColor transparente cuando se muestra el fondo de la nota:
+        // si no, el propio Scaffold pinta su fondo opaco (colorScheme.background)
+        // DEBAJO del contenido, pero como acá el contenido no llega a cubrir
+        // el 100% del área (el Column tiene padding horizontal), sin esto se
+        // vería una franja opaca en los bordes en vez de la imagen.
+        containerColor = if (settings.showBackgroundInNotes) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {},
@@ -1105,6 +1113,16 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
+                },
+                // Mismo criterio que la barra superior de la lista de notas
+                // (NoteListScreen): semitransparente para dejar ver el fondo
+                // en vez de tapar la imagen con una franja sólida.
+                colors = if (settings.showBackgroundInNotes) {
+                    TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity)
+                    )
+                } else {
+                    TopAppBarDefaults.topAppBarColors()
                 }
             )
         },
@@ -1287,6 +1305,19 @@ fun NoteEditScreen(
         } else Modifier
 
         Box(modifier = Modifier.fillMaxSize()) {
+        if (settings.showBackgroundInNotes) {
+            // Mismo componente que dibuja el fondo en la lista de notas
+            // (NoteBackgroundImage), con la MISMA imagen y opacidad
+            // configuradas — pero acá se le suma un oscurecido fijo (+15
+            // puntos porcentuales sobre la opacidad configurada, tope 100%)
+            // porque una nota individual tiene mucho más texto para leer
+            // que una tarjeta de la lista.
+            NoteBackgroundImage(
+                settings = settings,
+                context = context,
+                extraDarkeningAlpha = (settings.backgroundImageOpacity + 0.15f).coerceIn(0f, 1f)
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1556,13 +1587,26 @@ fun NoteEditScreen(
                                     }
                                 }
                                 is EditSegment.VideoSeg -> {
+                                    // Índice plano de este video (misma lógica que
+                                    // ImageSeg/GallerySeg de arriba), para abrir el
+                                    // visor en la posición correcta al tocarlo.
+                                    val imageIndex = segments.take(index).sumOf { s ->
+                                        when (s) {
+                                            is EditSegment.ImageSeg -> 1
+                                            is EditSegment.GallerySeg -> s.fileNames.size
+                                            is EditSegment.VideoSeg -> 1
+                                            is EditSegment.TextSeg -> 0
+                                        }
+                                    }
                                     Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                                        NoteVideoPlayer(
+                                        VideoThumbnailPreview(
+                                            context = context,
                                             fileName = segment.fileName,
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .aspectRatio(16f / 9f)
-                                                .clip(RoundedCornerShape(16.dp))
+                                                .clip(RoundedCornerShape(16.dp)),
+                                            onClick = { viewerStartPos = imageIndex }
                                         )
                                         IconButton(
                                             onClick = { deleteMediaSegment(index) },

@@ -9,6 +9,7 @@ import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteType
+import com.dumb.bouncynotes.data.buildInlineSpannable
 import com.dumb.bouncynotes.data.parseNoteContent
 import java.io.File
 
@@ -98,7 +99,7 @@ fun loadNoteWidgetThumbnail(context: Context, fileName: String, maxDim: Int = 26
 
 fun getNoteWidgetTextRowView(context: Context, colors: WidgetColors, noteId: Long, row: NoteWidgetRow.TextRow): RemoteViews =
     RemoteViews(context.packageName, R.layout.pinned_note_widget_text_row).apply {
-        setTextViewText(R.id.RowText, row.text)
+        setTextViewText(R.id.RowText, buildInlineSpannable(row.text))
         setTextColor(R.id.RowText, colors.textSecondary)
         setOnClickFillInIntent(R.id.RowText, PinnedNoteWidgetProvider.openNoteFillInIntent(noteId))
     }

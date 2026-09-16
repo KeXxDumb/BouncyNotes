@@ -1,5 +1,11 @@
 package com.dumb.bouncynotes.data
 
+import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
+import android.text.style.TypefaceSpan
+
 // Sintaxis ligera al estilo Markdown para contenido embebido dentro del texto de una nota:
 // [[img:nombre_de_archivo.jpg|descripción opcional]]           -> una sola imagen (o gif)
 // [[gallery:LAYOUT:archivo1.jpg,archivo2.jpg,archivo3.jpg]]    -> varias imágenes agrupadas
@@ -222,6 +228,73 @@ fun removeImageOccurrence(content: String, occurrenceIndex: Int): String {
 // Para previews en la lista: quita los marcadores de formato para que se lea limpio.
 fun stripFormattingMarkers(text: String): String =
     text.replace("**", "").replace("~~", "").replace("`", "").replace("*", "")
+
+// Mismo algoritmo (mismos 4 marcadores) que buildInlineAnnotatedString en
+// ui/components/MarkdownText.kt, pero produciendo un CharSequence con Spans
+// de Android en vez de un AnnotatedString de Compose — un widget de home
+// screen (RemoteViews) no puede usar Compose para nada, ni para el texto.
+// Antes de esto, un widget con "**texto**" en la nota mostraba literalmente
+// los asteriscos en vez de negrita — nunca se llegó a parsear el marcador,
+// solo se mostraba el texto crudo de la nota (ver getNoteWidgetTextRowView).
+// No incluye links clicables (a diferencia de InlineMarkdownText): una fila
+// de RemoteViews solo puede tener UN fill-in Intent (ver bug #documentado
+// en NoteWidgetContent.kt sobre dos intents en la misma fila), que ya está
+// ocupado abriendo la nota completa.
+private fun findClosingMarker(text: String, from: Int, marker: String): Int? {
+    val idx = text.indexOf(marker, from)
+    return if (idx == -1 || idx == from) null else idx
+}
+
+fun buildInlineSpannable(text: String): CharSequence {
+    val builder = SpannableStringBuilder()
+    var i = 0
+    val n = text.length
+    while (i < n) {
+        if (text.startsWith("**", i)) {
+            val close = findClosingMarker(text, i + 2, "**")
+            if (close != null) {
+                val start = builder.length
+                builder.append(text.substring(i + 2, close))
+                builder.setSpan(StyleSpan(Typeface.BOLD), start, builder.length, 0)
+                i = close + 2
+                continue
+            }
+        }
+        if (text.startsWith("~~", i)) {
+            val close = findClosingMarker(text, i + 2, "~~")
+            if (close != null) {
+                val start = builder.length
+                builder.append(text.substring(i + 2, close))
+                builder.setSpan(StrikethroughSpan(), start, builder.length, 0)
+                i = close + 2
+                continue
+            }
+        }
+        if (text[i] == '`') {
+            val close = findClosingMarker(text, i + 1, "`")
+            if (close != null) {
+                val start = builder.length
+                builder.append(text.substring(i + 1, close))
+                builder.setSpan(TypefaceSpan("monospace"), start, builder.length, 0)
+                i = close + 1
+                continue
+            }
+        }
+        if (text[i] == '*') {
+            val close = findClosingMarker(text, i + 1, "*")
+            if (close != null) {
+                val start = builder.length
+                builder.append(text.substring(i + 1, close))
+                builder.setSpan(StyleSpan(Typeface.ITALIC), start, builder.length, 0)
+                i = close + 1
+                continue
+            }
+        }
+        builder.append(text[i])
+        i++
+    }
+    return builder
+}
 
 // Una nota se considera vacía si no tiene título, ni texto, ni imágenes/videos/tareas.
 fun isNoteEmpty(note: Note): Boolean {
