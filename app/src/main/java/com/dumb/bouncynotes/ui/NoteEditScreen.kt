@@ -409,20 +409,32 @@ fun NoteEditScreen(
     var showMoreSheet by remember { mutableStateOf(false) }
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
-    var isEditing by rememberSaveable { mutableStateOf(true) }
+    // BUG encontrado: esto arrancaba siempre en `true` y se "corregía" recién
+    // en el LaunchedEffect(noteId) de más abajo, según settings.doubleTapToEdit
+    // — pero esa corrección pasa DESPUÉS de la primera composición, así que
+    // Crossfade/AnimatedContent (más abajo) alcanzan a ver el valor `true`
+    // inicial y LUEGO el cambio a `false`, y lo animan como si fuera un
+    // cambio de modo real hecho por el usuario. Resultado: abrir una nota
+    // que arranca en modo lectura mostraba de encima la animación de "modo
+    // lectura", sin que el usuario tocara nada. La solución real es no
+    // arrancar con un valor que hay que corregir: noteId y
+    // settings.doubleTapToEdit ya están disponibles ACÁ MISMO, sin esperar
+    // ningún efecto asincrónico (lo único que sí necesita esperar a la base
+    // de datos es el CONTENIDO de la nota, no el modo edición/vista), así
+    // que se puede calcular bien de una y no hay nada que re-animar.
+    var isEditing by rememberSaveable { mutableStateOf(noteId == 0L || !settings.doubleTapToEdit) }
 
     // Destello de feedback al cambiar entre modo edición y modo vista: se
     // prende apenas isEditing cambia y se apaga solo, rápido, sin que el
     // usuario tenga que esperarlo (ver el AnimatedVisibility más abajo, y el
     // IconButton del ojo/lápiz que también dispara este cambio).
     //
-    // La carga inicial de la nota también reasigna isEditing (ver
-    // LaunchedEffect(noteId) más abajo, que lo fija según
-    // settings.doubleTapToEdit) — eso NO es un cambio de modo real hecho por
-    // el usuario, así que no debe destellar. Comparar contra el valor
-    // anterior y exigir loaded=true evita ambos falsos positivos (el valor
-    // inicial del remember de arriba, y el reajuste que hace la carga),
-    // sin importar en qué orden terminen resolviéndose esos dos efectos.
+    // isEditing ya arranca con su valor final (ver el comentario de arriba),
+    // así que en teoría esto ya no debería hacer falta para la carga inicial
+    // — pero loaded=true como condición extra se deja igual, como red de
+    // seguridad barata: si el día de mañana algo más vuelve a reasignar
+    // isEditing antes de que la nota termine de cargar, esto sigue evitando
+    // que destelle por algo que el usuario no hizo.
     var showModeFlash by remember { mutableStateOf(false) }
     var previousIsEditingForFlash by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(isEditing, loaded) {
@@ -472,15 +484,14 @@ fun NoteEditScreen(
         // también sobrevive (ver arriba), así que en una recreación por
         // rotación ya entra en true, y esto NO vuelve a traer la nota de la
         // base de datos (que solo tiene la última versión GUARDADA,
-        // desactualizada respecto de lo que había en pantalla) ni reajusta
-        // isEditing según settings.doubleTapToEdit (que pisaría el modo
-        // edición/vista en el que estaba el usuario). Es una carga real
-        // solo la primera vez que esta pantalla se compone de verdad.
+        // desactualizada respecto de lo que había en pantalla). Es una carga
+        // real solo la primera vez que esta pantalla se compone de verdad.
+        // (isEditing YA NO se toca acá — se calcula bien desde el inicio en
+        // su propio rememberSaveable, ver el comentario grande de arriba).
         if (!loaded) {
             if (noteId != 0L) {
                 viewModel.getById(noteId)?.let { current = it }
             }
-            isEditing = noteId == 0L || !settings.doubleTapToEdit
         }
         segments = buildEditSegments(current.content)
         loaded = true
@@ -1261,6 +1272,22 @@ fun NoteEditScreen(
                     if (goingToEdit && current.type == NoteType.TEXT) {
                         segments = buildEditSegments(current.content)
                     } else if (!goingToEdit) {
+                        // BUG encontrado (relacionado con el de arriba, aunque es
+                        // un mecanismo distinto): pasar a modo vista sin sacar el
+                        // foco a mano dejaba el teclado todavía abierto durante
+                        // toda la transición (Crossfade mantiene ambos
+                        // contenidos brevemente mientras anima). En Android, el
+                        // PRIMER toque al botón atrás del sistema con el
+                        // teclado abierto solo cierra el teclado — no llega a
+                        // disparar el BackHandler de la nota. Como esto
+                        // coincidía justo con la ventana de la animación, se
+                        // sentía como "el botón atrás no responde hasta que
+                        // termina la animación", cuando en realidad ese primer
+                        // toque se lo estaba comiendo el teclado, no la
+                        // animación en sí. Sacando el foco acá mismo, de una,
+                        // el teclado ya está cerrándose (o cerrado) antes de
+                        // que el usuario llegue a tocar atrás.
+                        focusManager.clearFocus(force = true)
                         // Al pasar de edición a vista es cuando efectivamente
                         // "se sale" del modo de edición, así que aprovechamos
                         // para guardar acá (antes solo se guardaba al tocar el

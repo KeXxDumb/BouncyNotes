@@ -1,9 +1,15 @@
 package com.dumb.bouncynotes
 
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.view.WindowManager
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -36,6 +42,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.core.animation.doOnEnd
+import androidx.core.splashscreen.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -132,7 +140,56 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // installSplashScreen() TIENE que llamarse antes de super.onCreate()
+        // (lo exige la librería) — instala la pantalla de inicio (nativa en
+        // Android 12+, imitada a mano en versiones anteriores por la propia
+        // librería, funciona igual en las dos) y devuelve el control para
+        // personalizar la animación de salida, en vez de que desaparezca de
+        // golpe o con el fundido genérico por default.
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Animación de salida: un "rebote" corto, como si se tocara un botón
+        // (se achica y vuelve con un poco de pasada de más), y recién ahí se
+        // desvanece hacia la app. Nada de esto bloquea el arranque real de
+        // la app — Compose ya está cargando/componiendo detrás mientras
+        // esto corre, esto es puramente decorativo sobre la vista de splash.
+        // Duración total: 200 + 350 + 300 = 850ms, dentro del segundo pedido.
+        splashScreen.setOnExitAnimationListener { provider ->
+            val icon = provider.iconView
+            val pressDown = ObjectAnimator.ofPropertyValuesHolder(
+                icon,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 0.8f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 0.8f)
+            ).apply {
+                duration = 200
+                interpolator = AccelerateInterpolator()
+            }
+            val bounceBack = ObjectAnimator.ofPropertyValuesHolder(
+                icon,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 0.8f, 1f),
+                PropertyValuesHolder.ofFloat(View.SCALE_Y, 0.8f, 1f)
+            ).apply {
+                duration = 350
+                // OvershootInterpolator es justo el efecto de "rebote": pasa
+                // de largo el valor final (escala > 1) y vuelve, en vez de
+                // llegar derecho a 1f — se siente como un toque de botón.
+                interpolator = OvershootInterpolator(3f)
+            }
+            val fadeOut = ObjectAnimator.ofFloat(provider.view, View.ALPHA, 1f, 0f).apply {
+                duration = 300
+            }
+            // pressDown y bounceBack van uno después del otro (el rebote);
+            // fadeOut recién arranca cuando el rebote ya terminó de asentarse.
+            AnimatorSet().apply {
+                playSequentially(pressDown, bounceBack)
+                doOnEnd { fadeOut.start() }
+            }.start()
+            // remove() es obligatorio: al tomar control de la animación de
+            // salida, la librería espera a que ESTE código la saque de
+            // encima — sin esto, el splash se queda pegado en pantalla para
+            // siempre en vez de revelar la app debajo.
+            fadeOut.doOnEnd { provider.remove() }
+        }
         // Si la actividad se abrió desde la notificación de un recordatorio,
         // vamos a esa nota (por encima de la lista, no en su lugar — ver
         // comentario de arriba).

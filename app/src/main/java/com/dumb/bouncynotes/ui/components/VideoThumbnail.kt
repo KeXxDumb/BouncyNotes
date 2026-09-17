@@ -1,6 +1,7 @@
 package com.dumb.bouncynotes.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,13 +30,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-// Miniatura real (un frame decodificado del archivo) por nombre de video,
-// cacheada en memoria para toda la sesión — mismo criterio que
-// rememberImageAspectRatio en ImageAspectRatio.kt: decodificar un frame con
-// MediaMetadataRetriever es bastante más costoso que leer un encabezado de
-// imagen, así que no tiene sentido repetirlo cada vez que la misma
-// miniatura vuelve a entrar en composición al scrollear (tarjetas de la
-// lista, tira de miniaturas del visor).
+// Miniatura real (un frame decodificado del archivo, reducido a un tamaño
+// chico — ver downscaleForThumbnail más abajo) por nombre de video, cacheada
+// en memoria para toda la sesión — mismo criterio que rememberImageAspectRatio
+// en ImageAspectRatio.kt: decodificar un frame con MediaMetadataRetriever es
+// bastante más costoso que leer un encabezado de imagen, así que no tiene
+// sentido repetirlo cada vez que la misma miniatura vuelve a entrar en
+// composición al scrollear (tarjetas de la lista, tira de miniaturas del
+// visor). A diferencia de esa función, acá SÍ hace falta procesar el bitmap
+// antes de cachearlo (no solo leerlo): sin reducirlo de tamaño, cada entrada
+// de este cache pesaría lo mismo que el video en su resolución original
+// (varios MB para 1080p/4K) en vez de los ~200KB de una miniatura.
 private val videoThumbnailCache = mutableMapOf<String, ImageBitmap?>()
 
 @Composable
@@ -63,7 +68,23 @@ private fun decodeVideoThumbnail(context: Context, fileName: String): ImageBitma
         retriever.setDataSource(file.absolutePath)
         // getFrameAtTime(0): alcanza con el primer frame, no hace falta uno
         // "representativo" del medio del video para una miniatura chica.
-        retriever.getFrameAtTime(0)?.asImageBitmap()
+        val fullFrame = retriever.getFrameAtTime(0) ?: return null
+        // PROBLEMA DE MEMORIA encontrado: este frame viene a la resolución
+        // NATIVA del video (a 1080p, ~8MB sin comprimir; a 4K, ~32MB — un
+        // solo Bitmap ARGB_8888 pesa ancho×alto×4 bytes), pero acá nunca se
+        // muestra a más de unos pocos cientos de dp (tarjetas de la lista,
+        // ícono de play encima). Como además queda cacheado en memoria para
+        // toda la sesión (ver videoThumbnailCache más abajo), sin este
+        // escalado cada video distinto que el usuario mira suma varios MB
+        // permanentes — con unas pocas notas con video en equipos con poca
+        // RAM, esto es plata contante para jank o hasta un OOM.
+        val scaled = downscaleForThumbnail(fullFrame, maxDimension = 320)
+        // Si downscaleForThumbnail devolvió una copia nueva (el frame
+        // original era más grande que el máximo), se libera el original de
+        // inmediato en vez de esperar al GC — son varios MB que no tiene
+        // sentido dejar colgados ni un instante más de lo necesario.
+        if (scaled !== fullFrame) fullFrame.recycle()
+        scaled.asImageBitmap()
     } catch (e: Exception) {
         // Archivo corrupto, códec no soportado por el extractor de
         // metadata, etc. — se cachea el null igual (ver arriba) para no
@@ -79,6 +100,19 @@ private fun decodeVideoThumbnail(context: Context, fileName: String): ImageBitma
         } catch (e: Exception) {
         }
     }
+}
+
+// Reduce un bitmap decodificado a, como mucho, maxDimension píxeles de lado
+// más largo, preservando la relación de aspecto. Devuelve el MISMO bitmap
+// (sin copiar) si ya es más chico que eso, para no gastar tiempo/memoria de
+// más en videos que ya vinieron en baja resolución.
+private fun downscaleForThumbnail(bitmap: Bitmap, maxDimension: Int): Bitmap {
+    val largestSide = maxOf(bitmap.width, bitmap.height)
+    if (largestSide <= maxDimension) return bitmap
+    val scale = maxDimension.toFloat() / largestSide
+    val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+    val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    return Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
 }
 
 // Miniatura clicable para un video insertado en una nota: un frame real (o
