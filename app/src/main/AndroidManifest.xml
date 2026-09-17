@@ -45,7 +45,7 @@
             android:theme="@style/Theme.Notes" />
 
         <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
-             (ver ic_icon_peach.png, ícono plano sin adaptive-icon).
+             (ver ic_icon_peach.webp, ícono plano sin adaptive-icon).
              Habilitado al principio. -->
         <activity-alias
             android:name=".PeachIconAlias"

@@ -68,6 +68,18 @@ android {
     buildFeatures {
         compose = true
     }
+    // Las librerías de AndroidX/Material/Compose traen traducciones para
+    // 60-70+ idiomas de sus propios strings internos (descripciones de
+    // contenido, textos de sistema, etc.) — todos esos ~70 sets de strings
+    // viajan en el APK aunque la app entera esté en español y nunca los
+    // muestre. Esto no toca resource shrinking (ver comentario grande de
+    // isShrinkResources más arriba, que sigue en false a propósito): es un
+    // filtro aparte, más quirúrgico, que solo saca configuraciones de
+    // idioma que no se van a usar nunca — no tiene el historial de
+    // problemas que shrinkResources sí tuvo con los íconos.
+    androidResources {
+        localeFilters += listOf("es")
+    }
     // OJO: composeOptions { kotlinCompilerExtensionVersion = ... } ya NO va
     // acá — se borró a propósito. Con el plugin org.jetbrains.kotlin.plugin.compose
     // aplicado arriba (versión 2.3.20, la misma que Kotlin), la versión del
