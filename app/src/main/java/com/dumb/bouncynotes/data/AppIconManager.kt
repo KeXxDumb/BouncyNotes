@@ -20,7 +20,8 @@ import kotlin.system.exitProcess
 enum class AppIcon(val alias: String, val label: String, val drawableResId: Int) {
     PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.drawable.ic_icon_peach),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.drawable.ic_icon_notegirl),
-    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.drawable.ic_icon_melons)
+    MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.drawable.ic_icon_melons),
+    MIMORPHA("com.dumb.bouncynotes.MimorphaIconAlias", "Mimorpha", R.drawable.ic_icon_mimorpha)
 }
 
 object AppIconManager {

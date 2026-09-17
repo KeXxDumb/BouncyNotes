@@ -94,6 +94,23 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- "Mimorpha": ilustración subida por el usuario (PNG plano, mismo
+             criterio que el resto: sin adaptive-icon, ver AppIconManager.kt).
+             Deshabilitado al principio; se activa desde Ajustes. -->
+        <activity-alias
+            android:name=".MimorphaIconAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_icon_mimorpha"
+            android:roundIcon="@drawable/ic_icon_mimorpha"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <receiver
             android:name=".data.ReminderReceiver"
             android:exported="false" />

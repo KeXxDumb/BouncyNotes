@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
@@ -1170,7 +1171,13 @@ private fun AppIconSetting() {
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(bottom = 4.dp)
+        // horizontalScroll: con 4 íconos ya no entraban cómodos en una
+        // pantalla chica, y esto va a seguir creciendo — en vez de acotar la
+        // cantidad de íconos a lo que entre en un Row fijo, que se pueda
+        // deslizar para ver los que no entran.
+        modifier = Modifier
+            .padding(bottom = 4.dp)
+            .horizontalScroll(rememberScrollState())
     ) {
         AppIcon.entries.forEach { icon ->
             val isSelected = icon == selected
