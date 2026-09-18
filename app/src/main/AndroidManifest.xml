@@ -42,7 +42,7 @@
             android:name=".MainActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.App.Starting" />
+            android:theme="@style/Theme.Notes" />
 
         <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
              (ver ic_icon_peach.webp, ícono plano sin adaptive-icon).

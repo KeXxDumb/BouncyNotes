@@ -3,12 +3,4 @@
          de íconos se reconstruyó para ser 100% PNG (background+monochrome
          como imágenes reales), matching el flujo de trabajo real del
          artista. Este archivo queda vacío a propósito por ahora. -->
-
-    <!-- Fondo de la pantalla de inicio (splash). Tomado del color de fondo
-         real del ícono "Durazno" (la esquina de ic_icon_peach.webp), para
-         que combine con el ícono que se muestra ahí encima — el splash
-         siempre usa ESTE ícono fijo sin importar cuál esté elegido en
-         Ajustes (ver el comentario grande en themes.xml sobre por qué no
-         se puede sincronizar con el ícono activo). -->
-    <color name="splash_background">#FFB74D</color>
 </resources>

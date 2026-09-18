@@ -1,28 +1,3 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Notes" parent="android:Theme.Material.Light.NoActionBar" />
-
-    <!-- Pantalla de inicio (splash), API de androidx.core.splashscreen —
-         funciona en TODAS las versiones (minSdk 23), no solo en Android 12+
-         donde existe la splash screen nativa del sistema; la librería
-         imita el mismo comportamiento a mano en versiones viejas.
-         postSplashScreenTheme es a qué theme se cambia apenas termina el
-         splash — el theme normal de la app, no uno nuevo.
-
-         Ícono FIJO ("Durazno") sin importar cuál esté elegido en Ajustes:
-         un <activity-alias> (que es como esta app cambia de ícono, ver
-         AppIconManager.kt) no admite android:theme como atributo — no hay
-         forma de que la alias actualmente habilitada le diga al sistema
-         "para el splash, usá este theme distinto". El theme de ventana que
-         de verdad se aplica es el de la <activity> real (MainActivity),
-         sin importar por cuál alias se haya lanzado, así que el splash
-         siempre es el mismo pase lo que pase en Ajustes. Si en algún
-         momento se quiere que coincida con el ícono elegido, no hay forma
-         limpia de lograrlo con activity-alias — habría que replantear el
-         mecanismo de cambio de ícono entero. -->
-    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_icon_peach</item>
-        <item name="windowSplashScreenIconBackgroundColor">@color/splash_background</item>
-        <item name="postSplashScreenTheme">@style/Theme.Notes</item>
-    </style>
 </resources>

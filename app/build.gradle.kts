@@ -131,18 +131,6 @@ dependencies {
     // sobre por qué no se salta a AGP 9.x). Estas son las últimas versiones
     // confirmadas compatibles con compileSdk 36.
     implementation("androidx.core:core-ktx:1.17.0")
-    // Pantalla de inicio (splash) con animación de salida propia — funciona
-    // igual en todas las versiones (minSdk 23), no solo Android 12+.
-    // 1.2.0 (no 1.0.1): la versión vieja compiló bien acá a mano, pero en
-    // CI tiraba "Unresolved reference 'installSplashScreen'" pese a que la
-    // dependencia estaba bien declarada — no hay una causa 100% confirmada,
-    // pero 1.0.1 es de 2023 y bastante más vieja que el resto del stack
-    // (Kotlin 2.3.20, AGP 8.13); 1.2.0 es la estable actual, probada contra
-    // toolchains bastante más nuevos. Si esto FALLA otra vez con el mismo
-    // error, pegar el log completo (con el mensaje de "Could not resolve",
-    // si aparece uno, que acá no apareció) para descartar del todo un
-    // problema de resolución de dependencias en vez de esto.
-    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.12.3")
