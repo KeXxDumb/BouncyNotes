@@ -152,7 +152,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -691,26 +693,41 @@ fun NoteEditScreen(
     // terceros, ver más abajo) sin duplicar la lógica de copiar/comprimir e
     // insertar.
     fun handlePickedImages(uris: List<Uri>) {
-        val fileNames = uris.mapNotNull { uri ->
-            if (settings.compressImages) {
-                ImageStorage.compressFromUri(context, uri, settings.imageQuality)
-            } else {
-                ImageStorage.copyFromUri(context, uri)
+        if (uris.isEmpty()) return
+        // BUG DE PERFORMANCE encontrado: ImageStorage.copyFromUri/
+        // compressFromUri son funciones comunes (no `suspend`) que hacen
+        // I/O de disco real (leer el archivo elegido, decodificar/comprimir
+        // si aplica, escribir la copia) — y el callback del selector de
+        // medios corre en el hilo PRINCIPAL. Antes, esto trababa la app
+        // entera mientras copiaba, bien notorio con fotos grandes de cámara
+        // o al elegir varias imágenes de una. withContext(Dispatchers.IO)
+        // mueve ese trabajo a un hilo de fondo; el código de después (que
+        // sí toca estado de Compose) vuelve solo al hilo principal apenas
+        // termina el withContext, sin nada especial que hacer para eso.
+        scope.launch {
+            val fileNames = withContext(Dispatchers.IO) {
+                uris.mapNotNull { uri ->
+                    if (settings.compressImages) {
+                        ImageStorage.compressFromUri(context, uri, settings.imageQuality)
+                    } else {
+                        ImageStorage.copyFromUri(context, uri)
+                    }
+                }
             }
-        }
-        when {
-            fileNames.isEmpty() -> { /* el usuario canceló o algo falló al copiar */ }
-            fileNames.size == 1 -> {
-                // Con una sola imagen no hay nada que preguntar: se inserta
-                // directo, como siempre.
-                insertImageAtActiveSegment(fileNames.first())
-                focusManager.clearFocus(force = true)
-            }
-            else -> {
-                // Varias imágenes de una: en vez de insertarlas ya mismo una
-                // tras otra (como hacía antes), preguntamos si van agrupadas
-                // o sueltas.
-                pendingGroupFileNames = fileNames
+            when {
+                fileNames.isEmpty() -> { /* el usuario canceló o algo falló al copiar */ }
+                fileNames.size == 1 -> {
+                    // Con una sola imagen no hay nada que preguntar: se inserta
+                    // directo, como siempre.
+                    insertImageAtActiveSegment(fileNames.first())
+                    focusManager.clearFocus(force = true)
+                }
+                else -> {
+                    // Varias imágenes de una: en vez de insertarlas ya mismo una
+                    // tras otra (como hacía antes), preguntamos si van agrupadas
+                    // o sueltas.
+                    pendingGroupFileNames = fileNames
+                }
             }
         }
     }
@@ -749,9 +766,21 @@ fun NoteEditScreen(
     ) { success ->
         val fileName = pendingCameraFileName
         if (success && fileName != null) {
-            if (settings.compressImages) ImageStorage.compressInPlace(context, fileName, settings.imageQuality)
-            insertImageAtActiveSegment(fileName)
-            focusManager.clearFocus(force = true)
+            if (settings.compressImages) {
+                // Mismo motivo que en handlePickedImages: comprimir es I/O de
+                // disco real, no algo instantáneo — se saca del hilo principal
+                // para no trabar la app justo después de sacar la foto.
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        ImageStorage.compressInPlace(context, fileName, settings.imageQuality)
+                    }
+                    insertImageAtActiveSegment(fileName)
+                    focusManager.clearFocus(force = true)
+                }
+            } else {
+                insertImageAtActiveSegment(fileName)
+                focusManager.clearFocus(force = true)
+            }
         } else if (fileName != null) {
             ImageStorage.deleteFile(context, fileName)
         }
@@ -772,13 +801,19 @@ fun NoteEditScreen(
     // falta más de un selector de video en el futuro.
     fun handlePickedVideo(uri: Uri?) {
         if (uri != null) {
-            val result = ImageStorage.copyVideoFromUri(context, uri)
-            when {
-                result.fileName != null -> {
-                    insertVideoAtActiveSegment(result.fileName)
-                    focusManager.clearFocus(force = true)
+            // Copiar un video (hasta el tope de tamaño permitido, ver
+            // ImageStorage) es la operación más pesada de todas las que se
+            // movieron a un hilo de fondo en esta vuelta — es la que más se
+            // sentía trabar la app antes de este cambio.
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { ImageStorage.copyVideoFromUri(context, uri) }
+                when {
+                    result.fileName != null -> {
+                        insertVideoAtActiveSegment(result.fileName)
+                        focusManager.clearFocus(force = true)
+                    }
+                    result.tooLarge -> showVideoTooLarge = true
                 }
-                result.tooLarge -> showVideoTooLarge = true
             }
         }
     }

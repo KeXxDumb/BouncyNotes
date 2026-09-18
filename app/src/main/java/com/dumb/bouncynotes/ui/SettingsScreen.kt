@@ -113,8 +113,10 @@ import com.dumb.bouncynotes.data.StartView
 import com.dumb.bouncynotes.data.ThemeMode
 import com.dumb.bouncynotes.ui.components.FlatTextField
 import com.dumb.bouncynotes.ui.theme.ThemeSeedColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 // Desenvuelve el Context de Compose (que puede venir envuelto en capas de
@@ -196,20 +198,29 @@ fun SettingsScreen(
     // prender.
     fun handlePickedBackgroundImages(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val newFileNames = uris.mapNotNull { ImageStorage.copyFromUri(context, it) }
-        if (newFileNames.isEmpty()) return
-        onUpdate { s ->
-            val newPool = (s.backgroundImagePaths + newFileNames).distinct()
-            // Si todavía no había una imagen activa (pool vacío antes de
-            // este agregado) o la que estaba activa ya no está en el pool
-            // (se borró), activamos una ya mismo — así elegir la primera
-            // imagen ya "prende" el fondo, sin un paso aparte.
-            val newPath = if (s.backgroundImagePath == null || s.backgroundImagePath !in newPool) {
-                newPool.randomOrNull()
-            } else {
-                s.backgroundImagePath
+        // Mismo fix que en el editor de notas (NoteEditScreen.handlePickedImages):
+        // copiar el archivo es I/O de disco real en una función no-suspend,
+        // llamada desde el hilo principal — se saca a un hilo de fondo para
+        // no trabar Ajustes mientras copia, sobre todo notorio si se eligen
+        // varias imágenes de una para el pool.
+        scope.launch {
+            val newFileNames = withContext(Dispatchers.IO) {
+                uris.mapNotNull { ImageStorage.copyFromUri(context, it) }
             }
-            s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
+            if (newFileNames.isEmpty()) return@launch
+            onUpdate { s ->
+                val newPool = (s.backgroundImagePaths + newFileNames).distinct()
+                // Si todavía no había una imagen activa (pool vacío antes de
+                // este agregado) o la que estaba activa ya no está en el pool
+                // (se borró), activamos una ya mismo — así elegir la primera
+                // imagen ya "prende" el fondo, sin un paso aparte.
+                val newPath = if (s.backgroundImagePath == null || s.backgroundImagePath !in newPool) {
+                    newPool.randomOrNull()
+                } else {
+                    s.backgroundImagePath
+                }
+                s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
+            }
         }
     }
 
