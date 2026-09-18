@@ -71,6 +71,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -116,6 +117,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -150,6 +152,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -470,6 +473,32 @@ fun NoteEditScreen(
     // donde más se sentía el delay con notas de varias imágenes, ya que es
     // el modo en el que más tiempo se pasa comparado con el de edición).
     val viewLazyListState = rememberLazyListState()
+    // Para el botón de "ir al final" (animateScrollTo/animateScrollToItem
+    // son funciones suspend) y para la sincronización de scroll de abajo.
+    val scope = rememberCoroutineScope()
+    // BUG encontrado: al ser dos LazyListState SEPARADOS, cambiar de modo
+    // (ojo/lápiz) mostraba el otro arrancando siempre desde arriba — cada
+    // uno tiene su propia posición de scroll independiente, y ninguno se
+    // enteraba de dónde había quedado el otro. Esto copia la posición
+    // (índice + offset en píxeles dentro de ese índice) del que se estaba
+    // viendo HACIA el que pasa a mostrarse, apenas isEditing cambia. No es
+    // perfecto — los dos modos no siempre parten el contenido exactamente
+    // igual en ítems (un TextField editable no mide igual que el texto de
+    // solo lectura) — pero corta de raíz el salto a la parte de arriba, que
+    // es lo que se sentía como "se resetea el scroll".
+    LaunchedEffect(isEditing) {
+        if (isEditing) {
+            editLazyListState.scrollToItem(
+                viewLazyListState.firstVisibleItemIndex,
+                viewLazyListState.firstVisibleItemScrollOffset
+            )
+        } else {
+            viewLazyListState.scrollToItem(
+                editLazyListState.firstVisibleItemIndex,
+                editLazyListState.firstVisibleItemScrollOffset
+            )
+        }
+    }
 
     // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
     // permiso de notificaciones. Se pide justo al programar el primer
@@ -1677,6 +1706,47 @@ fun NoteEditScreen(
                         }
                     }
                         }
+                    }
+                }
+                // Botón flotante para saltar directo al final de la nota —
+                // pensado para notas largas, donde scrollear todo a mano es
+                // tedioso. Solo se muestra si de verdad hay más contenido
+                // para abajo (canScrollForward), para no estorbar en notas
+                // cortas que ya entran enteras en pantalla. Tiene que ser
+                // hijo DIRECTO de este Box (no de una rama del if/else de
+                // arriba) para que "align" funcione y para que siempre
+                // refleje el scroll actual sin importar el tipo de nota o
+                // el modo edición/vista.
+                val canScrollToBottom = when {
+                    current.type == NoteType.CHECKLIST -> checklistScrollState.canScrollForward
+                    isEditing -> editLazyListState.canScrollForward
+                    else -> viewLazyListState.canScrollForward
+                }
+                if (canScrollToBottom) {
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                when {
+                                    current.type == NoteType.CHECKLIST ->
+                                        checklistScrollState.animateScrollTo(checklistScrollState.maxValue)
+                                    isEditing ->
+                                        editLazyListState.animateScrollToItem(
+                                            (editLazyListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                        )
+                                    else ->
+                                        viewLazyListState.animateScrollToItem(
+                                            (viewLazyListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                                        )
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(bottom = bottomBarCompensation + 12.dp, end = 4.dp)
+                            .size(44.dp)
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                    ) {
+                        Icon(Icons.Filled.VerticalAlignBottom, contentDescription = "Ir al final de la nota")
                     }
                 }
             }
