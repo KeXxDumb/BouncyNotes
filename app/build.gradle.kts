@@ -92,6 +92,20 @@ android {
     }
 }
 
+// Para que Room pueda exportar el esquema de la base de datos a JSON (ver
+// exportSchema = true en NoteDatabase.kt) — sin esto, aunque
+// exportSchema esté en true, kapt no sabe A DÓNDE escribir esos archivos y
+// tira una advertencia en vez de generarlos. Los JSON exportados (quedan en
+// app/schemas/) son los que Room usa para poder ESCRIBIR y, sobre todo,
+// TESTEAR migraciones reales el día que se necesite subir la versión del
+// esquema — sin este historial, escribir una Migration a mano es mucho más
+// propenso a errores (no hay con qué comparar "de dónde viene" el esquema).
+kapt {
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+}
+
 // El DSL viejo (android { kotlinOptions { jvmTarget = "17" } }) que usaba
 // este proyecto pasó de "deprecado" a directamente ERROR de compilación del
 // script en Kotlin 2.3.x — no compila el build.gradle.kts en absoluto, ni
