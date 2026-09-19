@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
@@ -181,12 +180,12 @@ import com.dumb.bouncynotes.ui.components.ChecklistEditor
 import com.dumb.bouncynotes.ui.components.CompactCaptionField
 import com.dumb.bouncynotes.ui.components.FlatTextField
 import com.dumb.bouncynotes.ui.components.GalleryGrid
-import com.dumb.bouncynotes.ui.components.NoteContentView
 import com.dumb.bouncynotes.ui.components.NoteBackgroundImage
 import com.dumb.bouncynotes.ui.components.RgbColorPicker
 import com.dumb.bouncynotes.ui.components.ReminderPickerSheet
 import com.dumb.bouncynotes.ui.components.LabelsEditor
 import com.dumb.bouncynotes.ui.components.GlassBottomBar
+import com.dumb.bouncynotes.ui.components.InlineMarkdownText
 import com.dumb.bouncynotes.ui.components.VideoThumbnailPreview
 import com.dumb.bouncynotes.ui.components.rememberImageAspectRatio
 import java.io.File
@@ -396,37 +395,19 @@ fun NoteEditScreen(
     // segmentos cerca de lo que está en pantalla. rememberLazyListState() es
     // el equivalente de un ScrollState para LazyColumn; se hoistea acá por
     // la MISMA razón de arriba.
+    //
+    // Antes existían DOS de estos (uno por modo edición/lectura), cada uno
+    // con su propio scroll independiente — cambiar de modo mostraba el otro
+    // arrancando siempre desde arriba, y hacía falta copiar la posición a
+    // mano entre los dos cada vez que isEditing cambiaba. Ahora que edición y
+    // lectura comparten una sola LazyColumn (cada ítem decide su apariencia
+    // según isEditing, en vez de reemplazar la lista entera), ese problema
+    // no puede volver a pasar: no hay "el otro scroll" al que sincronizar,
+    // porque nunca hay dos.
     val editLazyListState = rememberLazyListState()
-    // Mismo cambio y mismo motivo que arriba, para el modo lectura (que es
-    // donde más se sentía el delay con notas de varias imágenes, ya que es
-    // el modo en el que más tiempo se pasa comparado con el de edición).
-    val viewLazyListState = rememberLazyListState()
     // Para el botón de "ir al final" (animateScrollTo/animateScrollToItem
-    // son funciones suspend) y para la sincronización de scroll de abajo.
+    // son funciones suspend).
     val scope = rememberCoroutineScope()
-    // BUG encontrado: al ser dos LazyListState SEPARADOS, cambiar de modo
-    // (ojo/lápiz) mostraba el otro arrancando siempre desde arriba — cada
-    // uno tiene su propia posición de scroll independiente, y ninguno se
-    // enteraba de dónde había quedado el otro. Esto copia la posición
-    // (índice + offset en píxeles dentro de ese índice) del que se estaba
-    // viendo HACIA el que pasa a mostrarse, apenas isEditing cambia. No es
-    // perfecto — los dos modos no siempre parten el contenido exactamente
-    // igual en ítems (un TextField editable no mide igual que el texto de
-    // solo lectura) — pero corta de raíz el salto a la parte de arriba, que
-    // es lo que se sentía como "se resetea el scroll".
-    LaunchedEffect(isEditing) {
-        if (isEditing) {
-            editLazyListState.scrollToItem(
-                viewLazyListState.firstVisibleItemIndex,
-                viewLazyListState.firstVisibleItemScrollOffset
-            )
-        } else {
-            viewLazyListState.scrollToItem(
-                editLazyListState.firstVisibleItemIndex,
-                editLazyListState.firstVisibleItemScrollOffset
-            )
-        }
-    }
 
     // Para que el recordatorio realmente se vea, en Android 13+ hace falta el
     // permiso de notificaciones. Se pide justo al programar el primer
@@ -1423,57 +1404,66 @@ fun NoteEditScreen(
                         Spacer(Modifier.height(bottomBarCompensation))
                     }
                 } else {
-                    // Antes el cambio entre modo edición y vista (el botón del
-                    // ojo/lápiz en la barra inferior) era un salto instantáneo,
-                    // sin ninguna transición, así que costaba notar que
-                    // realmente había cambiado de modo. Crossfade anima un
-                    // fundido cruzado entre ambos sin tocar el scroll de cada
-                    // uno (que ya quedan hoisted arriba, en
-                    // editLazyListState/viewLazyListState).
-                    Crossfade(
-                        targetState = isEditing,
-                        animationSpec = tween(220),
-                        label = "modo-edicion-vista"
-                    ) { editing ->
-                        if (editing) {
+                    // BUG YA RESUELTO (dos LazyListState separados, uno por
+                    // modo, sincronizados a mano al cambiar de modo): ahora
+                    // es una sola LazyColumn compartida entre edición y
+                    // lectura, así que no hay nada que sincronizar — no
+                    // existe "el otro scroll" porque nunca hay dos. De paso,
+                    // se dejó de duplicar la lista de ítems (antes existían
+                    // dos: los EditSegment acá y los ContentPart de
+                    // NoteContentView.kt, mantenidas a mano en paralelo).
+                    // Cada ítem decide su propia apariencia según isEditing,
+                    // en vez de reemplazar la lista entera — mismo criterio
+                    // que ya usaba ChecklistEditor (readOnly = !isEditing)
+                    // más arriba, para checklists.
+                    //
+                    // Se pierde el fundido cruzado (Crossfade) que animaba
+                    // el cambio de modo completo; el "destello" de pantalla
+                    // (showModeFlash, más abajo en este archivo) sigue dando
+                    // aviso de que el modo cambió.
                     LazyColumn(
                         state = editLazyListState,
                         modifier = Modifier
                             .fillMaxSize()
-                            // Mismo motivo que antes con verticalScroll: el
-                            // padding del teclado tiene que achicar el
-                            // viewport real de la LazyColumn (pasado acá,
-                            // en su propio Modifier), no sumarse como
-                            // espacio aparte dentro del contenido.
                             .imePadding()
+                            .then(readModeGesture)
                     ) {
                         itemsIndexed(segments, key = { index, _ -> index }) { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
-                                    // Solo el campo activo necesita pedir "traeme a la
-                                    // vista" (no tiene sentido, y sería más costoso,
-                                    // hacerlo para todos los tramos de texto de la nota).
-                                    val bringIntoViewRequester = if (index == activeSegmentIndex) {
-                                        remember(index) { BringIntoViewRequester() }
-                                    } else null
-                                    FlatTextField(
-                                        value = segment.value,
-                                        onValueChange = { value ->
-                                            val newSegments = segments.toMutableList()
-                                            newSegments[index] = EditSegment.TextSeg(value)
-                                            updateContentFromSegments(newSegments)
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .then(
-                                                if (segments.size == 1) Modifier.heightIn(min = 560.dp)
-                                                else Modifier
-                                            )
-                                            .onFocusChanged { if (it.isFocused) activeSegmentIndex = index },
-                                        placeholder = { Text("Escribe...") },
-                                        bringIntoViewRequester = bringIntoViewRequester,
-                                        extraBottomInset = bottomBarCompensation
-                                    )
+                                    if (isEditing) {
+                                        // Solo el campo activo necesita pedir "traeme a la
+                                        // vista" (no tiene sentido, y sería más costoso,
+                                        // hacerlo para todos los tramos de texto de la nota).
+                                        val bringIntoViewRequester = if (index == activeSegmentIndex) {
+                                            remember(index) { BringIntoViewRequester() }
+                                        } else null
+                                        FlatTextField(
+                                            value = segment.value,
+                                            onValueChange = { value ->
+                                                val newSegments = segments.toMutableList()
+                                                newSegments[index] = EditSegment.TextSeg(value)
+                                                updateContentFromSegments(newSegments)
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .then(
+                                                    if (segments.size == 1) Modifier.heightIn(min = 560.dp)
+                                                    else Modifier
+                                                )
+                                                .onFocusChanged { if (it.isFocused) activeSegmentIndex = index },
+                                            placeholder = { Text("Escribe...") },
+                                            bringIntoViewRequester = bringIntoViewRequester,
+                                            extraBottomInset = bottomBarCompensation
+                                        )
+                                    } else if (segment.value.text.isNotBlank()) {
+                                        // Mismo criterio que tenía NoteContentView (la lista
+                                        // de solo lectura, ahora fusionada acá): un tramo de
+                                        // texto vacío (los que buildEditSegments inserta a
+                                        // propósito entre imágenes consecutivas, para tener
+                                        // dónde escribir ahí) no dibuja nada en modo lectura.
+                                        InlineMarkdownText(text = segment.value.text)
+                                    }
                                 }
                                 is EditSegment.ImageSeg -> {
                                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -1498,7 +1488,7 @@ fun NoteEditScreen(
                                             val imageAspectRatio = rememberImageAspectRatio(context, segment.fileName)
                                             AsyncImage(
                                                 model = File(ImageStorage.imagesDir(context), segment.fileName),
-                                                contentDescription = null,
+                                                contentDescription = segment.caption.ifBlank { "Imagen" },
                                                 contentScale = ContentScale.FillWidth,
                                                 modifier = Modifier
                                                     .fillMaxWidth()
@@ -1506,48 +1496,59 @@ fun NoteEditScreen(
                                                     .clip(RoundedCornerShape(16.dp))
                                                     .clickable { viewerStartPos = imageIndex }
                                             )
-                                            IconButton(
-                                                onClick = { deleteMediaSegment(index) },
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .padding(4.dp)
-                                                    .size(28.dp)
-                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                            ) {
-                                                Icon(
-                                                    Icons.Filled.Close,
-                                                    contentDescription = "Quitar imagen",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                            if (segment.caption.isBlank() && index !in captionActiveIndices) {
-                                                TextButton(
-                                                    onClick = { captionActiveIndices = captionActiveIndices + index },
+                                            if (isEditing) {
+                                                IconButton(
+                                                    onClick = { deleteMediaSegment(index) },
                                                     modifier = Modifier
-                                                        .align(Alignment.BottomStart)
-                                                        .padding(6.dp),
-                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                    colors = ButtonDefaults.textButtonColors(
-                                                        containerColor = Color.Black.copy(alpha = 0.5f),
-                                                        contentColor = Color.White
-                                                    )
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(4.dp)
+                                                        .size(28.dp)
+                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                                                 ) {
-                                                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Text("Descripción", style = MaterialTheme.typography.labelSmall)
+                                                    Icon(
+                                                        Icons.Filled.Close,
+                                                        contentDescription = "Quitar imagen",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                                if (segment.caption.isBlank() && index !in captionActiveIndices) {
+                                                    TextButton(
+                                                        onClick = { captionActiveIndices = captionActiveIndices + index },
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomStart)
+                                                            .padding(6.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        colors = ButtonDefaults.textButtonColors(
+                                                            containerColor = Color.Black.copy(alpha = 0.5f),
+                                                            contentColor = Color.White
+                                                        )
+                                                    ) {
+                                                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text("Descripción", style = MaterialTheme.typography.labelSmall)
+                                                    }
                                                 }
                                             }
                                         }
-                                        if (segment.caption.isNotBlank() || index in captionActiveIndices) {
-                                            CompactCaptionField(
-                                                value = segment.caption,
-                                                onValueChange = { caption ->
-                                                    val newSegments = segments.toMutableList()
-                                                    newSegments[index] = segment.copy(caption = caption)
-                                                    updateContentFromSegments(newSegments)
-                                                },
-                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                        if (isEditing) {
+                                            if (segment.caption.isNotBlank() || index in captionActiveIndices) {
+                                                CompactCaptionField(
+                                                    value = segment.caption,
+                                                    onValueChange = { caption ->
+                                                        val newSegments = segments.toMutableList()
+                                                        newSegments[index] = segment.copy(caption = caption)
+                                                        updateContentFromSegments(newSegments)
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                                )
+                                            }
+                                        } else if (segment.caption.isNotBlank()) {
+                                            Text(
+                                                text = segment.caption,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(top = 4.dp)
                                             )
                                         }
                                     }
@@ -1564,44 +1565,48 @@ fun NoteEditScreen(
                                         }
                                     }
                                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                                        // Antes esto era una "X" chiquita en la esquina superior
-                                        // derecha del grupo entero — muy fácil de confundir con
-                                        // las X de borrado individual de cada miniatura (ver
-                                        // onDeleteImage abajo), sobre todo cuando la imagen de
-                                        // arriba a la derecha del grupo tenía las DOS superpuestas
-                                        // casi en el mismo lugar. Ahora es una barra angosta de
-                                        // ancho completo, con texto y colores de "peligro" bien
-                                        // distintos de cualquier otro botón de la nota, para que
-                                        // quede claro que esto borra el GRUPO entero.
-                                        TextButton(
-                                            onClick = { deleteMediaSegment(index) },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(8.dp),
-                                            colors = ButtonDefaults.textButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                                contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                            ),
-                                            contentPadding = PaddingValues(vertical = 6.dp)
-                                        ) {
-                                            Text("Eliminar este grupo de imágenes", style = MaterialTheme.typography.labelMedium)
-                                            Spacer(Modifier.width(6.dp))
-                                            Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        if (isEditing) {
+                                            // Antes esto era una "X" chiquita en la esquina superior
+                                            // derecha del grupo entero — muy fácil de confundir con
+                                            // las X de borrado individual de cada miniatura (ver
+                                            // onDeleteImage abajo), sobre todo cuando la imagen de
+                                            // arriba a la derecha del grupo tenía las DOS superpuestas
+                                            // casi en el mismo lugar. Ahora es una barra angosta de
+                                            // ancho completo, con texto y colores de "peligro" bien
+                                            // distintos de cualquier otro botón de la nota, para que
+                                            // quede claro que esto borra el GRUPO entero.
+                                            TextButton(
+                                                onClick = { deleteMediaSegment(index) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.textButtonColors(
+                                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                                ),
+                                                contentPadding = PaddingValues(vertical = 6.dp)
+                                            ) {
+                                                Text("Eliminar este grupo de imágenes", style = MaterialTheme.typography.labelMedium)
+                                                Spacer(Modifier.width(6.dp))
+                                                Icon(Icons.Filled.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            }
+                                            Spacer(Modifier.height(4.dp))
                                         }
-                                        Spacer(Modifier.height(4.dp))
                                         GalleryGrid(
                                             layout = segment.layout,
                                             fileNames = segment.fileNames,
                                             captions = segment.captions,
                                             onImageClick = { i -> viewerStartPos = startIndex + i },
-                                            onDeleteImage = { i -> removeImageFromGallerySeg(index, i) },
-                                            onCaptionChange = { i, caption ->
-                                                val newSegments = segments.toMutableList()
-                                                val newCaptions = segment.captions.toMutableList()
-                                                while (newCaptions.size <= i) newCaptions.add("")
-                                                newCaptions[i] = caption
-                                                newSegments[index] = segment.copy(captions = newCaptions)
-                                                updateContentFromSegments(newSegments)
-                                            }
+                                            onDeleteImage = if (isEditing) { { i -> removeImageFromGallerySeg(index, i) } } else null,
+                                            onCaptionChange = if (isEditing) {
+                                                { i, caption ->
+                                                    val newSegments = segments.toMutableList()
+                                                    val newCaptions = segment.captions.toMutableList()
+                                                    while (newCaptions.size <= i) newCaptions.add("")
+                                                    newCaptions[i] = caption
+                                                    newSegments[index] = segment.copy(captions = newCaptions)
+                                                    updateContentFromSegments(newSegments)
+                                                }
+                                            } else null
                                         )
                                     }
                                 }
@@ -1617,29 +1622,41 @@ fun NoteEditScreen(
                                             is EditSegment.TextSeg -> 0
                                         }
                                     }
-                                    Box(modifier = Modifier.padding(vertical = 8.dp)) {
-                                        VideoThumbnailPreview(
-                                            context = context,
-                                            fileName = segment.fileName,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .aspectRatio(16f / 9f)
-                                                .clip(RoundedCornerShape(16.dp)),
-                                            onClick = { viewerStartPos = imageIndex }
-                                        )
-                                        IconButton(
-                                            onClick = { deleteMediaSegment(index) },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .padding(4.dp)
-                                                .size(28.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                Icons.Filled.Close,
-                                                contentDescription = "Quitar video",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
+                                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                        Box {
+                                            VideoThumbnailPreview(
+                                                context = context,
+                                                fileName = segment.fileName,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .aspectRatio(16f / 9f)
+                                                    .clip(RoundedCornerShape(16.dp)),
+                                                onClick = { viewerStartPos = imageIndex }
+                                            )
+                                            if (isEditing) {
+                                                IconButton(
+                                                    onClick = { deleteMediaSegment(index) },
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(4.dp)
+                                                        .size(28.dp)
+                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Filled.Close,
+                                                        contentDescription = "Quitar video",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        if (!isEditing && segment.caption.isNotBlank()) {
+                                            Text(
+                                                text = segment.caption,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(top = 4.dp)
                                             )
                                         }
                                     }
@@ -1648,24 +1665,6 @@ fun NoteEditScreen(
                         }
                         item(key = "bottom-bar-spacer") {
                             Spacer(Modifier.height(bottomBarCompensation))
-                        }
-                    }
-                        } else {
-                    LazyColumn(
-                        state = viewLazyListState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(readModeGesture)
-                    ) {
-                        NoteContentView(
-                            context = context,
-                            content = current.content,
-                            onImageClick = { idx -> viewerStartPos = idx }
-                        )
-                        item(key = "bottom-bar-spacer-view") {
-                            Spacer(Modifier.height(bottomBarCompensation))
-                        }
-                    }
                         }
                     }
                 }
@@ -1680,8 +1679,7 @@ fun NoteEditScreen(
                 // el modo edición/vista.
                 val canScrollToBottom = when {
                     current.type == NoteType.CHECKLIST -> checklistScrollState.canScrollForward
-                    isEditing -> editLazyListState.canScrollForward
-                    else -> viewLazyListState.canScrollForward
+                    else -> editLazyListState.canScrollForward
                 }
                 if (canScrollToBottom) {
                     IconButton(
@@ -1690,13 +1688,9 @@ fun NoteEditScreen(
                                 when {
                                     current.type == NoteType.CHECKLIST ->
                                         checklistScrollState.animateScrollTo(checklistScrollState.maxValue)
-                                    isEditing ->
+                                    else ->
                                         editLazyListState.animateScrollToItem(
                                             (editLazyListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                                        )
-                                    else ->
-                                        viewLazyListState.animateScrollToItem(
-                                            (viewLazyListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
                                         )
                                 }
                             }
