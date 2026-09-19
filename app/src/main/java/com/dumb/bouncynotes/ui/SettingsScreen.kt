@@ -5,9 +5,16 @@ import android.content.ActivityNotFoundException
 import android.content.ContextWrapper
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -38,6 +45,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
@@ -70,6 +78,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -155,14 +164,12 @@ fun SettingsScreen(
     // cada composición de la pantalla), ya que consultar PackageManager no
     // es gratis.
     var showMediaPickerAppDialog by remember { mutableStateOf(false) }
-    // Qué sección expandible está abierta ahora mismo (identificada por su
-    // título, que ya es único entre las secciones). null = ninguna abierta.
-    // Se comparte entre todas las ExpandableSection de esta pantalla para
-    // que abrir una cierre cualquier otra que hubiera quedado abierta, en
-    // vez de que cada una maneje su propio estado sin enterarse de las
-    // demás (que era como quedaba la pantalla llena de cajones abiertos a
-    // la vez).
-    var expandedSectionTitle by remember { mutableStateOf<String?>(null) }
+    // Reemplaza a expandedSectionTitle (que controlaba cuál "cajón" se
+    // desplegaba en el lugar) — ahora cada categoría abre su propia
+    // pantalla completa en vez de expandirse inline. rememberSaveable para
+    // que sobreviva a una rotación de pantalla sin volver a la lista sola.
+    var openCategory by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler(enabled = openCategory != null) { openCategory = null }
     var notesForExportPicker by remember { mutableStateOf<List<Note>>(emptyList()) }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -425,668 +432,622 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Ajustes") },
+                title = { Text(openCategory ?: "Ajustes") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (openCategory != null) openCategory = null else onBack() }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
                     }
                 }
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().padding(padding),
-            contentPadding = PaddingValues(12.dp)
-        ) {
-            item {
-                ExpandableSection(
-                    title = "Apariencia",
-                    icon = Icons.Filled.Palette,
-                    expanded = expandedSectionTitle == "Apariencia",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Apariencia") null else "Apariencia" }
-                ) {
-                    CycleSetting(
-                        label = "Tema",
-                        options = listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro"),
-                        selected = settings.themeMode,
-                        onSelect = { v -> onUpdate { it.copy(themeMode = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Color dinámico (Material You)",
-                        checked = settings.dynamicColor,
-                        onCheckedChange = { v -> onUpdate { it.copy(dynamicColor = v) } }
-                    )
-                    if (!settings.dynamicColor) {
-                        Text("Color del tema", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
-                            ThemeSeedColors.forEach { hex ->
-                                val c = runCatching { Color(android.graphics.Color.parseColor(hex)) }
-                                    .getOrDefault(MaterialTheme.colorScheme.primary)
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .background(c, CircleShape)
-                                        .border(
-                                            width = if (settings.seedColorHex == hex) 3.dp else 0.dp,
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { onUpdate { s -> s.copy(seedColorHex = hex) } }
-                                )
-                            }
-                        }
-                    }
-                    // Divisor: de "color del tema" pasamos a "cómo se ven
-                    // y leen las notas en la lista", otro tema distinto.
-                    SettingsDivider()
-                    CycleSetting(
-                        label = "Diseño de la lista",
-                        options = listOf(NoteLayout.GRID to "Cuadrícula", NoteLayout.LIST to "Lista"),
-                        selected = settings.noteLayout,
-                        onSelect = { v -> onUpdate { it.copy(noteLayout = v) } }
-                    )
-                    if (settings.noteLayout == NoteLayout.GRID) {
-                        DiscreteSlider(
-                            label = "Columnas del grid",
-                            values = listOf(1, 2, 3),
-                            valueLabels = listOf("1", "2", "3"),
-                            selected = settings.gridColumns,
-                            onSelect = { v -> onUpdate { it.copy(gridColumns = v) } }
-                        )
-                    }
-                    CycleSetting(
-                        label = "Tamaño de texto",
-                        options = listOf(FontScale.SMALL to "Chico", FontScale.MEDIUM to "Mediano", FontScale.LARGE to "Grande"),
-                        selected = settings.fontScale,
-                        onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
-                    )
-
-                    // Divisor: el ícono de la app es un tema aparte (y su
-                    // selector es una grilla de miniaturas, no una opción
-                    // que quepa en un botón alternante).
-                    SettingsDivider()
-                    Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
-                    Spacer(Modifier.height(4.dp))
-                    AppIconSetting()
-
-                    // Divisor: la imagen de fondo es, de nuevo, un tema
-                    // aparte del ícono.
-                    SettingsDivider()
-                    Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
-                    Spacer(Modifier.height(4.dp))
-                    // Unificado: un solo pool de imágenes (antes había un
-                    // selector de una sola imagen y, aparte, un switch de
-                    // "rotación" con su propio selector múltiple — dos
-                    // flujos para lo mismo). Ahora: elegir la primera
-                    // imagen ya activa el fondo directo, y "+" para sumar
-                    // más activa la rotación automáticamente en cuanto hay
-                    // 2 o más (ver removeBackgroundImage/
-                    // handlePickedBackgroundImages más arriba y el sorteo
-                    // en MainActivity) — sin un paso aparte que haya que
-                    // acordarse de prender.
-                    if (settings.backgroundImagePaths.isNotEmpty()) {
-                        BackgroundPreviewMockup(settings = settings, context = context)
-                        Spacer(Modifier.height(8.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(settings.backgroundImagePaths, key = { it }) { fileName ->
-                                Box(modifier = Modifier.size(64.dp)) {
-                                    AsyncImage(
-                                        model = File(ImageStorage.imagesDir(context), fileName),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
-                                    )
-                                    IconButton(
-                                        onClick = { removeBackgroundImage(fileName) },
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .size(22.dp)
-                                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Quitar imagen",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                    }
-                                }
-                            }
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                                        .clickable { launchBackgroundImagePicker() },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Filled.Add, contentDescription = "Agregar imagen")
-                                }
-                            }
-                        }
-                        if (settings.backgroundImagePaths.size > 1) {
-                            Text(
-                                "Con más de una imagen, se sortea una al azar cada vez que se abre la app (no cada vez que se gira la pantalla).",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        SwitchSetting(
-                            label = "Monocromática (usa el color del tema)",
-                            checked = settings.backgroundMonochrome,
-                            onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
-                        )
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Text(
-                                "Opacidad de la imagen: ${(settings.backgroundImageOpacity * 100).toInt()}%",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Slider(
-                                value = settings.backgroundImageOpacity,
-                                onValueChange = { v -> onUpdate { it.copy(backgroundImageOpacity = v) } },
-                                valueRange = 0f..1f
-                            )
-                        }
-                        SwitchSetting(
-                            label = "Desvanecer bordes",
-                            checked = settings.backgroundFade,
-                            onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
-                        )
-                        if (settings.backgroundFade) {
-                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                Text(
-                                    "Opacidad del desvanecido: ${(settings.backgroundFadeOpacity * 100).toInt()}%",
-                                    style = MaterialTheme.typography.labelLarge
-                                )
-                                Slider(
-                                    value = settings.backgroundFadeOpacity,
-                                    onValueChange = { v -> onUpdate { it.copy(backgroundFadeOpacity = v) } },
-                                    valueRange = 0f..1f
-                                )
-                            }
-                        }
-                        // Con imagen de fondo, la barra de título sólida tapaba parte de
-                        // la imagen y desentonaba con el resto de la pantalla (que sí
-                        // deja ver el fondo). La hacemos semitransparente para que
-                        // combine, con opacidad ajustable.
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Text(
-                                "Opacidad de la barra de título: ${(settings.topBarOpacity * 100).toInt()}%",
-                                style = MaterialTheme.typography.labelLarge
-                            )
-                            Slider(
-                                value = settings.topBarOpacity,
-                                onValueChange = { v -> onUpdate { it.copy(topBarOpacity = v) } },
-                                valueRange = 0f..1f
-                            )
-                        }
-                        SettingsDivider()
-                        // Muestra la MISMA imagen también adentro de cada
-                        // nota (NoteEditScreen), no solo en esta lista — con
-                        // una opacidad un poco más baja (ver
-                        // NoteBackgroundImage.opacityReduction) para que el
-                        // texto de la nota siga siendo legible.
-                        SwitchSetting(
-                            label = "Mostrar también adentro de las notas",
-                            checked = settings.showBackgroundInNotes,
-                            onCheckedChange = { v -> onUpdate { it.copy(showBackgroundInNotes = v) } }
-                        )
-                    } else {
-                        OutlinedButton(onClick = { launchBackgroundImagePicker() }) {
-                            Text("Elegir imagen de fondo")
-                        }
-                    }
+        // AnimatedContent con slide horizontal: entrar a una categoría desliza
+        // desde la derecha (como abrir una página nueva); volver a la lista
+        // desliza desde la izquierda (como volver atrás) — mismo lenguaje
+        // visual que usa la mayoría de las apps para navegación jerárquica.
+        AnimatedContent(
+            targetState = openCategory,
+            transitionSpec = {
+                if (targetState != null) {
+                    (slideInHorizontally(initialOffsetX = { it }) + fadeIn())
+                        .togetherWith(slideOutHorizontally(targetOffsetX = { -it / 4 }) + fadeOut())
+                } else {
+                    (slideInHorizontally(initialOffsetX = { -it }) + fadeIn())
+                        .togetherWith(slideOutHorizontally(targetOffsetX = { it / 4 }) + fadeOut())
                 }
-            }
-
-            item {
-                ExpandableSection(
-                    title = "Comportamiento",
-                    icon = Icons.Filled.Tune,
-                    expanded = expandedSectionTitle == "Comportamiento",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Comportamiento") null else "Comportamiento" }
+            },
+            label = "settings-navigation"
+        ) { category ->
+            if (category == null) {
+                // Lista de categorías: filas simples que abren su propia
+                // pantalla al tocarlas, en vez de desplegarse en el lugar
+                // (ver CategoryRow, que reemplaza al viejo ExpandableSection).
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().padding(padding),
+                    contentPadding = PaddingValues(12.dp)
                 ) {
-                    CycleSetting(
-                        label = "Ordenar notas por",
-                        options = listOf(
-                            SortOrder.UPDATED to "Última edición",
-                            SortOrder.CREATED to "Creación",
-                            SortOrder.ALPHABETICAL to "Alfabético",
-                            SortOrder.COLOR to "Color"
-                        ),
-                        selected = settings.sortOrder,
-                        onSelect = { v -> onUpdate { it.copy(sortOrder = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Mostrar siempre la primera imagen de la nota",
-                        checked = settings.showFirstImage,
-                        onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
-                    )
-                    CycleSetting(
-                        label = "Formato por defecto para imágenes agrupadas",
-                        options = GalleryLayout.entries.map { it to it.label },
-                        selected = settings.defaultGalleryLayout,
-                        onSelect = { v -> onUpdate { it.copy(defaultGalleryLayout = v) } }
-                    )
-                    // Divisor: pasamos de "cómo se listan las notas" a
-                    // "checklists y edición", que son temas distintos —
-                    // por eso separa acá y no entre cada fila individual.
-                    SettingsDivider()
-                    CycleSetting(
-                        label = "Posición de la casilla en checklists",
-                        options = listOf(CheckboxPosition.START to "Antes del texto", CheckboxPosition.END to "Después del texto"),
-                        selected = settings.checkboxPosition,
-                        onSelect = { v -> onUpdate { it.copy(checkboxPosition = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Enviar tareas marcadas al final",
-                        checked = settings.autoSortChecked,
-                        onCheckedChange = { v -> onUpdate { it.copy(autoSortChecked = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Confirmar antes de borrar",
-                        checked = settings.confirmBeforeDelete,
-                        onCheckedChange = { v -> onUpdate { it.copy(confirmBeforeDelete = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Doble toque para editar (modo lectura)",
-                        checked = settings.doubleTapToEdit,
-                        onCheckedChange = { v -> onUpdate { it.copy(doubleTapToEdit = v) } }
-                    )
-                    // Divisor: de "checklists y edición" pasamos a
-                    // "navegación e interfaz", otro tema distinto.
-                    SettingsDivider()
-                    CycleSetting(
-                        label = "Vista al abrir la app",
-                        options = listOf(StartView.ALL to "Todas las notas", StartView.LAST_USED to "Última vista usada"),
-                        selected = settings.startView,
-                        onSelect = { v -> onUpdate { it.copy(startView = v) } }
-                    )
-                    CycleSetting(
-                        label = "Título de la barra superior",
-                        options = listOf(
-                            TitleMode.APP_NAME to "Nombre de la app",
-                            TitleMode.CUSTOM_TEXT to "Texto propio",
-                            TitleMode.CURRENT_TAB to "Pestaña actual"
-                        ),
-                        selected = settings.titleMode,
-                        onSelect = { v -> onUpdate { it.copy(titleMode = v) } }
-                    )
-                    if (settings.titleMode == TitleMode.CUSTOM_TEXT) {
-                        // Estado LOCAL para el buffer editable, en vez de leer
-                        // directo de `settings.customTitleText` en cada
-                        // recomposición. onUpdate() persiste en DataStore de
-                        // forma asíncrona (ver SettingsRepository/ViewModel);
-                        // si el campo tomara su valor directamente de
-                        // `settings`, cada letra tipeada dispararía una
-                        // escritura a disco y el campo recién se "enteraría"
-                        // del cambio cuando ese Flow completara el viaje de
-                        // ida y vuelta. Con tipeo rápido, la recomposición
-                        // llegaba con el texto de UNA letra atrás, y como el
-                        // valor externo cambiaba, Compose recalculaba el
-                        // cursor a partir de ESE texto más corto — quedaba
-                        // "atrasado", como si el cursor se ubicara detrás de
-                        // la última letra en vez de después. Manteniendo el
-                        // buffer en memoria local, el cursor sigue siempre a
-                        // la escritura real y la persistencia queda como un
-                        // efecto secundario en paralelo, sin afectar la UI.
-                        var customTitleField by remember {
-                            mutableStateOf(
-                                TextFieldValue(
-                                    text = settings.customTitleText,
-                                    selection = TextRange(settings.customTitleText.length)
-                                )
-                            )
-                        }
-                        FlatTextField(
-                            value = customTitleField,
-                            onValueChange = { v ->
-                                customTitleField = v
-                                onUpdate { it.copy(customTitleText = v.text) }
-                            },
-                            placeholder = { Text("Texto para la barra superior") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        )
-                    }
-                    Text(
-                        "Esto no afecta a los mensajes de bienvenida al abrir la app.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    CycleSetting(
-                        label = "Deslizar desde el borde izquierdo",
-                        options = listOf(
-                            RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
-                            RightEdgeSwipeAction.SIDEBAR to "Barra lateral",
-                            RightEdgeSwipeAction.NOTHING to "Nada"
-                        ),
-                        selected = settings.rightEdgeSwipeAction,
-                        onSelect = { v -> onUpdate { it.copy(rightEdgeSwipeAction = v) } }
-                    )
-                }
-            }
-
-            item {
-                // El estado de estos dos permisos solo se puede leer al
-                // momento (no hay un "onCheckedChange" como en un switch
-                // normal), y cambian afuera de la app cuando el usuario los
-                // otorga desde Ajustes del sistema. Por eso se recalculan
-                // cada vez que esta pantalla vuelve a RESUMED (por ejemplo al
-                // volver del diálogo de "optimización de batería"), en vez de
-                // quedar pegados al valor que tenían al entrar.
-                val lifecycleOwner = LocalLifecycleOwner.current
-                var refreshTick by remember { mutableStateOf(0) }
-                DisposableEffect(lifecycleOwner) {
-                    val observer = LifecycleEventObserver { _, event ->
-                        if (event == Lifecycle.Event.ON_RESUME) refreshTick++
-                    }
-                    lifecycleOwner.lifecycle.addObserver(observer)
-                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-                }
-                val canScheduleExact = remember(refreshTick) { ReminderScheduler.canScheduleExact(context) }
-                val ignoringBatteryOpt = remember(refreshTick) { ReminderScheduler.isIgnoringBatteryOptimizations(context) }
-                val activity = remember { context.findActivity() }
-
-                ExpandableSection(
-                    title = "Recordatorios",
-                    icon = Icons.Filled.Alarm,
-                    expanded = expandedSectionTitle == "Recordatorios",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Recordatorios") null else "Recordatorios" }
-                ) {
-                    Text(
-                        "Estos permisos evitan que el sistema retrase o silencie los recordatorios en segundo plano.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    if (!canScheduleExact) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Alarmas exactas", modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = {
-                                activity?.let { ReminderScheduler.requestExactAlarmPermission(it) }
-                            }) { Text("Permitir") }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                    }
-                    if (!ignoringBatteryOpt) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Ignorar optimización de batería", modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = {
-                                activity?.let { ReminderScheduler.requestIgnoreBatteryOptimizations(it) }
-                            }) { Text("Permitir") }
-                        }
-                    }
-                    if (canScheduleExact && ignoringBatteryOpt) {
+                    item { CategoryRow("Apariencia", Icons.Filled.Palette) { openCategory = "Apariencia" } }
+                    item { CategoryRow("Comportamiento", Icons.Filled.Tune) { openCategory = "Comportamiento" } }
+                    item { CategoryRow("Recordatorios", Icons.Filled.Alarm) { openCategory = "Recordatorios" } }
+                    item { CategoryRow("Privacidad y seguridad", Icons.Filled.Security) { openCategory = "Privacidad y seguridad" } }
+                    item { CategoryRow("Papelera", Icons.Filled.Delete) { openCategory = "Papelera" } }
+                    item { CategoryRow("Imágenes", Icons.Filled.Image) { openCategory = "Imágenes" } }
+                    item { CategoryRow("Datos", Icons.Filled.CloudUpload) { openCategory = "Datos" } }
+                    item { Spacer(Modifier.height(12.dp)) }
+                    item {
                         Text(
-                            "Todo en orden: ambos permisos ya están concedidos.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    SettingsDivider()
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Prueba rápida: programa un aviso en 10 segundos y apaga la pantalla ese tiempo para simular condiciones reales.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedButton(
-                        onClick = {
-                            ReminderScheduler.scheduleTest(context, secondsFromNow = 10)
-                            statusMessage = "Recordatorio de prueba en 10 segundos. Apaga la pantalla."
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Probar recordatorio (10s)") }
-                }
-            }
-
-            item {
-                ExpandableSection(
-                    title = "Privacidad y seguridad",
-                    icon = Icons.Filled.Security,
-                    expanded = expandedSectionTitle == "Privacidad y seguridad",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Privacidad y seguridad") null else "Privacidad y seguridad" }
-                ) {
-                    DiscreteSlider(
-                        label = "Recordar desbloqueo biométrico",
-                        values = listOf(0, 5, 15, 30, 60, -1),
-                        valueLabels = listOf("Siempre pedir", "5 min", "15 min", "30 min", "1 hora", "Hasta cerrar la app"),
-                        selected = settings.biometricRememberMinutes,
-                        onSelect = { v -> onUpdate { it.copy(biometricRememberMinutes = v) } }
-                    )
-                    // Divisor: pasamos de "cuánto dura el desbloqueo" a
-                    // "qué se protege/oculta", que es un tema distinto.
-                    SettingsDivider()
-                    SwitchSetting(
-                        label = "Ocultar contenido en apps recientes",
-                        checked = settings.hideFromRecents,
-                        onCheckedChange = { v -> onUpdate { it.copy(hideFromRecents = v) } }
-                    )
-                    SwitchSetting(
-                        label = "Bloqueo biométrico para toda la app",
-                        checked = settings.appWideBiometricLock,
-                        onCheckedChange = { v -> onUpdate { it.copy(appWideBiometricLock = v) } }
-                    )
-                }
-            }
-
-            item {
-                ExpandableSection(
-                    title = "Papelera",
-                    icon = Icons.Filled.Delete,
-                    expanded = expandedSectionTitle == "Papelera",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Papelera") null else "Papelera" }
-                ) {
-                    SwitchSetting(
-                        label = "Usar papelera",
-                        checked = settings.useTrash,
-                        onCheckedChange = { v ->
-                            if (!v) {
-                                scope.launch {
-                                    trashedCount = noteViewModel.getTrashedCount()
-                                    showDisableTrashWarning = true
-                                }
-                            } else {
-                                onUpdate { it.copy(useTrash = true) }
-                            }
-                        }
-                    )
-                    if (settings.useTrash) {
-                        DiscreteSlider(
-                            label = "Purgar notas borradas después de",
-                            values = listOf(7, 14, 30, 60, 90, -1),
-                            valueLabels = listOf("7 días", "14 días", "30 días", "60 días", "90 días", "Nunca"),
-                            selected = settings.trashPurgeDays,
-                            onSelect = { v -> onUpdate { it.copy(trashPurgeDays = v) } }
-                        )
-                    } else {
-                        Text(
-                            "Al borrar una nota se eliminará de inmediato, sin poder recuperarla.",
+                            text = "Bouncy Notes 🍑 — hecho por KeXxDumb",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
-            }
-
-            // La sección "Widgets" (tema/transparencia) que vivía acá se
-            // sacó — pedido: la apariencia de cada widget se configura
-            // desde el propio widget (ícono de ajustes o "Configurar" al
-            // mantener presionado), no desde un ajuste global de la app.
-            // Ver WidgetAppearanceConfigActivity / PinnedNoteWidgetConfigActivity.
-
-            item {
-                ExpandableSection(
-                    title = "Imágenes",
-                    icon = Icons.Filled.Image,
-                    expanded = expandedSectionTitle == "Imágenes",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Imágenes") null else "Imágenes" }
+            } else {
+                // Pantalla de detalle: el contenido es EXACTAMENTE el mismo que
+                // tenía cada ExpandableSection antes (ninguna lógica cambió acá
+                // adentro), solo que ahora ocupa la pantalla completa en vez de
+                // desplegarse dentro de una tarjeta en la lista.
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().padding(padding),
+                    contentPadding = PaddingValues(16.dp)
                 ) {
-                    SwitchSetting(
-                        label = "Comprimir imágenes al guardar",
-                        checked = settings.compressImages,
-                        onCheckedChange = { v -> onUpdate { it.copy(compressImages = v) } }
-                    )
-                    if (settings.compressImages) {
-                        DiscreteSlider(
-                            label = "Calidad de compresión",
-                            values = listOf(50, 65, 80, 90, 100),
-                            valueLabels = listOf("50%", "65%", "80%", "90%", "100%"),
-                            selected = settings.imageQuality,
-                            onSelect = { v -> onUpdate { it.copy(imageQuality = v) } }
-                        )
-                    }
-                    SettingsDivider()
-                    // Al activarlo (y no haber ninguna fijada todavía) se abre
-                    // directo el popup para elegir una — desactivarlo solo
-                    // limpia lo fijado, sin preguntar nada.
-                    SwitchSetting(
-                        label = "Usar siempre la misma app para elegir imágenes/video",
-                        checked = settings.pinnedMediaPickerPackage.isNotEmpty(),
-                        onCheckedChange = { v ->
-                            if (v) {
-                                showMediaPickerAppDialog = true
-                            } else {
-                                onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+                    item {
+                        when (category) {
+                            "Apariencia" -> {
+                                                    CycleSetting(
+                                                        label = "Tema",
+                                                        options = listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Claro", ThemeMode.DARK to "Oscuro"),
+                                                        selected = settings.themeMode,
+                                                        onSelect = { v -> onUpdate { it.copy(themeMode = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Color dinámico (Material You)",
+                                                        checked = settings.dynamicColor,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(dynamicColor = v) } }
+                                                    )
+                                                    if (!settings.dynamicColor) {
+                                                        Text("Color del tema", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+                                                            ThemeSeedColors.forEach { hex ->
+                                                                val c = runCatching { Color(android.graphics.Color.parseColor(hex)) }
+                                                                    .getOrDefault(MaterialTheme.colorScheme.primary)
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(32.dp)
+                                                                        .background(c, CircleShape)
+                                                                        .border(
+                                                                            width = if (settings.seedColorHex == hex) 3.dp else 0.dp,
+                                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                                            shape = CircleShape
+                                                                        )
+                                                                        .clickable { onUpdate { s -> s.copy(seedColorHex = hex) } }
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    // Divisor: de "color del tema" pasamos a "cómo se ven
+                                                    // y leen las notas en la lista", otro tema distinto.
+                                                    SettingsDivider()
+                                                    CycleSetting(
+                                                        label = "Diseño de la lista",
+                                                        options = listOf(NoteLayout.GRID to "Cuadrícula", NoteLayout.LIST to "Lista"),
+                                                        selected = settings.noteLayout,
+                                                        onSelect = { v -> onUpdate { it.copy(noteLayout = v) } }
+                                                    )
+                                                    if (settings.noteLayout == NoteLayout.GRID) {
+                                                        DiscreteSlider(
+                                                            label = "Columnas del grid",
+                                                            values = listOf(1, 2, 3),
+                                                            valueLabels = listOf("1", "2", "3"),
+                                                            selected = settings.gridColumns,
+                                                            onSelect = { v -> onUpdate { it.copy(gridColumns = v) } }
+                                                        )
+                                                    }
+                                                    CycleSetting(
+                                                        label = "Tamaño de texto",
+                                                        options = listOf(FontScale.SMALL to "Chico", FontScale.MEDIUM to "Mediano", FontScale.LARGE to "Grande"),
+                                                        selected = settings.fontScale,
+                                                        onSelect = { v -> onUpdate { it.copy(fontScale = v) } }
+                                                    )
+
+                                                    // Divisor: el ícono de la app es un tema aparte (y su
+                                                    // selector es una grilla de miniaturas, no una opción
+                                                    // que quepa en un botón alternante).
+                                                    SettingsDivider()
+                                                    Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                                                    Spacer(Modifier.height(4.dp))
+                                                    AppIconSetting()
+
+                                                    // Divisor: la imagen de fondo es, de nuevo, un tema
+                                                    // aparte del ícono.
+                                                    SettingsDivider()
+                                                    Text("Imagen de fondo", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                                                    Spacer(Modifier.height(4.dp))
+                                                    // Unificado: un solo pool de imágenes (antes había un
+                                                    // selector de una sola imagen y, aparte, un switch de
+                                                    // "rotación" con su propio selector múltiple — dos
+                                                    // flujos para lo mismo). Ahora: elegir la primera
+                                                    // imagen ya activa el fondo directo, y "+" para sumar
+                                                    // más activa la rotación automáticamente en cuanto hay
+                                                    // 2 o más (ver removeBackgroundImage/
+                                                    // handlePickedBackgroundImages más arriba y el sorteo
+                                                    // en MainActivity) — sin un paso aparte que haya que
+                                                    // acordarse de prender.
+                                                    if (settings.backgroundImagePaths.isNotEmpty()) {
+                                                        BackgroundPreviewMockup(settings = settings, context = context)
+                                                        Spacer(Modifier.height(8.dp))
+                                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            items(settings.backgroundImagePaths, key = { it }) { fileName ->
+                                                                Box(modifier = Modifier.size(64.dp)) {
+                                                                    AsyncImage(
+                                                                        model = File(ImageStorage.imagesDir(context), fileName),
+                                                                        contentDescription = null,
+                                                                        contentScale = ContentScale.Crop,
+                                                                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
+                                                                    )
+                                                                    IconButton(
+                                                                        onClick = { removeBackgroundImage(fileName) },
+                                                                        modifier = Modifier
+                                                                            .align(Alignment.TopEnd)
+                                                                            .size(22.dp)
+                                                                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                                                                    ) {
+                                                                        Icon(
+                                                                            Icons.Filled.Close,
+                                                                            contentDescription = "Quitar imagen",
+                                                                            tint = Color.White,
+                                                                            modifier = Modifier.size(14.dp)
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                            item {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(64.dp)
+                                                                        .clip(RoundedCornerShape(10.dp))
+                                                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                                        .clickable { launchBackgroundImagePicker() },
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(Icons.Filled.Add, contentDescription = "Agregar imagen")
+                                                                }
+                                                            }
+                                                        }
+                                                        if (settings.backgroundImagePaths.size > 1) {
+                                                            Text(
+                                                                "Con más de una imagen, se sortea una al azar cada vez que se abre la app (no cada vez que se gira la pantalla).",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.padding(top = 6.dp)
+                                                            )
+                                                        }
+                                                        Spacer(Modifier.height(8.dp))
+                                                        SwitchSetting(
+                                                            label = "Monocromática (usa el color del tema)",
+                                                            checked = settings.backgroundMonochrome,
+                                                            onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
+                                                        )
+                                                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                                            Text(
+                                                                "Opacidad de la imagen: ${(settings.backgroundImageOpacity * 100).toInt()}%",
+                                                                style = MaterialTheme.typography.labelLarge
+                                                            )
+                                                            Slider(
+                                                                value = settings.backgroundImageOpacity,
+                                                                onValueChange = { v -> onUpdate { it.copy(backgroundImageOpacity = v) } },
+                                                                valueRange = 0f..1f
+                                                            )
+                                                        }
+                                                        SwitchSetting(
+                                                            label = "Desvanecer bordes",
+                                                            checked = settings.backgroundFade,
+                                                            onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
+                                                        )
+                                                        if (settings.backgroundFade) {
+                                                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                                                Text(
+                                                                    "Opacidad del desvanecido: ${(settings.backgroundFadeOpacity * 100).toInt()}%",
+                                                                    style = MaterialTheme.typography.labelLarge
+                                                                )
+                                                                Slider(
+                                                                    value = settings.backgroundFadeOpacity,
+                                                                    onValueChange = { v -> onUpdate { it.copy(backgroundFadeOpacity = v) } },
+                                                                    valueRange = 0f..1f
+                                                                )
+                                                            }
+                                                        }
+                                                        // Con imagen de fondo, la barra de título sólida tapaba parte de
+                                                        // la imagen y desentonaba con el resto de la pantalla (que sí
+                                                        // deja ver el fondo). La hacemos semitransparente para que
+                                                        // combine, con opacidad ajustable.
+                                                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                                            Text(
+                                                                "Opacidad de la barra de título: ${(settings.topBarOpacity * 100).toInt()}%",
+                                                                style = MaterialTheme.typography.labelLarge
+                                                            )
+                                                            Slider(
+                                                                value = settings.topBarOpacity,
+                                                                onValueChange = { v -> onUpdate { it.copy(topBarOpacity = v) } },
+                                                                valueRange = 0f..1f
+                                                            )
+                                                        }
+                                                        SettingsDivider()
+                                                        // Muestra la MISMA imagen también adentro de cada
+                                                        // nota (NoteEditScreen), no solo en esta lista — con
+                                                        // una opacidad un poco más baja (ver
+                                                        // NoteBackgroundImage.opacityReduction) para que el
+                                                        // texto de la nota siga siendo legible.
+                                                        SwitchSetting(
+                                                            label = "Mostrar también adentro de las notas",
+                                                            checked = settings.showBackgroundInNotes,
+                                                            onCheckedChange = { v -> onUpdate { it.copy(showBackgroundInNotes = v) } }
+                                                        )
+                                                    } else {
+                                                        OutlinedButton(onClick = { launchBackgroundImagePicker() }) {
+                                                            Text("Elegir imagen de fondo")
+                                                        }
+                                                    }
+                            }
+                            "Comportamiento" -> {
+                                                    CycleSetting(
+                                                        label = "Ordenar notas por",
+                                                        options = listOf(
+                                                            SortOrder.UPDATED to "Última edición",
+                                                            SortOrder.CREATED to "Creación",
+                                                            SortOrder.ALPHABETICAL to "Alfabético",
+                                                            SortOrder.COLOR to "Color"
+                                                        ),
+                                                        selected = settings.sortOrder,
+                                                        onSelect = { v -> onUpdate { it.copy(sortOrder = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Mostrar siempre la primera imagen de la nota",
+                                                        checked = settings.showFirstImage,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
+                                                    )
+                                                    CycleSetting(
+                                                        label = "Formato por defecto para imágenes agrupadas",
+                                                        options = GalleryLayout.entries.map { it to it.label },
+                                                        selected = settings.defaultGalleryLayout,
+                                                        onSelect = { v -> onUpdate { it.copy(defaultGalleryLayout = v) } }
+                                                    )
+                                                    // Divisor: pasamos de "cómo se listan las notas" a
+                                                    // "checklists y edición", que son temas distintos —
+                                                    // por eso separa acá y no entre cada fila individual.
+                                                    SettingsDivider()
+                                                    CycleSetting(
+                                                        label = "Posición de la casilla en checklists",
+                                                        options = listOf(CheckboxPosition.START to "Antes del texto", CheckboxPosition.END to "Después del texto"),
+                                                        selected = settings.checkboxPosition,
+                                                        onSelect = { v -> onUpdate { it.copy(checkboxPosition = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Enviar tareas marcadas al final",
+                                                        checked = settings.autoSortChecked,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(autoSortChecked = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Confirmar antes de borrar",
+                                                        checked = settings.confirmBeforeDelete,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(confirmBeforeDelete = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Doble toque para editar (modo lectura)",
+                                                        checked = settings.doubleTapToEdit,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(doubleTapToEdit = v) } }
+                                                    )
+                                                    // Divisor: de "checklists y edición" pasamos a
+                                                    // "navegación e interfaz", otro tema distinto.
+                                                    SettingsDivider()
+                                                    CycleSetting(
+                                                        label = "Vista al abrir la app",
+                                                        options = listOf(StartView.ALL to "Todas las notas", StartView.LAST_USED to "Última vista usada"),
+                                                        selected = settings.startView,
+                                                        onSelect = { v -> onUpdate { it.copy(startView = v) } }
+                                                    )
+                                                    CycleSetting(
+                                                        label = "Título de la barra superior",
+                                                        options = listOf(
+                                                            TitleMode.APP_NAME to "Nombre de la app",
+                                                            TitleMode.CUSTOM_TEXT to "Texto propio",
+                                                            TitleMode.CURRENT_TAB to "Pestaña actual"
+                                                        ),
+                                                        selected = settings.titleMode,
+                                                        onSelect = { v -> onUpdate { it.copy(titleMode = v) } }
+                                                    )
+                                                    if (settings.titleMode == TitleMode.CUSTOM_TEXT) {
+                                                        // Estado LOCAL para el buffer editable, en vez de leer
+                                                        // directo de `settings.customTitleText` en cada
+                                                        // recomposición. onUpdate() persiste en DataStore de
+                                                        // forma asíncrona (ver SettingsRepository/ViewModel);
+                                                        // si el campo tomara su valor directamente de
+                                                        // `settings`, cada letra tipeada dispararía una
+                                                        // escritura a disco y el campo recién se "enteraría"
+                                                        // del cambio cuando ese Flow completara el viaje de
+                                                        // ida y vuelta. Con tipeo rápido, la recomposición
+                                                        // llegaba con el texto de UNA letra atrás, y como el
+                                                        // valor externo cambiaba, Compose recalculaba el
+                                                        // cursor a partir de ESE texto más corto — quedaba
+                                                        // "atrasado", como si el cursor se ubicara detrás de
+                                                        // la última letra en vez de después. Manteniendo el
+                                                        // buffer en memoria local, el cursor sigue siempre a
+                                                        // la escritura real y la persistencia queda como un
+                                                        // efecto secundario en paralelo, sin afectar la UI.
+                                                        var customTitleField by remember {
+                                                            mutableStateOf(
+                                                                TextFieldValue(
+                                                                    text = settings.customTitleText,
+                                                                    selection = TextRange(settings.customTitleText.length)
+                                                                )
+                                                            )
+                                                        }
+                                                        FlatTextField(
+                                                            value = customTitleField,
+                                                            onValueChange = { v ->
+                                                                customTitleField = v
+                                                                onUpdate { it.copy(customTitleText = v.text) }
+                                                            },
+                                                            placeholder = { Text("Texto para la barra superior") },
+                                                            singleLine = true,
+                                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                                        )
+                                                    }
+                                                    Text(
+                                                        "Esto no afecta a los mensajes de bienvenida al abrir la app.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    CycleSetting(
+                                                        label = "Deslizar desde el borde izquierdo",
+                                                        options = listOf(
+                                                            RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
+                                                            RightEdgeSwipeAction.SIDEBAR to "Barra lateral",
+                                                            RightEdgeSwipeAction.NOTHING to "Nada"
+                                                        ),
+                                                        selected = settings.rightEdgeSwipeAction,
+                                                        onSelect = { v -> onUpdate { it.copy(rightEdgeSwipeAction = v) } }
+                                                    )
+                            }
+                            "Recordatorios" -> {
+                                                    Text(
+                                                        "Estos permisos evitan que el sistema retrase o silencie los recordatorios en segundo plano.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Spacer(Modifier.height(6.dp))
+                                                    if (!canScheduleExact) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Alarmas exactas", modifier = Modifier.weight(1f))
+                                                            OutlinedButton(onClick = {
+                                                                activity?.let { ReminderScheduler.requestExactAlarmPermission(it) }
+                                                            }) { Text("Permitir") }
+                                                        }
+                                                        Spacer(Modifier.height(6.dp))
+                                                    }
+                                                    if (!ignoringBatteryOpt) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Ignorar optimización de batería", modifier = Modifier.weight(1f))
+                                                            OutlinedButton(onClick = {
+                                                                activity?.let { ReminderScheduler.requestIgnoreBatteryOptimizations(it) }
+                                                            }) { Text("Permitir") }
+                                                        }
+                                                    }
+                                                    if (canScheduleExact && ignoringBatteryOpt) {
+                                                        Text(
+                                                            "Todo en orden: ambos permisos ya están concedidos.",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        )
+                                                    }
+                                                    Spacer(Modifier.height(8.dp))
+                                                    SettingsDivider()
+                                                    Spacer(Modifier.height(8.dp))
+                                                    Text(
+                                                        "Prueba rápida: programa un aviso en 10 segundos y apaga la pantalla ese tiempo para simular condiciones reales.",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    Spacer(Modifier.height(6.dp))
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            ReminderScheduler.scheduleTest(context, secondsFromNow = 10)
+                                                            statusMessage = "Recordatorio de prueba en 10 segundos. Apaga la pantalla."
+                                                        },
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) { Text("Probar recordatorio (10s)") }
+                            }
+                            "Privacidad y seguridad" -> {
+                                                    DiscreteSlider(
+                                                        label = "Recordar desbloqueo biométrico",
+                                                        values = listOf(0, 5, 15, 30, 60, -1),
+                                                        valueLabels = listOf("Siempre pedir", "5 min", "15 min", "30 min", "1 hora", "Hasta cerrar la app"),
+                                                        selected = settings.biometricRememberMinutes,
+                                                        onSelect = { v -> onUpdate { it.copy(biometricRememberMinutes = v) } }
+                                                    )
+                                                    // Divisor: pasamos de "cuánto dura el desbloqueo" a
+                                                    // "qué se protege/oculta", que es un tema distinto.
+                                                    SettingsDivider()
+                                                    SwitchSetting(
+                                                        label = "Ocultar contenido en apps recientes",
+                                                        checked = settings.hideFromRecents,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(hideFromRecents = v) } }
+                                                    )
+                                                    SwitchSetting(
+                                                        label = "Bloqueo biométrico para toda la app",
+                                                        checked = settings.appWideBiometricLock,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(appWideBiometricLock = v) } }
+                                                    )
+                            }
+                            "Papelera" -> {
+                                                    SwitchSetting(
+                                                        label = "Usar papelera",
+                                                        checked = settings.useTrash,
+                                                        onCheckedChange = { v ->
+                                                            if (!v) {
+                                                                scope.launch {
+                                                                    trashedCount = noteViewModel.getTrashedCount()
+                                                                    showDisableTrashWarning = true
+                                                                }
+                                                            } else {
+                                                                onUpdate { it.copy(useTrash = true) }
+                                                            }
+                                                        }
+                                                    )
+                                                    if (settings.useTrash) {
+                                                        DiscreteSlider(
+                                                            label = "Purgar notas borradas después de",
+                                                            values = listOf(7, 14, 30, 60, 90, -1),
+                                                            valueLabels = listOf("7 días", "14 días", "30 días", "60 días", "90 días", "Nunca"),
+                                                            selected = settings.trashPurgeDays,
+                                                            onSelect = { v -> onUpdate { it.copy(trashPurgeDays = v) } }
+                                                        )
+                                                    } else {
+                                                        Text(
+                                                            "Al borrar una nota se eliminará de inmediato, sin poder recuperarla.",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(top = 4.dp)
+                                                        )
+                                                    }
+                            }
+                            "Imágenes" -> {
+                                                    SwitchSetting(
+                                                        label = "Comprimir imágenes al guardar",
+                                                        checked = settings.compressImages,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(compressImages = v) } }
+                                                    )
+                                                    if (settings.compressImages) {
+                                                        DiscreteSlider(
+                                                            label = "Calidad de compresión",
+                                                            values = listOf(50, 65, 80, 90, 100),
+                                                            valueLabels = listOf("50%", "65%", "80%", "90%", "100%"),
+                                                            selected = settings.imageQuality,
+                                                            onSelect = { v -> onUpdate { it.copy(imageQuality = v) } }
+                                                        )
+                                                    }
+                                                    SettingsDivider()
+                                                    // Al activarlo (y no haber ninguna fijada todavía) se abre
+                                                    // directo el popup para elegir una — desactivarlo solo
+                                                    // limpia lo fijado, sin preguntar nada.
+                                                    SwitchSetting(
+                                                        label = "Usar siempre la misma app para elegir imágenes/video",
+                                                        checked = settings.pinnedMediaPickerPackage.isNotEmpty(),
+                                                        onCheckedChange = { v ->
+                                                            if (v) {
+                                                                showMediaPickerAppDialog = true
+                                                            } else {
+                                                                onUpdate { it.copy(pinnedMediaPickerPackage = "", pinnedMediaPickerActivity = "", pinnedMediaPickerLabel = "") }
+                                                            }
+                                                        }
+                                                    )
+                                                    if (settings.pinnedMediaPickerPackage.isNotEmpty()) {
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clickable { showMediaPickerAppDialog = true }
+                                                                .padding(top = 2.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                "App fijada: ${settings.pinnedMediaPickerLabel}",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                            Text(
+                                                                "Cambiar",
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.primary
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Text(
+                                                            "Al elegir imágenes o video se sigue mostrando el selector con todas las apps compatibles.",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(top = 2.dp)
+                                                        )
+                                                    }
+                            }
+                            "Datos" -> {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                    ) {
+                                                        OutlinedButton(onClick = {
+                                                            scope.launch {
+                                                                notesForExportPicker = noteViewModel.getAllNotesSnapshot()
+                                                                showExportPicker = true
+                                                            }
+                                                        }) {
+                                                            Text("Exportar notas")
+                                                        }
+                                                        OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/zip")) }) {
+                                                            Text("Importar notas")
+                                                        }
+                                                    }
+                                                    statusMessage?.let {
+                                                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                                    }
                             }
                         }
-                    )
-                    if (settings.pinnedMediaPickerPackage.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showMediaPickerAppDialog = true }
-                                .padding(top = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "App fijada: ${settings.pinnedMediaPickerLabel}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "Cambiar",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else {
-                        Text(
-                            "Al elegir imágenes o video se sigue mostrando el selector con todas las apps compatibles.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp)
-                        )
                     }
                 }
-            }
-
-            item {
-                ExpandableSection(
-                    title = "Datos",
-                    icon = Icons.Filled.CloudUpload,
-                    expanded = expandedSectionTitle == "Datos",
-                    onToggle = { expandedSectionTitle = if (expandedSectionTitle == "Datos") null else "Datos" }
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        OutlinedButton(onClick = {
-                            scope.launch {
-                                notesForExportPicker = noteViewModel.getAllNotesSnapshot()
-                                showExportPicker = true
-                            }
-                        }) {
-                            Text("Exportar notas")
-                        }
-                        OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/zip")) }) {
-                            Text("Importar notas")
-                        }
-                    }
-                    statusMessage?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-
-            item { Spacer(Modifier.height(12.dp)) }
-            item {
-                Text(
-                    text = "Bouncy Notes 🍑 — hecho por KeXxDumb",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                    textAlign = TextAlign.Center
-                )
             }
         }
     }
 }
 
 @Composable
-private fun ExpandableSection(
-    title: String,
-    icon: ImageVector,
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable () -> Unit
-) {
+private fun CategoryRow(title: String, icon: ImageVector, onClick: () -> Unit) {
     // Mismo lenguaje visual que las tarjetas de notas (NoteCard en
     // NoteListScreen): esquinas de 16dp y superficie semitransparente al
     // 60%, en vez de un contenedor opaco. Así, si hay una imagen de fondo
     // configurada, se nota a través de estas tarjetas igual que a través de
     // las de notas — antes Ajustes quedaba visualmente aparte del resto de
     // la app, con tarjetas planas y opacas.
+    //
+    // Reemplaza a ExpandableSection: antes tocar esto desplegaba el
+    // contenido EN EL LUGAR (un acordeón); ahora abre una pantalla nueva
+    // (ver openCategory en SettingsScreen), como suelen hacerlo la mayoría
+    // de las apps con ajustes agrupados por categoría.
     val cardShape = RoundedCornerShape(16.dp)
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clip(cardShape)
-            .animateContentSize(),
+            .clickable(onClick = onClick),
         shape = cardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.6f)
         )
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggle() }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Icon(
-                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "Contraer" else "Expandir"
-                )
-            }
-            if (expanded) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp)) {
-                    content()
-                }
-            }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

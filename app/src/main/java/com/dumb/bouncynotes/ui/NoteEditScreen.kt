@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -70,7 +71,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
-import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
@@ -152,6 +152,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -181,6 +182,7 @@ import com.dumb.bouncynotes.ui.components.CompactCaptionField
 import com.dumb.bouncynotes.ui.components.FlatTextField
 import com.dumb.bouncynotes.ui.components.GalleryGrid
 import com.dumb.bouncynotes.ui.components.NoteBackgroundImage
+import com.dumb.bouncynotes.ui.components.NoteScrubber
 import com.dumb.bouncynotes.ui.components.RgbColorPicker
 import com.dumb.bouncynotes.ui.components.ReminderPickerSheet
 import com.dumb.bouncynotes.ui.components.LabelsEditor
@@ -1668,41 +1670,66 @@ fun NoteEditScreen(
                         }
                     }
                 }
-                // Botón flotante para saltar directo al final de la nota —
-                // pensado para notas largas, donde scrollear todo a mano es
-                // tedioso. Solo se muestra si de verdad hay más contenido
-                // para abajo (canScrollForward), para no estorbar en notas
-                // cortas que ya entran enteras en pantalla. Tiene que ser
-                // hijo DIRECTO de este Box (no de una rama del if/else de
-                // arriba) para que "align" funcione y para que siempre
-                // refleje el scroll actual sin importar el tipo de nota o
-                // el modo edición/vista.
-                val canScrollToBottom = when {
-                    current.type == NoteType.CHECKLIST -> checklistScrollState.canScrollForward
-                    else -> editLazyListState.canScrollForward
+                // Slider vertical para navegar rápido por la nota — antes
+                // era un botón que solo saltaba al final; ahora se puede
+                // arrastrar a CUALQUIER punto. Solo se muestra en notas
+                // largas (canScrollForward || canScrollBackward: es
+                // scrolleable en algún sentido, sin importar en qué posición
+                // esté ahora — a diferencia de solo canScrollForward, esto
+                // no desaparece apenas se llega al final, que es justo
+                // cuando más sentido tiene poder volver arriba rápido).
+                val isLongNote = when {
+                    current.type == NoteType.CHECKLIST ->
+                        checklistScrollState.canScrollForward || checklistScrollState.canScrollBackward
+                    else ->
+                        editLazyListState.canScrollForward || editLazyListState.canScrollBackward
                 }
-                if (canScrollToBottom) {
-                    IconButton(
-                        onClick = {
-                            scope.launch {
-                                when {
-                                    current.type == NoteType.CHECKLIST ->
-                                        checklistScrollState.animateScrollTo(checklistScrollState.maxValue)
-                                    else ->
-                                        editLazyListState.animateScrollToItem(
-                                            (editLazyListState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                                        )
+                if (isLongNote) {
+                    val scrubProgress = when {
+                        current.type == NoteType.CHECKLIST -> {
+                            if (checklistScrollState.maxValue > 0) {
+                                checklistScrollState.value.toFloat() / checklistScrollState.maxValue
+                            } else 0f
+                        }
+                        else -> {
+                            val total = editLazyListState.layoutInfo.totalItemsCount
+                            if (total > 1) editLazyListState.firstVisibleItemIndex.toFloat() / (total - 1) else 0f
+                        }
+                    }
+                    NoteScrubber(
+                        progress = scrubProgress,
+                        onScrub = { p ->
+                            when {
+                                current.type == NoteType.CHECKLIST -> {
+                                    // dispatchRawDelta (no-suspend) en vez de scrollTo
+                                    // (suspend): esto se llama en CADA punto del
+                                    // arrastre, no tiene sentido lanzar una corrutina
+                                    // nueva por cada pixel que se mueve el dedo.
+                                    val target = p * checklistScrollState.maxValue
+                                    checklistScrollState.dispatchRawDelta(target - checklistScrollState.value.toFloat())
+                                }
+                                else -> {
+                                    // requestScrollToItem (no-suspend, pensada
+                                    // justamente para esto: "mover la posición rápido,
+                                    // sin esperar a que termine el scroll anterior, en
+                                    // respuesta a un gesto de arrastre") en vez de
+                                    // scrollToItem/animateScrollToItem (suspend). Un
+                                    // LazyColumn no conoce su alto total en píxeles sin
+                                    // medir cada ítem, así que la navegación es por
+                                    // índice, no por posición exacta en píxeles.
+                                    val total = editLazyListState.layoutInfo.totalItemsCount
+                                    val targetIndex = (p * (total - 1).coerceAtLeast(0))
+                                        .roundToInt()
+                                        .coerceIn(0, (total - 1).coerceAtLeast(0))
+                                    editLazyListState.requestScrollToItem(targetIndex)
                                 }
                             }
                         },
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = bottomBarCompensation + 12.dp, end = 4.dp)
-                            .size(44.dp)
-                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
-                    ) {
-                        Icon(Icons.Filled.VerticalAlignBottom, contentDescription = "Ir al final de la nota")
-                    }
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight(0.65f)
+                            .padding(end = 6.dp, bottom = bottomBarCompensation)
+                    )
                 }
             }
             // Cierra el Column original (título + contenido) que envuelve
