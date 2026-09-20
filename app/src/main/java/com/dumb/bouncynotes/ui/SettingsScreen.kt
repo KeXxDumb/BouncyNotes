@@ -812,14 +812,23 @@ fun SettingsScreen(
                                                     )
                             }
                             "Recordatorios" -> {
-                                                    Text(
-                                                        "Estos permisos evitan que el sistema retrase o silencie los recordatorios en segundo plano.",
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                    Spacer(Modifier.height(6.dp))
-                                                    if (!canScheduleExact) {
-                                                        Row(
+                                // BUG DE COMPILACIÓN encontrado y corregido: estas tres
+                                // variables se calculaban ANTES del ExpandableSection
+                                // original (compartidas por lo que se ve más abajo), y
+                                // se perdieron al mover el contenido a este archivo — se
+                                // quedaron fuera del bloque que se copió. Sin esto, el
+                                // build fallaba con "Unresolved reference" para las tres.
+                                val activity = context.findActivity()
+                                val canScheduleExact = ReminderScheduler.canScheduleExact(context)
+                                val ignoringBatteryOpt = ReminderScheduler.isIgnoringBatteryOptimizations(context)
+                                    Text(
+                                        "Estos permisos evitan que el sistema retrase o silencie los recordatorios en segundo plano.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    if (!canScheduleExact) {
+                                        Row(
                                                             modifier = Modifier.fillMaxWidth(),
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
