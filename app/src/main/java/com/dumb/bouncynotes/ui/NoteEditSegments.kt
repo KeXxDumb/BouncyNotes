@@ -98,3 +98,19 @@ internal fun segmentsToContent(segments: List<EditSegment>): String =
             is EditSegment.VideoSeg -> buildVideoTag(seg.fileName, seg.caption)
         }
     }
+
+// "Cuántas líneas tiene esta nota", para decidir si el slider de navegación
+// rápida (NoteScrubber) tiene sentido mostrarlo — una nota corta que ya
+// entra en pantalla no lo necesita, sin importar si técnicamente alcanza a
+// scrollear un pixel de más. Una imagen/video pesa como 5 líneas de texto
+// (ocupa bastante más alto en pantalla que una línea), y cada imagen DENTRO
+// de un grupo cuenta por separado (un grupo de 3 fotos "pesa" como 15).
+internal fun noteLineScore(segments: List<EditSegment>): Int =
+    segments.sumOf { seg ->
+        when (seg) {
+            is EditSegment.TextSeg -> if (seg.value.text.isBlank()) 0 else seg.value.text.lines().size
+            is EditSegment.ImageSeg -> 5
+            is EditSegment.GallerySeg -> seg.fileNames.size * 5
+            is EditSegment.VideoSeg -> 5
+        }
+    }

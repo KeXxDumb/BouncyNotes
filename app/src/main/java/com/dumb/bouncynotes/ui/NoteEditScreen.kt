@@ -78,9 +78,6 @@ import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.RestoreFromTrash
@@ -309,7 +306,10 @@ fun NoteEditScreen(
     var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
-    var pendingCameraFileName by remember { mutableStateOf<String?>(null) }
+    // pendingCameraFileName y showImageSourceDialog se eliminaron: ya no hay
+    // cámara ni un diálogo previo para elegir imagen/video/cámara — el
+    // botón de adjuntar abre directo un único selector que acepta las dos
+    // cosas mezcladas (ver mediaLauncher/handlePickedMedia más abajo).
     var showVideoTooLarge by remember { mutableStateOf(false) }
     // Guarda temporalmente qué archivo hay que exportar (y su callback de
     // resultado) mientras se espera la respuesta del diálogo de permiso de
@@ -331,7 +331,6 @@ fun NoteEditScreen(
         }
     }
     var viewerStartPos by remember { mutableStateOf<Int?>(null) }
-    var showImageSourceDialog by remember { mutableStateOf(false) }
     // Cuando se seleccionan varias imágenes a la vez desde la galería, quedan
     // acá mientras se le pregunta al usuario si van agrupadas o sueltas (ver
     // el AlertDialog más abajo). null = no hay ninguna pregunta pendiente.
@@ -646,9 +645,17 @@ fun NoteEditScreen(
     // apuntarlo a una Activity concreta — necesario para poder saltear el
     // chooser cuando hay una app fijada en Ajustes ("Usar siempre la misma
     // app para elegir imágenes/video").
-    val galleryLauncher = rememberLauncherForActivityResult(
+    //
+    // Un solo picker para imagen Y video a la vez (antes eran dos botones
+    // separados, con un diálogo previo para elegir cuál) — extraMimeTypes
+    // hace que la galería del teléfono muestre fotos, gifs y videos
+    // mezclados en el mismo selector; handlePickedMedia mira el tipo real
+    // de cada archivo elegido (contentResolver.getType) para mandarlo al
+    // camino que corresponda (compresión de imagen vs. tope de tamaño de
+    // video), ya que esa lógica es bien distinta para cada uno.
+    val mediaLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
-    ) { result -> handlePickedImages(extractPickedUris(result.resultCode, result.data)) }
+    ) { result -> handlePickedMedia(extractPickedUris(result.resultCode, result.data)) }
 
     // Arma el Intent según haya o no una app fijada, y si esa app fijada
     // dejó de existir (desinstalada, etc.) cae al selector genérico en vez
@@ -656,53 +663,18 @@ fun NoteEditScreen(
     // solo recibe `settings` de lectura, no un mecanismo para actualizarlo
     // como sí tiene SettingsScreen) — el usuario lo puede desactivar a mano
     // en Ajustes si vuelve a fallar.
-    fun launchMediaPicker(launcher: ActivityResultLauncher<Intent>, mimeType: String, allowMultiple: Boolean) {
+    fun launchMediaPicker(launcher: ActivityResultLauncher<Intent>, mimeType: String, allowMultiple: Boolean, extraMimeTypes: Array<String>? = null) {
         try {
             launcher.launch(
                 buildMediaPickerIntent(
                     mimeType, allowMultiple,
                     pinnedPackage = settings.pinnedMediaPickerPackage,
-                    pinnedActivity = settings.pinnedMediaPickerActivity
+                    pinnedActivity = settings.pinnedMediaPickerActivity,
+                    extraMimeTypes = extraMimeTypes
                 )
             )
         } catch (e: ActivityNotFoundException) {
-            launcher.launch(buildMediaPickerIntent(mimeType, allowMultiple, "", ""))
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val fileName = pendingCameraFileName
-        if (success && fileName != null) {
-            if (settings.compressImages) {
-                // Mismo motivo que en handlePickedImages: comprimir es I/O de
-                // disco real, no algo instantáneo — se saca del hilo principal
-                // para no trabar la app justo después de sacar la foto.
-                scope.launch {
-                    withContext(Dispatchers.IO) {
-                        ImageStorage.compressInPlace(context, fileName, settings.imageQuality)
-                    }
-                    insertImageAtActiveSegment(fileName)
-                    focusManager.clearFocus(force = true)
-                }
-            } else {
-                insertImageAtActiveSegment(fileName)
-                focusManager.clearFocus(force = true)
-            }
-        } else if (fileName != null) {
-            ImageStorage.deleteFile(context, fileName)
-        }
-        pendingCameraFileName = null
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            val (file, uri) = ImageStorage.createCaptureFile(context)
-            pendingCameraFileName = file.name
-            cameraLauncher.launch(uri)
+            launcher.launch(buildMediaPickerIntent(mimeType, allowMultiple, "", "", extraMimeTypes))
         }
     }
 
@@ -727,10 +699,20 @@ fun NoteEditScreen(
         }
     }
 
-    // Selector clásico para video, mismo motivo que galleryLauncher de arriba.
-    val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result -> handlePickedVideo(extractPickedUris(result.resultCode, result.data).firstOrNull()) }
+    // Punto de entrada único desde mediaLauncher: separa lo elegido en
+    // imágenes/gifs por un lado y videos por otro (mirando el mimeType REAL
+    // de cada archivo, no cómo se llame ni de dónde salió) y reusa
+    // handlePickedImages/handlePickedVideo tal cual, sin duplicar su lógica
+    // de compresión/copiado — la única diferencia es que ahora pueden llegar
+    // mezclados en una misma selección múltiple.
+    fun handlePickedMedia(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val (videoUris, imageUris) = uris.partition { uri ->
+            context.contentResolver.getType(uri)?.startsWith("video/") == true
+        }
+        if (imageUris.isNotEmpty()) handlePickedImages(imageUris)
+        videoUris.forEach { handlePickedVideo(it) }
+    }
 
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
     // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
@@ -841,47 +823,10 @@ fun NoteEditScreen(
         return
     }
 
-    if (showImageSourceDialog) {
-        AlertDialog(
-            onDismissRequest = { showImageSourceDialog = false },
-            title = { Text("Agregar contenido") },
-            text = {
-                Column {
-                    Text("Se insertará donde está el cursor.", style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
-                    listOf(
-                        Triple(Icons.Filled.PhotoCamera, "Cámara") {
-                            showImageSourceDialog = false
-                            cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
-                        },
-                        Triple(Icons.Filled.PhotoLibrary, "Galería (fotos y gifs)") {
-                            showImageSourceDialog = false
-                            launchMediaPicker(galleryLauncher, "image/*", allowMultiple = true)
-                        },
-                        Triple(Icons.Filled.Videocam, "Video (máx. ${ImageStorage.MAX_VIDEO_BYTES / (1024 * 1024)} MB)") {
-                            showImageSourceDialog = false
-                            launchMediaPicker(videoLauncher, "video/*", allowMultiple = false)
-                        }
-                    ).forEach { (icon, label, onClick) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(onClick = onClick)
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(icon, contentDescription = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(label)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showImageSourceDialog = false }) { Text("Cancelar") }
-            }
-        )
-    }
+    // El diálogo de elección (cámara/galería/video) se eliminó: el botón de
+    // adjuntar ahora abre directo un único selector que acepta imagen y
+    // video mezclados (ver mediaLauncher/handlePickedMedia).
+
 
     if (showVideoTooLarge) {
         AlertDialog(
@@ -1176,7 +1121,12 @@ fun NoteEditScreen(
                     }
                 }
                 if (current.type == NoteType.TEXT && isEditing) {
-                    IconButton(onClick = { showImageSourceDialog = true }) {
+                    IconButton(onClick = {
+                        launchMediaPicker(
+                            mediaLauncher, "*/*", allowMultiple = true,
+                            extraMimeTypes = arrayOf("image/*", "video/*")
+                        )
+                    }) {
                         Icon(Icons.Filled.Image, contentDescription = "Insertar imagen")
                     }
                     IconButton(onClick = { wrapActiveSelection("**") }) {
@@ -1672,17 +1622,15 @@ fun NoteEditScreen(
                 }
                 // Slider vertical para navegar rápido por la nota — antes
                 // era un botón que solo saltaba al final; ahora se puede
-                // arrastrar a CUALQUIER punto. Solo se muestra en notas
-                // largas (canScrollForward || canScrollBackward: es
-                // scrolleable en algún sentido, sin importar en qué posición
-                // esté ahora — a diferencia de solo canScrollForward, esto
-                // no desaparece apenas se llega al final, que es justo
-                // cuando más sentido tiene poder volver arriba rápido).
-                val isLongNote = when {
-                    current.type == NoteType.CHECKLIST ->
-                        checklistScrollState.canScrollForward || checklistScrollState.canScrollBackward
-                    else ->
-                        editLazyListState.canScrollForward || editLazyListState.canScrollBackward
+                // arrastrar a CUALQUIER punto. Solo se muestra si el switch
+                // de Ajustes está activo Y la nota es "larga" de verdad
+                // (más de 50 líneas contadas con noteLineScore/tamaño del
+                // checklist — no solo "scrollea un pixel de más", que hacía
+                // que apareciera hasta en notas que ya entraban casi
+                // enteras en pantalla).
+                val isLongNote = settings.showNoteScrubber && when {
+                    current.type == NoteType.CHECKLIST -> current.checklistItems.size > 50
+                    else -> noteLineScore(segments) > 50
                 }
                 if (isLongNote) {
                     val scrubProgress = when {
@@ -1727,7 +1675,7 @@ fun NoteEditScreen(
                         },
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
-                            .fillMaxHeight(0.65f)
+                            .fillMaxHeight(0.55f)
                             .padding(end = 6.dp, bottom = bottomBarCompensation)
                     )
                 }

@@ -708,6 +708,11 @@ fun SettingsScreen(
                                                         checked = settings.showFirstImage,
                                                         onCheckedChange = { v -> onUpdate { it.copy(showFirstImage = v) } }
                                                     )
+                                                    SwitchSetting(
+                                                        label = "Slider para navegar rápido en notas largas",
+                                                        checked = settings.showNoteScrubber,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(showNoteScrubber = v) } }
+                                                    )
                                                     CycleSetting(
                                                         label = "Formato por defecto para imágenes agrupadas",
                                                         options = GalleryLayout.entries.map { it to it.label },

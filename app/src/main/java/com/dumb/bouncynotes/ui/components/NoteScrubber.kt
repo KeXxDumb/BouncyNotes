@@ -43,12 +43,12 @@ fun NoteScrubber(
     var trackHeightPx by remember { mutableStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     val density = LocalDensity.current
-    val thumbHeightDp = 34.dp
+    val thumbHeightDp = 26.dp
     val thumbHeightPx = with(density) { thumbHeightDp.toPx() }
 
     Box(
         modifier = modifier
-            .width(28.dp)
+            .width(18.dp)
             .onGloballyPositioned { trackHeightPx = it.size.height.toFloat() }
             .pointerInputScrub(
                 onStart = { y ->
@@ -65,9 +65,9 @@ fun NoteScrubber(
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .width(3.dp)
+                .width(2.dp)
                 .fillMaxHeight()
-                .clip(RoundedCornerShape(2.dp))
+                .clip(RoundedCornerShape(1.dp))
                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f))
         )
         // Pulgar: se mueve entre el tope y el fondo del riel según progress,
@@ -78,8 +78,8 @@ fun NoteScrubber(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset { IntOffset(0, thumbOffsetPx.roundToInt()) }
-                .size(width = 18.dp, height = thumbHeightDp)
-                .clip(RoundedCornerShape(9.dp))
+                .size(width = 12.dp, height = thumbHeightDp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(
                     if (isDragging) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
@@ -91,9 +91,9 @@ fun NoteScrubber(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .offset { IntOffset(-(with(density) { 52.dp.toPx() }).roundToInt(), thumbOffsetPx.roundToInt()) }
-                    .size(width = 44.dp, height = thumbHeightDp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .offset { IntOffset(-(with(density) { 46.dp.toPx() }).roundToInt(), thumbOffsetPx.roundToInt() - 4) }
+                    .size(width = 38.dp, height = thumbHeightDp + 8.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black.copy(alpha = 0.75f)),
                 contentAlignment = Alignment.Center
             ) {

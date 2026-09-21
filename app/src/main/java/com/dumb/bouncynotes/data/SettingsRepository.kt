@@ -102,7 +102,10 @@ data class AppSettings(
     // de pantalla) se sortea uno al azar de este pool y se guarda ahí. La
     // rotación es automática según el tamaño del pool (ver SettingsScreen):
     // 0 imágenes = sin fondo, 1 = esa siempre, 2+ = se sortea una al abrir.
-    val backgroundImagePaths: List<String> = emptyList()
+    val backgroundImagePaths: List<String> = emptyList(),
+    // Slider vertical de navegación rápida en notas largas (NoteScrubber).
+    // Activado por defecto — quien no lo quiera lo apaga en Ajustes.
+    val showNoteScrubber: Boolean = true
 )
 
 class SettingsRepository(private val context: Context) {
@@ -145,6 +148,7 @@ class SettingsRepository(private val context: Context) {
         val WIDGET_THEME_MODE = stringPreferencesKey("widget_theme_mode")
         val WIDGET_TRANSPARENT_BACKGROUND = booleanPreferencesKey("widget_transparent_background")
         val SHOW_BACKGROUND_IN_NOTES = booleanPreferencesKey("show_background_in_notes")
+        val SHOW_NOTE_SCRUBBER = booleanPreferencesKey("show_note_scrubber")
         val BACKGROUND_IMAGE_POOL = stringPreferencesKey("background_image_pool")
     }
 
@@ -196,7 +200,8 @@ class SettingsRepository(private val context: Context) {
             backgroundImagePaths = prefs[Keys.BACKGROUND_IMAGE_POOL]
                 ?.split(",")
                 ?.filter { it.isNotBlank() }
-                ?: emptyList()
+                ?: emptyList(),
+            showNoteScrubber = prefs[Keys.SHOW_NOTE_SCRUBBER] ?: true
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -252,6 +257,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.WIDGET_TRANSPARENT_BACKGROUND] = updated.widgetTransparentBackground
             prefs[Keys.SHOW_BACKGROUND_IN_NOTES] = updated.showBackgroundInNotes
             prefs[Keys.BACKGROUND_IMAGE_POOL] = updated.backgroundImagePaths.joinToString(",")
+            prefs[Keys.SHOW_NOTE_SCRUBBER] = updated.showNoteScrubber
         }
         // BUG (ya resuelto) que motivó agregar esto: SettingsCache (el
         // caché sincrónico que usan varias cosas fuera de Compose, como el

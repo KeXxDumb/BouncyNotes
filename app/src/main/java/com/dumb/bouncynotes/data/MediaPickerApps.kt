@@ -28,12 +28,18 @@ fun buildMediaPickerIntent(
     mimeType: String,
     allowMultiple: Boolean,
     pinnedPackage: String,
-    pinnedActivity: String
+    pinnedActivity: String,
+    // Para "imagen o video en el mismo picker": type = "*/*" más este extra
+    // (p. ej. arrayOf("image/*", "video/*")) es como Android deja filtrar
+    // por VARIOS tipos a la vez — un solo string de mimeType no alcanza,
+    // "image/*,video/*" no es un mimeType válido para el campo `type`.
+    extraMimeTypes: Array<String>? = null
 ): Intent {
     val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
         type = mimeType
         addCategory(Intent.CATEGORY_OPENABLE)
         if (allowMultiple) putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        if (extraMimeTypes != null) putExtra(Intent.EXTRA_MIME_TYPES, extraMimeTypes)
     }
     if (pinnedPackage.isNotEmpty() && pinnedActivity.isNotEmpty()) {
         intent.setClassName(pinnedPackage, pinnedActivity)

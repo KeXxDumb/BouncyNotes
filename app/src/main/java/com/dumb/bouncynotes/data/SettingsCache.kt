@@ -66,6 +66,7 @@ object SettingsCache {
         const val WIDGET_TRANSPARENT_BACKGROUND = "widget_transparent_background"
         const val SHOW_BACKGROUND_IN_NOTES = "show_background_in_notes"
         const val BACKGROUND_IMAGE_POOL = "background_image_pool"
+        const val SHOW_NOTE_SCRUBBER = "show_note_scrubber"
     }
 
     /** Lectura 100% sincrónica. Segura de llamar antes de setContent(). */
@@ -112,7 +113,8 @@ object SettingsCache {
             showBackgroundInNotes = prefs.getBoolean(K.SHOW_BACKGROUND_IN_NOTES, d.showBackgroundInNotes),
             backgroundImagePaths = (prefs.getString(K.BACKGROUND_IMAGE_POOL, null) ?: "")
                 .split(",")
-                .filter { it.isNotBlank() }
+                .filter { it.isNotBlank() },
+            showNoteScrubber = prefs.getBoolean(K.SHOW_NOTE_SCRUBBER, d.showNoteScrubber)
         )
     }
 
@@ -163,6 +165,7 @@ object SettingsCache {
             putBoolean(K.WIDGET_TRANSPARENT_BACKGROUND, settings.widgetTransparentBackground)
             putBoolean(K.SHOW_BACKGROUND_IN_NOTES, settings.showBackgroundInNotes)
             putString(K.BACKGROUND_IMAGE_POOL, settings.backgroundImagePaths.joinToString(","))
+            putBoolean(K.SHOW_NOTE_SCRUBBER, settings.showNoteScrubber)
             apply()
         }
     }
