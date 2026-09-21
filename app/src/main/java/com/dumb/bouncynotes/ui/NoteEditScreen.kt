@@ -640,6 +640,51 @@ fun NoteEditScreen(
         }
     }
 
+    // Misma idea que con handlePickedImages: se extrae para reusarla si hace
+    // falta más de un selector de video en el futuro.
+    fun handlePickedVideo(uri: Uri?) {
+        if (uri != null) {
+            // Copiar un video (hasta el tope de tamaño permitido, ver
+            // ImageStorage) es la operación más pesada de todas las que se
+            // movieron a un hilo de fondo en esta vuelta — es la que más se
+            // sentía trabar la app antes de este cambio.
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { ImageStorage.copyVideoFromUri(context, uri) }
+                when {
+                    result.fileName != null -> {
+                        insertVideoAtActiveSegment(result.fileName)
+                        focusManager.clearFocus(force = true)
+                    }
+                    result.tooLarge -> showVideoTooLarge = true
+                }
+            }
+        }
+    }
+
+    // Punto de entrada único desde mediaLauncher (más abajo): separa lo
+    // elegido en imágenes/gifs por un lado y videos por otro (mirando el
+    // mimeType REAL de cada archivo, no cómo se llame ni de dónde salió) y
+    // reusa handlePickedImages/handlePickedVideo tal cual, sin duplicar su
+    // lógica de compresión/copiado — la única diferencia es que ahora
+    // pueden llegar mezclados en una misma selección múltiple.
+    //
+    // BUG DE COMPILACIÓN encontrado y corregido: esta función (y
+    // handlePickedVideo, arriba) tienen que estar declaradas ANTES de
+    // mediaLauncher, no después — son funciones LOCALES (no de nivel
+    // superior), y Kotlin exige que existan en el orden en que aparecen en
+    // el código para poder usarlas, aunque el uso esté adentro de un lambda
+    // que recién se ejecuta más tarde (el callback del launcher). El build
+    // fallaba con "Unresolved reference: handlePickedMedia" porque estaba
+    // declarada MÁS ABAJO de donde se la usaba.
+    fun handlePickedMedia(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val (videoUris, imageUris) = uris.partition { uri ->
+            context.contentResolver.getType(uri)?.startsWith("video/") == true
+        }
+        if (imageUris.isNotEmpty()) handlePickedImages(imageUris)
+        videoUris.forEach { handlePickedVideo(it) }
+    }
+
     // ACTION_GET_CONTENT armado a mano (no GetMultipleContents, el contrato
     // que se usaba antes): ese contrato arma el Intent por dentro y no deja
     // apuntarlo a una Activity concreta — necesario para poder saltear el
@@ -676,42 +721,6 @@ fun NoteEditScreen(
         } catch (e: ActivityNotFoundException) {
             launcher.launch(buildMediaPickerIntent(mimeType, allowMultiple, "", "", extraMimeTypes))
         }
-    }
-
-    // Misma idea que con handlePickedImages: se extrae para reusarla si hace
-    // falta más de un selector de video en el futuro.
-    fun handlePickedVideo(uri: Uri?) {
-        if (uri != null) {
-            // Copiar un video (hasta el tope de tamaño permitido, ver
-            // ImageStorage) es la operación más pesada de todas las que se
-            // movieron a un hilo de fondo en esta vuelta — es la que más se
-            // sentía trabar la app antes de este cambio.
-            scope.launch {
-                val result = withContext(Dispatchers.IO) { ImageStorage.copyVideoFromUri(context, uri) }
-                when {
-                    result.fileName != null -> {
-                        insertVideoAtActiveSegment(result.fileName)
-                        focusManager.clearFocus(force = true)
-                    }
-                    result.tooLarge -> showVideoTooLarge = true
-                }
-            }
-        }
-    }
-
-    // Punto de entrada único desde mediaLauncher: separa lo elegido en
-    // imágenes/gifs por un lado y videos por otro (mirando el mimeType REAL
-    // de cada archivo, no cómo se llame ni de dónde salió) y reusa
-    // handlePickedImages/handlePickedVideo tal cual, sin duplicar su lógica
-    // de compresión/copiado — la única diferencia es que ahora pueden llegar
-    // mezclados en una misma selección múltiple.
-    fun handlePickedMedia(uris: List<Uri>) {
-        if (uris.isEmpty()) return
-        val (videoUris, imageUris) = uris.partition { uri ->
-            context.contentResolver.getType(uri)?.startsWith("video/") == true
-        }
-        if (imageUris.isNotEmpty()) handlePickedImages(imageUris)
-        videoUris.forEach { handlePickedVideo(it) }
     }
 
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
