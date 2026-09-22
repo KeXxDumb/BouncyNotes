@@ -1648,6 +1648,21 @@ fun NoteEditScreen(
                                 checklistScrollState.value.toFloat() / checklistScrollState.maxValue
                             } else 0f
                         }
+                        // BUG encontrado: usar solo firstVisibleItemIndex/total
+                        // hacía que el pulgar "subiera" un poco justo al llegar
+                        // al fondo de verdad. Causa real: cerca del final,
+                        // LazyColumn puede "rebotar" (si lo que queda de
+                        // contenido es más bajo que la pantalla, ajusta solo
+                        // para que no quede espacio vacío) — eso deja
+                        // firstVisibleItemIndex en un valor MENOR a total-1
+                        // aunque visualmente ya se llegó abajo del todo, y el
+                        // cálculo por índice nunca llegaba a 1f exacto.
+                        // Anclar a canScrollForward/canScrollBackward (en vez
+                        // de solo al índice) hace que el pulgar SIEMPRE toque
+                        // las puntas del riel cuando de verdad no hay más para
+                        // scrollear, sin importar ese rebote.
+                        !editLazyListState.canScrollForward -> 1f
+                        !editLazyListState.canScrollBackward -> 0f
                         else -> {
                             val total = editLazyListState.layoutInfo.totalItemsCount
                             if (total > 1) editLazyListState.firstVisibleItemIndex.toFloat() / (total - 1) else 0f

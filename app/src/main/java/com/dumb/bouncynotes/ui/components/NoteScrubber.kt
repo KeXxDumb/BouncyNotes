@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -85,25 +83,6 @@ fun NoteScrubber(
                     else MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                 )
         )
-        // Solo mientras se arrastra: un globito con el % de avance, para que
-        // arrastrar a ciegas tenga algo de referencia de "cuánto falta".
-        if (isDragging) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset { IntOffset(-(with(density) { 46.dp.toPx() }).roundToInt(), thumbOffsetPx.roundToInt() - 4) }
-                    .size(width = 38.dp, height = thumbHeightDp + 8.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black.copy(alpha = 0.75f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "${(progress.coerceIn(0f, 1f) * 100).roundToInt()}%",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-        }
     }
 }
 
