@@ -63,6 +63,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import com.dumb.bouncynotes.ui.components.CompactIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -587,20 +588,16 @@ fun SettingsScreen(
                                                                         contentScale = ContentScale.Crop,
                                                                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp))
                                                                     )
-                                                                    IconButton(
+                                                                    CompactIconButton(
                                                                         onClick = { removeBackgroundImage(fileName) },
-                                                                        modifier = Modifier
-                                                                            .align(Alignment.TopEnd)
-                                                                            .size(22.dp)
-                                                                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
-                                                                    ) {
-                                                                        Icon(
-                                                                            Icons.Filled.Close,
-                                                                            contentDescription = "Quitar imagen",
-                                                                            tint = Color.White,
-                                                                            modifier = Modifier.size(14.dp)
-                                                                        )
-                                                                    }
+                                                                        icon = Icons.Filled.Close,
+                                                                        contentDescription = "Quitar imagen",
+                                                                        modifier = Modifier.align(Alignment.TopEnd),
+                                                                        buttonSize = 22.dp,
+                                                                        iconSize = 14.dp,
+                                                                        tint = Color.White,
+                                                                        containerColor = Color.Black.copy(alpha = 0.55f)
+                                                                    )
                                                                 }
                                                             }
                                                             item {

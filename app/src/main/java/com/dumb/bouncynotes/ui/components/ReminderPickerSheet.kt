@@ -376,17 +376,14 @@ internal fun ReminderPickerSheet(
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
-                                    IconButton(
+                                    CompactIconButton(
                                         onClick = { calendarDates = calendarDates - d },
-                                        modifier = Modifier.size(20.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Quitar fecha",
-                                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
+                                        icon = Icons.Filled.Close,
+                                        contentDescription = "Quitar fecha",
+                                        buttonSize = 22.dp,
+                                        iconSize = 14.dp,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 }
                             }
                         }

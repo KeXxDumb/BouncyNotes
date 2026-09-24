@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import com.dumb.bouncynotes.ui.components.CompactIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -228,13 +229,25 @@ fun ImageViewerScreen(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { saveCurrentToDevice() }) {
-                        Icon(Icons.Filled.Download, contentDescription = "Guardar en el dispositivo", tint = Color.White)
-                    }
+                    // Botones de 40dp con ícono de 20dp (antes 48dp/24dp por
+                    // defecto): ocupaban demasiado alto pegados debajo del visor.
+                    CompactIconButton(
+                        onClick = { saveCurrentToDevice() },
+                        icon = Icons.Filled.Download,
+                        contentDescription = "Guardar en el dispositivo",
+                        buttonSize = 40.dp,
+                        iconSize = 22.dp,
+                        tint = Color.White
+                    )
                     if (canDelete) {
-                        IconButton(onClick = { deleteCurrentOrNull?.invoke() }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = Color.White)
-                        }
+                        CompactIconButton(
+                            onClick = { deleteCurrentOrNull?.invoke() },
+                            icon = Icons.Filled.Delete,
+                            contentDescription = "Eliminar",
+                            buttonSize = 40.dp,
+                            iconSize = 22.dp,
+                            tint = Color.White
+                        )
                     }
                 }
             }

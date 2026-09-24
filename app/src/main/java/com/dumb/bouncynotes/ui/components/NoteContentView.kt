@@ -193,21 +193,16 @@ internal fun GalleryGrid(
                         .clickable { onImageClick(index) }
                 )
                 if (onDeleteImage != null) {
-                    IconButton(
+                    CompactIconButton(
                         onClick = { onDeleteImage(index) },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(2.dp)
-                            .size(22.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Filled.Close,
-                            contentDescription = "Quitar esta imagen del grupo",
-                            tint = Color.White,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
+                        icon = Icons.Filled.Close,
+                        contentDescription = "Quitar esta imagen del grupo",
+                        modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
+                        buttonSize = 22.dp,
+                        iconSize = 12.dp,
+                        tint = Color.White,
+                        containerColor = Color.Black.copy(alpha = 0.5f)
+                    )
                 }
             }
             val caption = captions.getOrElse(index) { "" }

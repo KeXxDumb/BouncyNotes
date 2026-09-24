@@ -3,6 +3,7 @@ package com.dumb.bouncynotes.widget
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dumb.bouncynotes.R
@@ -50,8 +51,13 @@ class AllNotesClockWidgetFactory(private val context: Context, private val widge
     override fun getViewAt(position: Int): RemoteViews {
         val note = notes[position]
         return RemoteViews(context.packageName, R.layout.widget_note_summary_row).apply {
-            setTextViewText(R.id.RowTitle, (if (note.pinned) "📌 " else "") + note.title.ifBlank { "(Sin título)" })
+            setTextViewText(R.id.RowTitle, note.title.ifBlank { "(Sin título)" })
             setTextColor(R.id.RowTitle, colors.textPrimary)
+            // Ícono vectorial en vez del emoji 📌: un ImageView aparte (los
+            // spans con drawables no viajan por RemoteViews). Los RemoteViews
+            // se reciclan, así que hay que fijar la visibilidad en AMBOS casos.
+            setViewVisibility(R.id.RowPin, if (note.pinned) View.VISIBLE else View.GONE)
+            if (note.pinned) setInt(R.id.RowPin, "setColorFilter", colors.textPrimary)
             setTextViewText(R.id.RowPreview, notePreviewLine(note))
             setTextColor(R.id.RowPreview, colors.textSecondary)
             // Fill-in intent SOLO con extras (sin action/data/component) —

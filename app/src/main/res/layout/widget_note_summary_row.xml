@@ -16,15 +16,34 @@
     android:paddingTop="8dp"
     android:paddingBottom="8dp">
 
-    <TextView
-        android:id="@+id/RowTitle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:fontFamily="sans-serif-medium"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textSize="14sp"
-        android:textColor="?android:attr/textColorPrimary" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- Ícono de nota fijada: gone por defecto, la Factory lo muestra
+             y le pone color solo si la nota está fijada. -->
+        <ImageView
+            android:id="@+id/RowPin"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginEnd="4dp"
+            android:src="@drawable/ic_widget_pin"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/RowTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textSize="14sp"
+            android:textColor="?android:attr/textColorPrimary" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/RowPreview"

@@ -95,6 +95,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import com.dumb.bouncynotes.ui.components.CompactIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -1458,21 +1459,16 @@ fun NoteEditScreen(
                                                     .clickable { viewerStartPos = imageIndex }
                                             )
                                             if (isEditing) {
-                                                IconButton(
+                                                CompactIconButton(
                                                     onClick = { deleteMediaSegment(index) },
-                                                    modifier = Modifier
-                                                        .align(Alignment.TopEnd)
-                                                        .padding(4.dp)
-                                                        .size(28.dp)
-                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Close,
-                                                        contentDescription = "Quitar imagen",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
+                                                    icon = Icons.Filled.Close,
+                                                    contentDescription = "Quitar imagen",
+                                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                                                    buttonSize = 28.dp,
+                                                    iconSize = 16.dp,
+                                                    tint = Color.White,
+                                                    containerColor = Color.Black.copy(alpha = 0.5f)
+                                                )
                                                 if (segment.caption.isBlank() && index !in captionActiveIndices) {
                                                     TextButton(
                                                         onClick = { captionActiveIndices = captionActiveIndices + index },
@@ -1595,21 +1591,16 @@ fun NoteEditScreen(
                                                 onClick = { viewerStartPos = imageIndex }
                                             )
                                             if (isEditing) {
-                                                IconButton(
+                                                CompactIconButton(
                                                     onClick = { deleteMediaSegment(index) },
-                                                    modifier = Modifier
-                                                        .align(Alignment.TopEnd)
-                                                        .padding(4.dp)
-                                                        .size(28.dp)
-                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Filled.Close,
-                                                        contentDescription = "Quitar video",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
+                                                    icon = Icons.Filled.Close,
+                                                    contentDescription = "Quitar video",
+                                                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                                                    buttonSize = 28.dp,
+                                                    iconSize = 16.dp,
+                                                    tint = Color.White,
+                                                    containerColor = Color.Black.copy(alpha = 0.5f)
+                                                )
                                             }
                                         }
                                         if (!isEditing && segment.caption.isNotBlank()) {

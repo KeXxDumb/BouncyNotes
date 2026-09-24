@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -48,6 +49,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
@@ -60,6 +62,7 @@ import androidx.compose.material.icons.filled.RestoreFromTrash
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -78,6 +81,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
@@ -101,6 +105,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -149,6 +155,14 @@ fun NoteListScreen(
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
 
+    // Confirmaciones de borrado definitivo en la papelera: uno para el botón
+    // de cada tarjeta (guarda la nota puntual) y otro para "vaciar todo" de
+    // la barra superior. Borrar para siempre no se puede deshacer, y el
+    // botón de la tarjeta es chico y está pegado a otras cosas tocables, así
+    // que siempre se pide confirmación (no depende de confirmBeforeDelete).
+    var noteToDeleteForever by remember { mutableStateOf<Note?>(null) }
+    var showEmptyTrashConfirm by remember { mutableStateOf(false) }
+
     // Bug reportado: abrir Ajustes, cerrarlo y tocar rápido y repetido la
     // esquina superior izquierda dejaba la pantalla en negro. Con el log de
     // diagnóstico (tag "BouncyDrawerDebug", ya retirado) se confirmó que no
@@ -166,6 +180,49 @@ fun NoteListScreen(
 
     LaunchedEffect(viewMode, labelFilter) {
         selectedIds = emptySet()
+    }
+
+    noteToDeleteForever?.let { target ->
+        AlertDialog(
+            onDismissRequest = { noteToDeleteForever = null },
+            title = { Text("¿Eliminar para siempre?") },
+            text = { Text("Esta nota se eliminará definitivamente. Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteForever(target)
+                    noteToDeleteForever = null
+                }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { noteToDeleteForever = null }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    if (showEmptyTrashConfirm) {
+        val trashCount = notes.orEmpty().size
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashConfirm = false },
+            title = { Text("¿Vaciar la papelera?") },
+            text = {
+                Text(
+                    if (trashCount == 1) {
+                        "Se eliminará para siempre la nota que está en la papelera. Esta acción no se puede deshacer."
+                    } else {
+                        "Se eliminarán para siempre las $trashCount notas que están en la papelera. Esta acción no se puede deshacer."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteAllTrashed()
+                    showEmptyTrashConfirm = false
+                }) { Text("Vaciar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashConfirm = false }) { Text("Cancelar") }
+            }
+        )
     }
 
     LaunchedEffect(viewMode) {
@@ -405,7 +462,15 @@ fun NoteListScreen(
                                 Icon(Icons.Filled.Menu, contentDescription = "Menú")
                             }
                         },
-                        actions = { BouncyPeach() },
+                        actions = {
+                            // Solo en la papelera y solo si hay algo que vaciar.
+                            if (viewMode == ViewMode.TRASH && notes.orEmpty().isNotEmpty()) {
+                                IconButton(onClick = { showEmptyTrashConfirm = true }) {
+                                    Icon(Icons.Filled.DeleteSweep, contentDescription = "Vaciar papelera")
+                                }
+                            }
+                            BouncyPeach()
+                        },
                         colors = if (settings.backgroundImagePath != null) {
                             TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity)
@@ -537,7 +602,9 @@ fun NoteListScreen(
                                     onLongClick = {
                                         selectedIds = selectedIds + note.id
                                     },
-                                    onTogglePin = { viewModel.togglePin(note) }
+                                    onTogglePin = { viewModel.togglePin(note) },
+                                    inTrash = viewMode == ViewMode.TRASH,
+                                    onDeleteForever = { noteToDeleteForever = note }
                                 )
                             }
                         }
@@ -567,7 +634,9 @@ fun NoteListScreen(
                                     onLongClick = {
                                         selectedIds = selectedIds + note.id
                                     },
-                                    onTogglePin = { viewModel.togglePin(note) }
+                                    onTogglePin = { viewModel.togglePin(note) },
+                                    inTrash = viewMode == ViewMode.TRASH,
+                                    onDeleteForever = { noteToDeleteForever = note }
                                 )
                             }
                         }
@@ -916,6 +985,30 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
     }
 }
 
+// Botón redondo y compacto de la esquina de una tarjeta (fijar, eliminar).
+// Círculo de fondo tenue + ícono: se lee como algo tocable, a diferencia del
+// ícono suelto de antes. El clip va ANTES del clickable para que el ripple
+// quede circular (mismo criterio que en NoteCard).
+@Composable
+private fun CardActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    container: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(container)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = tint, modifier = Modifier.size(18.dp))
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NoteCard(
@@ -927,7 +1020,9 @@ private fun NoteCard(
     showMedia: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onTogglePin: () -> Unit
+    onTogglePin: () -> Unit,
+    inTrash: Boolean = false,
+    onDeleteForever: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val bg = note.color?.let {
@@ -957,28 +1052,56 @@ private fun NoteCard(
             border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
         ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.Top) {
                 Text(
                     text = note.title.ifBlank { "(Sin título)" },
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).padding(top = 3.dp)
                 )
-                if (note.reminderAt != null) {
-                    Icon(
-                        Icons.Filled.Alarm,
-                        contentDescription = "Tiene recordatorio",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp).padding(end = 4.dp)
-                    )
+                Spacer(Modifier.width(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (inTrash) {
+                        // En la papelera no tiene sentido fijar ni mostrar el
+                        // recordatorio (se cancela al borrar la nota): en su
+                        // lugar va el botón de eliminar para siempre, con la
+                        // misma forma que el de fijar.
+                        CardActionButton(
+                            icon = Icons.Filled.DeleteForever,
+                            contentDescription = "Eliminar para siempre",
+                            tint = MaterialTheme.colorScheme.error,
+                            container = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                            onClick = onDeleteForever
+                        )
+                    } else {
+                        // El recordatorio es solo un indicador (no se toca): va
+                        // como ícono suelto, SIN círculo de fondo, para que
+                        // solo el de fijar se vea como un botón.
+                        if (note.reminderAt != null) {
+                            Icon(
+                                Icons.Filled.Alarm,
+                                contentDescription = "Tiene recordatorio",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        CardActionButton(
+                            icon = if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = if (note.pinned) "Desfijar" else "Fijar",
+                            tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            container = if (note.pinned) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+                            },
+                            onClick = onTogglePin
+                        )
+                    }
                 }
-                Icon(
-                    if (note.pinned) Icons.Filled.PushPin else Icons.Outlined.PushPin,
-                    contentDescription = if (note.pinned) "Desfijar" else "Fijar",
-                    tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp).clickable(onClick = onTogglePin)
-                )
             }
             Spacer(Modifier.height(4.dp))
             if (note.type == NoteType.CHECKLIST) {
