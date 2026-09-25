@@ -101,6 +101,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -146,6 +147,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -510,14 +512,65 @@ fun NoteEditScreen(
         insertMediaSegmentAtActiveSegment(EditSegment.VideoSeg(fileName, ""))
     }
 
+    // --- Deshacer al borrar una imagen/video/grupo, con un toast arriba ---
+    // Antes esto borraba el archivo del dispositivo al toque, sin vuelta
+    // atrás. Ahora el borrado real se retrasa 5 segundos: mientras el toast
+    // de "Deshacer" está visible, el archivo sigue en el dispositivo — recién
+    // se borra de verdad si pasan los 5 segundos sin tocar "Deshacer", o si
+    // se borra OTRA cosa antes (eso da por confirmado el borrado anterior;
+    // solo se sostiene un "Deshacer" a la vez).
+    //
+    // Se guarda una COPIA COMPLETA de `segments` de antes del borrado (no
+    // solo el segmento borrado) para que deshacer sea trivial y correcto
+    // incluso cuando el borrado fusionó dos TextSeg vecinos en uno solo (ver
+    // más abajo): deshacer no tiene que "separar" nada a mano, solo vuelve a
+    // dejar la lista como estaba.
+    //
+    // OJO — trade-off asumido a propósito: si se sale de la nota (volver
+    // atrás) antes de que pasen esos 5 segundos, el temporizador se cancela
+    // junto con la pantalla y el archivo queda huérfano en el dispositivo
+    // (nunca llega a borrarse, pero tampoco queda referenciado por ninguna
+    // nota). Es preferible a la alternativa: borrar el archivo al toque haría
+    // que tocar "Deshacer" muestre una imagen o un video rotos.
+    class PendingMediaDelete(
+        val id: Long,
+        val previousSegments: List<EditSegment>,
+        val filesToDelete: List<String>,
+        val label: String
+    )
+    var pendingMediaDelete by remember { mutableStateOf<PendingMediaDelete?>(null) }
+    var pendingDeleteJob by remember { mutableStateOf<Job?>(null) }
+    var pendingDeleteIdCounter by remember { mutableStateOf(0L) }
+
+    fun confirmPendingMediaDelete() {
+        pendingMediaDelete?.filesToDelete?.forEach { ImageStorage.deleteFile(context, it) }
+        pendingMediaDelete = null
+    }
+
     fun deleteMediaSegment(idx: Int) {
         val seg = segments.getOrNull(idx) ?: return
-        when (seg) {
-            is EditSegment.ImageSeg -> ImageStorage.deleteFile(context, seg.fileName)
-            is EditSegment.GallerySeg -> seg.fileNames.forEach { ImageStorage.deleteFile(context, it) }
-            is EditSegment.VideoSeg -> ImageStorage.deleteFile(context, seg.fileName)
+        val filesToDelete = when (seg) {
+            is EditSegment.ImageSeg -> listOf(seg.fileName)
+            is EditSegment.GallerySeg -> seg.fileNames
+            is EditSegment.VideoSeg -> listOf(seg.fileName)
             is EditSegment.TextSeg -> return
         }
+        val label = when (seg) {
+            is EditSegment.ImageSeg -> "Imagen eliminada"
+            is EditSegment.VideoSeg -> "Video eliminado"
+            is EditSegment.GallerySeg -> if (seg.fileNames.size == 1) {
+                "Imagen eliminada"
+            } else {
+                "Grupo de ${seg.fileNames.size} imágenes eliminado"
+            }
+            is EditSegment.TextSeg -> return
+        }
+        // Ya no se borra el archivo acá directo (ver comentario grande de
+        // arriba) — solo si confirma el borrado anterior pendiente, si lo hay.
+        pendingDeleteJob?.cancel()
+        confirmPendingMediaDelete()
+
+        val previousSegments = segments
         val newSegments = segments.toMutableList()
         newSegments.removeAt(idx)
         if (idx > 0 && idx < newSegments.size) {
@@ -530,6 +583,26 @@ fun NoteEditScreen(
         }
         if (newSegments.isEmpty()) newSegments.add(EditSegment.TextSeg(TextFieldValue("")))
         updateContentFromSegments(newSegments)
+
+        pendingDeleteIdCounter += 1
+        val thisId = pendingDeleteIdCounter
+        pendingMediaDelete = PendingMediaDelete(thisId, previousSegments, filesToDelete, label)
+        pendingDeleteJob = scope.launch {
+            kotlinx.coroutines.delay(5000)
+            // Si en el medio se deshizo o se superó por otro borrado, este
+            // ID ya no coincide con el pendiente actual — no hacer nada.
+            if (pendingMediaDelete?.id == thisId) {
+                confirmPendingMediaDelete()
+            }
+        }
+    }
+
+    fun undoPendingMediaDelete() {
+        val pending = pendingMediaDelete ?: return
+        pendingDeleteJob?.cancel()
+        pendingDeleteJob = null
+        updateContentFromSegments(pending.previousSegments)
+        pendingMediaDelete = null
     }
 
     // Antes esto no existía: desde el editor solo se podía borrar el GRUPO
@@ -1720,6 +1793,52 @@ fun NoteEditScreen(
                         tint = Color.White,
                         modifier = Modifier.size(96.dp)
                     )
+                }
+            }
+
+            // Toast de "Deshacer" al borrar una imagen/video/grupo (ver
+            // deleteMediaSegment). Arriba de todo a propósito (pedido
+            // explícito): así no compite con la barra inferior ni con el
+            // teclado, que es justo donde suele estar el dedo cuando se
+            // acaba de borrar algo desde el editor.
+            //
+            // `lastPendingMediaDelete` (en vez de usar `pendingMediaDelete`
+            // directo adentro del AnimatedVisibility) es el truco de siempre
+            // para que la animación de salida no se vea "vacía": en cuanto
+            // `pendingMediaDelete` pasa a null para iniciar el fade-out,
+            // igual hace falta seguir mostrando el ÚLTIMO texto/botón
+            // mientras dura esa animación, no nada.
+            var lastPendingMediaDelete by remember { mutableStateOf<PendingMediaDelete?>(null) }
+            if (pendingMediaDelete != null) lastPendingMediaDelete = pendingMediaDelete
+            AnimatedVisibility(
+                visible = pendingMediaDelete != null,
+                enter = fadeIn(animationSpec = tween(150)) + slideInVertically(initialOffsetY = { -it }),
+                exit = fadeOut(animationSpec = tween(150)) + slideOutVertically(targetOffsetY = { -it }),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = padding.calculateTopPadding() + 8.dp)
+            ) {
+                lastPendingMediaDelete?.let { pending ->
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.inverseSurface,
+                        tonalElevation = 4.dp,
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                            Text(
+                                pending.label,
+                                color = MaterialTheme.colorScheme.inverseOnSurface,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            TextButton(onClick = { undoPendingMediaDelete() }) {
+                                Text("Deshacer", color = MaterialTheme.colorScheme.inversePrimary)
+                            }
+                        }
+                    }
                 }
             }
         }

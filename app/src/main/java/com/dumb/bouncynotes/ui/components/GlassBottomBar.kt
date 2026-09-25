@@ -82,6 +82,20 @@ internal fun GlassBottomBar(
     val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
     Box(
         modifier = Modifier
+            // Con teclado abierto, esto agrega el alto del teclado como
+            // padding INVISIBLE por fuera de la barra (afuera de su propio
+            // Box, antes del .height() de abajo) — así el tamaño TOTAL que
+            // Scaffold le mide a esta barra crece, y como Scaffold la ancla
+            // al borde inferior, ese crecimiento empuja el borde superior
+            // (lo visible) hacia arriba: la barra "sube" con el teclado.
+            //
+            // BUG encontrado: esto antes vivía en el Row de más abajo, que
+            // tiene una altura FIJA (`.height(height)`) — un padding puesto
+            // DENTRO de algo con altura fija no puede agrandar nada, solo le
+            // come espacio a lo que hay adentro; por eso la barra había
+            // dejado de subir con el teclado. Tiene que ir acá afuera, antes
+            // del `.height()` de la línea siguiente.
+            .imePadding()
             .fillMaxWidth()
             // Se extiende por detrás de la barra de navegación del sistema
             // (ver comentario grande arriba) — los botones de verdad quedan
@@ -114,8 +128,7 @@ internal fun GlassBottomBar(
                     .fillMaxWidth()
                     .height(height)
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp)
-                    .imePadding(),
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start,
                 content = content
