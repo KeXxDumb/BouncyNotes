@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -130,11 +129,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
@@ -1021,7 +1017,6 @@ fun NoteEditScreen(
     }
 
 
-    val contentLayer = rememberGraphicsLayer()
     val bottomBarHeight = 56.dp
     // El Spacer de compensación al final del contenido necesita el alto TOTAL
     // que ocupa la barra en pantalla, no solo sus 56dp fijos: más abajo, el
@@ -1070,10 +1065,9 @@ fun NoteEditScreen(
             // ~80dp de alto con relleno pensado para llevar un FAB embebido, que
             // acá no usamos, así que sobraba una franja enorme vacía. Ahora es
             // un contenedor propio con una altura fija y compacta (56dp, la
-            // misma que un TopAppBar chico) que además es semitransparente y
-            // desenfoca lo que hay detrás (el contenido de la nota, que se deja
-            // scrollear por debajo de la barra) para un efecto "vidrio
-            // esmerilado" en vez de un panel sólido.
+            // misma que un TopAppBar chico), semitransparente para dejar ver
+            // el contenido de la nota a través (ver comentario grande dentro
+            // de GlassBottomBar.kt sobre por qué ya no lleva desenfoque real).
             //
             // BUG reportado por un usuario en otro dispositivo (a mí no me
             // pasaba): la barra terminaba DETRÁS de la barra de navegación
@@ -1081,18 +1075,19 @@ fun NoteEditScreen(
             // (Android 15+), el sistema fuerza edge-to-edge sin importar lo
             // que haga la app — el contenido puede dibujarse por detrás de
             // las barras del sistema, y ya no hay un "acomodo automático"
-            // como en versiones viejas de Android. GlassBottomBar es una Box
-            // propia con altura FIJA que nunca pedía el inset de la barra de
-            // navegación, así que en un teléfono con edge-to-edge forzado
-            // quedaba tapada por ella. navigationBarsPadding() en un Box que
-            // ENVUELVE a GlassBottomBar (no adentro de ella, que le comería
-            // altura útil a los botones) empuja toda la barra hacia arriba
-            // lo que haga falta; en un teléfono donde el sistema ya la
-            // acomodaba solo, ese padding termina siendo 0 y no cambia nada.
-            Box(modifier = Modifier.navigationBarsPadding()) {
-                GlassBottomBar(
-                    contentLayer = contentLayer,
+            // como en versiones viejas de Android. La primera solución
+            // (envolver a GlassBottomBar en un Box con
+            // navigationBarsPadding()) empujaba TODA la barra hacia arriba
+            // para no quedar tapada — pero eso dejaba una franja vacía y sin
+            // nada dibujado justo donde estaba la barra de navegación, se
+            // veía "cortada y flotando" en vez de inmersiva. Ahora
+            // GlassBottomBar recibe el inset directamente (`navBarInset`) y
+            // extiende SU PROPIO fondo semitransparente hasta ahí, dejando
+            // los botones arriba de esa franja — el tinte se ve continuo
+            // hasta el borde real de la pantalla, sin hueco.
+            GlassBottomBar(
                     height = bottomBarHeight,
+                    navBarInset = bottomBarNavInset,
                     // Antes solo se centraba en modo edición (`isEditing`);
                     // en modo lectura quedaba alineado al inicio, así que la
                     // barra "saltaba" de posición al cambiar de modo con el
@@ -1252,7 +1247,6 @@ fun NoteEditScreen(
                     }
                 }
             }
-            }
         }
     ) { padding ->
         val readModeGesture = if (!isEditing) {
@@ -1284,26 +1278,20 @@ fun NoteEditScreen(
             modifier = Modifier
                 .fillMaxSize()
                 // OJO: a propósito NO aplicamos el padding inferior que da el
-                // Scaffold acá. Si lo hiciéramos, el contenido nunca se dibujaría
-                // detrás de la barra inferior y no habría nada que desenfocar
-                // (desenfocar "nada" no se nota). En su lugar dejamos que el
-                // contenido llegue hasta el fondo real de la pantalla, y más abajo
-                // le agregamos un espacio en blanco del alto de la barra para que
-                // el texto/checklist no quede tapado al hacer scroll hasta el final.
+                // Scaffold acá. Si lo hiciéramos, el contenido nunca se
+                // dibujaría detrás de la barra inferior, y como esa barra es
+                // semitransparente (no un panel sólido) se notaría un hueco
+                // en vez de ver la nota "a través" de ella. En su lugar
+                // dejamos que el contenido llegue hasta el fondo real de la
+                // pantalla, y más abajo le agregamos un espacio en blanco del
+                // alto de la barra para que el texto/checklist no quede
+                // tapado al hacer scroll hasta el final.
                 .padding(
                     top = padding.calculateTopPadding(),
                     start = padding.calculateStartPadding(LocalLayoutDirection.current),
                     end = padding.calculateEndPadding(LocalLayoutDirection.current)
                 )
                 .padding(horizontal = 12.dp)
-                // Graba todo lo que se dibuja acá (título, texto, checklist,
-                // imágenes) en una "capa" que la barra de abajo puede volver a
-                // dibujar recortada y desenfocada, logrando el efecto de vidrio
-                // esmerilado sin duplicar la UI real.
-                .drawWithContent {
-                    contentLayer.record { this@drawWithContent.drawContent() }
-                    drawContent()
-                }
         ) {
             if (isEditing) {
                 FlatTextField(

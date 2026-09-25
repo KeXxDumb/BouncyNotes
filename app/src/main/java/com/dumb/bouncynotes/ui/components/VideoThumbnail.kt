@@ -3,6 +3,7 @@ package com.dumb.bouncynotes.ui.components
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -37,24 +39,56 @@ import java.io.File
 // bastante más costoso que leer un encabezado de imagen, así que no tiene
 // sentido repetirlo cada vez que la misma miniatura vuelve a entrar en
 // composición al scrollear (tarjetas de la lista, tira de miniaturas del
-// visor). A diferencia de esa función, acá SÍ hace falta procesar el bitmap
-// antes de cachearlo (no solo leerlo): sin reducirlo de tamaño, cada entrada
-// de este cache pesaría lo mismo que el video en su resolución original
-// (varios MB para 1080p/4K) en vez de los ~200KB de una miniatura.
-private val videoThumbnailCache = mutableMapOf<String, ImageBitmap?>()
+// visor).
+//
+// BUG DE MEMORIA encontrado (auditoría de rendimiento): esto era antes un
+// mutableMapOf normal, sin ningún límite ni expiración — cada bitmap
+// decodificado quedaba en memoria PARA SIEMPRE mientras viviera el proceso.
+// Con minSdk 23 (hay equipos con poca RAM real corriendo la app), una sesión
+// larga scrolleando muchas notas con muchos videos DISTINTOS iba acumulando
+// bitmaps sin parar — nada los liberaba nunca, ni siquiera bajo presión de
+// memoria del sistema (a diferencia de un LruCache, que si el sistema pide
+// memoria de vuelta, el GC puede recolectar sus entradas). Un mapa sin límite
+// como ese, en un teléfono viejo con una nota que tenga muchos videos
+// distintos, es candidato directo a OOM.
+//
+// Ahora es un LruCache acotado en BYTES reales (no en cantidad de entradas,
+// porque el peso de cada miniatura varía con el aspecto del video). Cada
+// miniatura ya viene reducida a 320px de lado más largo (ver
+// downscaleForThumbnail) — en ARGB_8888 eso es como mucho
+// 320×320×4 ≈ 410KB; el tope de acá (24MB) alcanza para ~55-90 miniaturas
+// distintas cacheadas a la vez, de sobra para el scroll normal de una
+// sesión, con un techo real en vez de crecer sin fin.
+private const val THUMBNAIL_CACHE_MAX_BYTES = 24 * 1024 * 1024 // 24MB
+
+private val videoThumbnailCache = object : LruCache<String, ImageBitmap>(THUMBNAIL_CACHE_MAX_BYTES) {
+    override fun sizeOf(key: String, value: ImageBitmap): Int = value.asAndroidBitmap().byteCount
+}
+
+// Nombres de video para los que ya se intentó decodificar y falló (archivo
+// corrupto, códec no soportado, etc.) — aparte del LruCache principal porque
+// LruCache no admite valores null, y son solo Strings (peso despreciable,
+// no hace falta acotar esto).
+private val failedVideoThumbnails = mutableSetOf<String>()
 
 @Composable
 fun rememberVideoThumbnail(context: Context, fileName: String): ImageBitmap? {
-    var bitmap by remember(fileName) {
-        mutableStateOf(if (videoThumbnailCache.containsKey(fileName)) videoThumbnailCache[fileName] else null)
-    }
+    var bitmap by remember(fileName) { mutableStateOf(videoThumbnailCache.get(fileName)) }
     LaunchedEffect(fileName) {
-        if (videoThumbnailCache.containsKey(fileName)) {
-            bitmap = videoThumbnailCache[fileName]
+        videoThumbnailCache.get(fileName)?.let {
+            bitmap = it
+            return@LaunchedEffect
+        }
+        if (fileName in failedVideoThumbnails) {
+            bitmap = null
             return@LaunchedEffect
         }
         val decoded = withContext(Dispatchers.IO) { decodeVideoThumbnail(context, fileName) }
-        videoThumbnailCache[fileName] = decoded
+        if (decoded != null) {
+            videoThumbnailCache.put(fileName, decoded)
+        } else {
+            failedVideoThumbnails += fileName
+        }
         bitmap = decoded
     }
     return bitmap
