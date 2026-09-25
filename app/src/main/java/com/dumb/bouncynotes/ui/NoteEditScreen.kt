@@ -1745,6 +1745,11 @@ fun NoteEditScreen(
 // `internal`, ya que siguen sin ser parte de la API pública del módulo):
 //  - LabelsEditor.kt
 //  - GlassBottomBar.kt
-//  - ReminderPickerSheet.kt (+ ReminderMode + formatCalendarDate)
+//  - ReminderPickerSheet.kt (+ ReminderRepeat + formatCalendarDate) —
+//    rediseñado por completo en una sesión posterior (ver estado-actual.md):
+//    ahora es "¿cada cuánto? / ¿cuándo? / ¿a qué hora?" en ese orden, con un
+//    resumen en vivo de "Próximo aviso: ..." calculado con
+//    ReminderScheduler.nextTrigger(), en vez de dos toggles anidados y un
+//    DatePicker siempre abierto.
 //  - TimeWheelPicker.kt (+ NumberWheel + wheelStep, usado por el anterior)
 

@@ -196,54 +196,44 @@ object ReminderScheduler {
         return cal.timeInMillis
     }
 
+    // Cuándo suena la PRÓXIMA vez el recordatorio principal de una nota, y
+    // (solo en modo calendario) qué fecha "ancla" del set le corresponde.
+    // Es la única función que sabe interpretar los campos de Note según el
+    // modo (días de la semana / calendario / una sola vez) — la usan tanto
+    // schedule() como la UI (ReminderPickerSheet, para mostrar "Próximo aviso:
+    // ..." antes de guardar), así el texto que ve el usuario y lo que
+    // realmente se programa salen SIEMPRE del mismo cálculo.
+    class NextTrigger(val triggerAt: Long, val calendarAnchor: Long?)
+
+    fun nextTrigger(note: Note): NextTrigger? = when {
+        note.reminderDays.isNotEmpty() -> {
+            val anchor = note.reminderAt
+            val next = if (anchor == null) null else nextOccurrence(anchor, note.reminderDays)
+            if (next == null) null else NextTrigger(next, null)
+        }
+        note.reminderCalendarDates.isNotEmpty() -> {
+            // Es null si TODAS las fechas del set ya quedaron en el pasado
+            // (modo "una vez") — estado válido, no un error.
+            nextCalendarTrigger(note.reminderCalendarDates, note.reminderCalendarRecurring)
+                ?.let { (anchor, trigger) -> NextTrigger(trigger, anchor) }
+        }
+        else -> note.reminderAt?.let { NextTrigger(it, null) }
+    }
+
     fun schedule(context: Context, note: Note) {
         Log.d(TAG, "schedule() nota id=${note.id} reminderAt=${note.reminderAt} " +
             "reminderDays=${note.reminderDays} reminderCalendarDates=${note.reminderCalendarDates} " +
             "reminderCalendarRecurring=${note.reminderCalendarRecurring}")
         cancel(context, note.id)
 
-        val mainTrigger: Long
-        val calendarAnchor: Long?
-        when {
-            note.reminderDays.isNotEmpty() -> {
-                val anchor = note.reminderAt
-                if (anchor == null) {
-                    Log.w(TAG, "modo días de la semana pero reminderAt es null, no se programa nada")
-                    return
-                }
-                val next = nextOccurrence(anchor, note.reminderDays)
-                if (next == null) {
-                    Log.w(TAG, "nextOccurrence() devolvió null (no debería pasar nunca), no se programa nada")
-                    return
-                }
-                mainTrigger = next
-                calendarAnchor = null
-                Log.d(TAG, "modo días de la semana -> próxima ocurrencia: $mainTrigger (${java.util.Date(mainTrigger)})")
-            }
-            note.reminderCalendarDates.isNotEmpty() -> {
-                val result = nextCalendarTrigger(note.reminderCalendarDates, note.reminderCalendarRecurring)
-                if (result == null) {
-                    // Pasa si TODAS las fechas del set ya quedaron en el pasado
-                    // (modo "una vez") — es un estado válido, no un error.
-                    Log.w(TAG, "modo calendario: nextCalendarTrigger() devolvió null (¿todas las fechas ya pasaron?), no se programa nada")
-                    return
-                }
-                val (anchor, trigger) = result
-                mainTrigger = trigger
-                calendarAnchor = anchor
-                Log.d(TAG, "modo calendario -> ancla=$anchor trigger=$trigger (${java.util.Date(trigger)})")
-            }
-            else -> {
-                val anchor = note.reminderAt
-                if (anchor == null) {
-                    Log.w(TAG, "modo simple pero reminderAt es null, no se programa nada")
-                    return
-                }
-                mainTrigger = anchor
-                calendarAnchor = null
-                Log.d(TAG, "modo simple -> trigger=$mainTrigger (${java.util.Date(mainTrigger)})")
-            }
+        val next = nextTrigger(note)
+        if (next == null) {
+            Log.w(TAG, "nextTrigger() devolvió null (sin recordatorio, o todas las fechas ya pasaron), no se programa nada")
+            return
         }
+        val mainTrigger = next.triggerAt
+        val calendarAnchor = next.calendarAnchor
+        Log.d(TAG, "próximo disparo: $mainTrigger (${java.util.Date(mainTrigger)}) ancla=$calendarAnchor")
 
         if (mainTrigger > System.currentTimeMillis()) {
             Log.d(TAG, "programando alarma principal para nota ${note.id}")

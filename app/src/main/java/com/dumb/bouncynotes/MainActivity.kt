@@ -1,6 +1,8 @@
 package com.dumb.bouncynotes
 
 import android.content.Intent
+import android.graphics.Color as AndroidColor
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
@@ -30,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
@@ -133,6 +134,31 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge-to-edge de verdad, en TODAS las versiones de Android (antes
+        // solo pasaba esto en Android 15+, donde el propio sistema lo fuerza
+        // sin importar lo que haga la app — ver el comentario grande más
+        // abajo, junto a GlassBottomBar, sobre cómo se detectó eso).
+        //
+        // Este único llamado arregla DOS cosas a la vez:
+        //  1. Las barras de estado/navegación pasan a ser transparentes de
+        //     verdad (más abajo se les saca también el color de relleno).
+        //  2. BUG reportado: al abrir el teclado en el editor, el fondo de
+        //     imagen se "encogía" en vez de quedarse fijo. Causa real: con
+        //     decorFitsSystemWindows(true) (el valor por defecto, lo que
+        //     había hasta ahora) y windowSoftInputMode="adjustResize" (ver
+        //     AndroidManifest), Android redimensiona la VENTANA ENTERA de
+        //     verdad cuando aparece el teclado — el árbol de Compose entero
+        //     (incluido el Box del fondo, que usa fillMaxSize()) pasa a medir
+        //     literalmente menos alto, así que el fondo se recalculaba más
+        //     chico. Con setDecorFitsSystemWindows(false), la ventana deja de
+        //     redimensionarse físicamente: el teclado pasa a reportarse como
+        //     un simple inset (WindowInsets.ime), y solo lo que pide ese
+        //     inset explícitamente con `.imePadding()` (el campo de texto, el
+        //     checklist — ver FlatTextField/ChecklistEditor) se corre para
+        //     dejarle lugar. El fondo, que nunca pide `.imePadding()`, queda
+        //     fijo ocupando toda la pantalla real, se vea o no tapado por el
+        //     teclado.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         // Si la actividad se abrió desde la notificación de un recordatorio,
         // vamos a esa nota (por encima de la lista, no en su lugar — ver
         // comentario de arriba).
@@ -199,11 +225,22 @@ class MainActivity : FragmentActivity() {
                 seedColorHex = settings.seedColorHex
             ) {
                 val view = LocalView.current
-                val systemBarColor = MaterialTheme.colorScheme.background.toArgb()
                 if (!view.isInEditMode) {
                     SideEffect {
-                        window.statusBarColor = systemBarColor
-                        window.navigationBarColor = systemBarColor
+                        // Transparentes de verdad (antes se pintaban del
+                        // color de fondo del tema, opaco) — ver el comentario
+                        // grande en onCreate sobre setDecorFitsSystemWindows.
+                        window.statusBarColor = AndroidColor.TRANSPARENT
+                        window.navigationBarColor = AndroidColor.TRANSPARENT
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            // Sin esto, Android sigue dibujando un scrim
+                            // semitransparente propio detrás de la barra de
+                            // navegación "para contraste" aunque su color sea
+                            // TRANSPARENT — se seguía viendo una franja
+                            // oscura abajo pese a lo de arriba.
+                            window.isNavigationBarContrastEnforced = false
+                            window.isStatusBarContrastEnforced = false
+                        }
                         WindowCompat.getInsetsController(window, view).apply {
                             isAppearanceLightStatusBars = !darkTheme
                             isAppearanceLightNavigationBars = !darkTheme
