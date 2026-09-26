@@ -8,6 +8,15 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.dumb.bouncynotes.data.ImageStorage
+import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.SettingsRepository
+import com.dumb.bouncynotes.data.extractMediaRefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 // Sin esto, AsyncImage (Coil) muestra un GIF como si fuera un PNG cualquiera:
 // solo el primer cuadro, congelado, nunca anima. Coil necesita que se le
@@ -16,6 +25,42 @@ import coil.memory.MemoryCache
 // más viejas se usa GifDecoder (más lento pero funciona en cualquier versión
 // soportada por la app, que tiene minSdk 23).
 class BouncyNotesApp : Application(), ImageLoaderFactory {
+
+    // Vive mientras viva el proceso (no atado a ninguna pantalla) — a
+    // propósito, para la limpieza de huérfanos de más abajo: tiene que
+    // sobrevivir aunque la Activity todavía no haya terminado de arrancar.
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun onCreate() {
+        super.onCreate()
+        applicationScope.launch { cleanupOrphanMediaFiles() }
+    }
+
+    // Junta los nombres de archivo que SÍ están en uso (referenciados por
+    // alguna nota, en cualquier estado — incluida la papelera, porque todavía
+    // se puede restaurar — o por el pool de fondos de Ajustes) y le pide a
+    // ImageStorage que borre lo que sobre. Ver el comentario grande en
+    // ImageStorage.cleanupOrphans para el porqué de este barrido y de su
+    // ventana de gracia de 24hs.
+    private suspend fun cleanupOrphanMediaFiles() {
+        try {
+            val notes = NoteDatabase.getInstance(this).noteDao().getAll().first()
+            val settings = SettingsRepository(this).settings.first()
+
+            val referenced = mutableSetOf<String>()
+            notes.forEach { note ->
+                extractMediaRefs(note.content).forEach { referenced += it.fileName }
+            }
+            referenced += settings.backgroundImagePaths
+            settings.backgroundImagePath?.let { referenced += it }
+
+            ImageStorage.cleanupOrphans(this, referenced)
+        } catch (e: Exception) {
+            // Barrido best-effort: si algo falla acá (poco probable), no debe
+            // tirar abajo el arranque de la app.
+        }
+    }
+
     override fun newImageLoader(): ImageLoader {
         return ImageLoader.Builder(this)
             .components {

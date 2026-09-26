@@ -3,22 +3,28 @@ package com.dumb.bouncynotes.ui.components
 // Extraído de NoteEditScreen.kt (que había crecido demasiado) sin cambiar
 // nada de la lógica — solo visibilidad `private` -> `internal`.
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,6 +73,14 @@ import androidx.compose.ui.unit.dp
 // `navBarInset` más abajo (hasta el borde real de la pantalla, por detrás de
 // la barra de navegación) y solo los BOTONES quedan arriba de ese inset, así
 // el tinte se ve continuo hasta el borde de verdad en vez de dejar un hueco.
+//
+// Con el teclado abierto, esa franja extra deja de tener sentido: el teclado
+// ya ocupa ese lugar (y en la mayoría de los dispositivos ni siquiera se ve
+// la barra de navegación mientras el teclado está arriba), así que sumar
+// `navBarInset` AL MISMO TIEMPO que el inset del teclado (ver `.imePadding()`
+// más abajo) dejaba un margen de más entre la barra y el teclado — reportado
+// como bug. Por eso más abajo se anima a 0 en cuanto `WindowInsets.isImeVisible`.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun GlassBottomBar(
     height: Dp,
@@ -80,6 +94,14 @@ internal fun GlassBottomBar(
     // sea la nota o el tema elegido.
     val barTint = Color.Black
     val barShape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+    // Se anima (no salta de golpe) para que coincida con la animación propia
+    // del teclado al aparecer/desaparecer (la de `.imePadding()`) en vez de
+    // sentirse como dos movimientos distintos y desincronizados.
+    val effectiveNavBarInset by animateDpAsState(
+        targetValue = if (WindowInsets.isImeVisible) 0.dp else navBarInset,
+        animationSpec = tween(200),
+        label = "bottomBarNavInset"
+    )
     Box(
         modifier = Modifier
             // Con teclado abierto, esto agrega el alto del teclado como
@@ -99,8 +121,10 @@ internal fun GlassBottomBar(
             .fillMaxWidth()
             // Se extiende por detrás de la barra de navegación del sistema
             // (ver comentario grande arriba) — los botones de verdad quedan
-            // fijados a los primeros `height` dp, más abajo.
-            .height(height + navBarInset)
+            // fijados a los primeros `height` dp, más abajo. Con el teclado
+            // abierto, `effectiveNavBarInset` ya vale 0 (ver arriba), así que
+            // esta franja extra desaparece justo cuando deja de tener sentido.
+            .height(height + effectiveNavBarInset)
             // Borde sutil arriba y a los costados para que la barra se
             // distinga claramente del contenido que se ve (transparentado)
             // detrás de ella, en vez de mezclarse con él.

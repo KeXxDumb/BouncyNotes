@@ -131,6 +131,57 @@ object ImageStorage {
         }
     }
 
+    // Ventana de gracia para cleanupOrphans: un archivo recién copiado que
+    // todavía no aparece en NINGUNA nota (todavía no se guardó esa nota) NO
+    // se toca hasta que pasen 24 horas desde que se creó — no hasta que se
+    // confirme que está en uso. Ver el comentario grande de cleanupOrphans
+    // para el porqué exacto de este número.
+    private const val ORPHAN_GRACE_PERIOD_MS = 24L * 60L * 60L * 1000L // 24 horas
+
+    // Barrido de limpieza de archivos huérfanos: borra de `imagesDir`
+    // cualquier archivo que no esté en `referencedFileNames` — pensado para
+    // correr una vez al arrancar la app (ver BouncyNotesApp.onCreate).
+    //
+    // Por qué hace falta esto en vez de confiar en que cada lugar que borra
+    // un archivo se acuerde de hacerlo bien: el editor retrasa el borrado
+    // real de una imagen/video 5 segundos para poder ofrecer "Deshacer" (ver
+    // deleteMediaSegment en NoteEditScreen) — si el proceso muere en esos 5
+    // segundos (cierre forzado desde Ajustes del sistema, el sistema mata la
+    // app por memoria, un crash), ese archivo queda en el dispositivo sin
+    // borrarse Y sin estar referenciado por ninguna nota: un huérfano. Un
+    // temporizador en memoria (lo que había antes de este barrido) no tiene
+    // forma de "terminar su trabajo" si el proceso entero desaparece —
+    // depender de que algo en memoria sobreviva a un cierre forzado no
+    // funciona nunca, sin importar qué tan bien esté escrito. Comparar
+    // contra la realidad (qué archivos existen vs. qué archivos usa alguna
+    // nota de verdad) en el próximo arranque es la única forma confiable de
+    // recuperarse, sea cual sea la causa de que algo haya quedado suelto.
+    //
+    // OJO con la ventana de gracia de 24hs (ORPHAN_GRACE_PERIOD_MS): una
+    // imagen recién insertada en una nota NUEVA (todavía sin guardar — acá
+    // no hay autoguardado, se guarda al salir de la pantalla o al cambiar a
+    // modo vista) existe como archivo en `imagesDir` ANTES de que la nota
+    // que la referencia llegue a la base de datos. Si este barrido corriera
+    // sin ninguna ventana de gracia justo en ese instante (la app se
+    // reinicia mientras el usuario todavía está escribiendo esa nota nueva,
+    // sin haber tocado atrás todavía), borraría una imagen que el usuario
+    // recién insertó y todavía piensa guardar. Ignorar los archivos
+    // modificados en las últimas 24hs evita ese falso positivo sin dejar de
+    // limpiar lo que de verdad quedó huérfano — nada relacionado con una
+    // sesión de edición normal tarda 24hs en resolverse.
+    suspend fun cleanupOrphans(context: Context, referencedFileNames: Set<String>) {
+        try {
+            val cutoff = System.currentTimeMillis() - ORPHAN_GRACE_PERIOD_MS
+            val files = imagesDir(context).listFiles() ?: return
+            for (file in files) {
+                if (file.name !in referencedFileNames && file.lastModified() < cutoff) {
+                    file.delete()
+                }
+            }
+        } catch (e: Exception) {
+        }
+    }
+
     // Lee SOLO las dimensiones del archivo (ancho x alto), sin decodificar
     // los píxeles — BitmapFactory.Options.inJustDecodeBounds hace que solo
     // se lea el encabezado del archivo, prácticamente instantáneo incluso
