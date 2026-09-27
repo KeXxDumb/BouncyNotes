@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -732,10 +733,21 @@ private fun BouncyPeach() {
     // Solo se usa para el aplastado inicial (el bamboleo de abajo ya no
     // depende de un spring "rebotón": ver el comentario en el click).
     val jellySpring = spring<Float>(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
-    Text(
-        text = "\uD83C\uDF51",
-        fontSize = 28.sp,
+    // Reemplaza al emoji real (Text("\uD83C\uDF51")) por un dibujo propio
+    // (img_peach_bounce.webp, aportado por un amigo del usuario) — el emoji
+    // lo renderiza la fuente de emojis del sistema (Samsung/MIUI/Android
+    // puro lo dibujan cada uno a su manera, con sus propios colores), así que
+    // desentonaba con el resto de la app, que tiene su propio estilo
+    // ilustrado. `Image` necesita un tamaño explícito (`Modifier.size`), a
+    // diferencia de `Text` que lo sacaba solo de `fontSize` — el resto de la
+    // cadena de modifiers (la animación gelatina, el click) es EXACTAMENTE
+    // la misma que antes, porque le aplica a lo que sea que esté adentro sin
+    // importarle si es texto o una imagen.
+    Image(
+        painter = painterResource(R.drawable.img_peach_bounce),
+        contentDescription = null,
         modifier = Modifier
+            .size(28.dp)
             .graphicsLayer {
                 scaleX = scaleXAnim.value
                 scaleY = scaleYAnim.value
