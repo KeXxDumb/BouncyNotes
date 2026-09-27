@@ -114,6 +114,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.ContentPart
