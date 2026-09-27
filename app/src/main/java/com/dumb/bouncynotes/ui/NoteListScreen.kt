@@ -747,7 +747,17 @@ private fun BouncyPeach() {
     Image(
         painter = painterResource(R.drawable.img_peach_bounce),
         contentDescription = null,
+        // .padding(end = 8.dp) antes del tamaño: un emoji de fuente trae su
+        // propio margen invisible alrededor del glyph (parte del diseño de
+        // la fuente), así que quedaba separado del borde solo. Un PNG llena
+        // el cuadro de punta a punta, sin ese margen incorporado — por eso
+        // se sentía pegado al borde derecho recién ahora, con la imagen
+        // propia. Va ANTES de .size() (afuera del cuadro de 28dp) para que
+        // empuje todo el elemento (dibujo + área táctil) hacia la izquierda,
+        // en vez de agrandar el cuadro y despegar la imagen sin correr el
+        // click.
         modifier = Modifier
+            .padding(end = 8.dp)
             .size(28.dp)
             .graphicsLayer {
                 scaleX = scaleXAnim.value
