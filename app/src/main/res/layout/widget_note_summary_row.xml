@@ -55,4 +55,18 @@
         android:textSize="12sp"
         android:textColor="?android:attr/textColorSecondary" />
 
+    <!-- Línea divisora entre notas (pedida a propósito, ver el boceto) —
+         mismo criterio que HeaderDivider/VerticalDivider: un LinearLayout
+         vacío, coloreado en tiempo de ejecución por la Factory
+         (setInt(..., "setBackgroundColor", colors.divider)), NO el
+         atributo android:divider del ListView (ese no se puede tintear en
+         tiempo de ejecución vía RemoteViews). Queda también después de la
+         ÚLTIMA fila — no vale la pena la complicación extra de ocultarla
+         solo ahí. -->
+    <LinearLayout
+        android:id="@+id/RowDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp" />
+
 </LinearLayout>

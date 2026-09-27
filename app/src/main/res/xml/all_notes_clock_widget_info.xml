@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Más grande que los otros dos por defecto (4x3 aprox): necesita espacio
-    para el reloj Y para que la lista scrolleable se vea con más de una o
-    dos filas a la vez. resizeMode en los dos ejes por si el usuario lo
-    quiere más chico o más grande igual.
+    Rediseño a dos columnas (lista a la izquierda, reloj+recordatorio a la
+    derecha) — necesita más ANCHO que el diseño apilado de antes para no
+    verse apretado, así que minWidth subió de 180dp a 250dp. targetCellWidth
+    se deja igual (4): en la mayoría de los launchers ya da más de 250dp de
+    ancho real, así que este mínimo es sobre todo para cuando alguien
+    redimensiona el widget más chico a mano. Sin poder probarlo en un
+    dispositivo real, es un punto de partida razonable — capaz haga falta
+    ajustarlo con el resultado real a la vista.
 
     configure/widgetFeatures: ver el comentario en
     last_edited_note_widget_info.xml (misma config activity compartida).
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
+    android:minWidth="250dp"
     android:minHeight="180dp"
     android:targetCellWidth="4"
     android:targetCellHeight="3"

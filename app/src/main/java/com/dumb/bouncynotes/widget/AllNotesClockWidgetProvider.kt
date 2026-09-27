@@ -7,9 +7,17 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.text.format.DateFormat
 import android.widget.RemoteViews
 import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
+import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.ReminderScheduler
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 // Reloj + lista scrolleable de TODAS las notas (hasta 25). Sin Activity de
 // configuración para elegir NOTA (no hay nada que elegir, siempre son
@@ -58,7 +66,42 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.Empty, colors.textSecondary)
+            views.setInt(R.id.VerticalDivider, "setBackgroundColor", colors.divider)
             views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
+            views.setTextColor(R.id.ReminderLabel, colors.textSecondary)
+            views.setTextColor(R.id.ReminderValue, colors.textPrimary)
+
+            // Recuadro de "próximo recordatorio" (rediseño a partir de un
+            // boceto del usuario) — a diferencia de la lista de la
+            // izquierda, esto NO es una fila más del Factory: es un solo
+            // dato fijo (el recordatorio más próximo entre TODAS las
+            // notas), así que se calcula acá derecho, igual que ya hace
+            // LastEditedNoteWidgetProvider con "la nota más reciente".
+            // Consulta por Room prácticamente instantánea — un runBlocking
+            // puntual acá no es problema real (mismo criterio ya usado en
+            // los otros providers).
+            val notes = runBlocking {
+                NoteDatabase.getInstance(context).noteDao().getAll().first()
+                    .filter { it.deletedAt == null && !it.isPrivate }
+            }
+            val now = System.currentTimeMillis()
+            val nextReminder = notes
+                .mapNotNull { note -> ReminderScheduler.nextTrigger(note)?.let { note to it.triggerAt } }
+                .filter { (_, triggerAt) -> triggerAt > now }
+                .minByOrNull { (_, triggerAt) -> triggerAt }
+
+            if (nextReminder != null) {
+                val (note, triggerAt) = nextReminder
+                views.setTextViewText(
+                    R.id.ReminderValue,
+                    "${formatReminderWhen(context, triggerAt)} · ${note.title.ifBlank { "(Sin título)" }}"
+                )
+                views.setOnClickPendingIntent(R.id.ReminderBox, PinnedNoteWidgetProvider.openNotePendingIntent(context, note.id))
+            } else {
+                views.setTextViewText(R.id.ReminderValue, "Sin recordatorios próximos")
+                // Sin click: no hay ninguna nota puntual a la que llevar al
+                // tocar acá (ver el comentario en el layout).
+            }
 
             val serviceIntent = Intent(context, AllNotesClockWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -105,6 +148,39 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, AllNotesClockWidgetProvider::class.java))
             ids.forEach { widgetId -> updateWidget(context, manager, widgetId) }
+        }
+
+        // "Hoy 9:00 AM" / "Mañana 9:00 AM" / "Vie 9:00 AM" — formato chico a
+        // propósito, para el recuadro angosto de la derecha. La HORA respeta
+        // el formato de 12/24hs del sistema (DateFormat.getTimeFormat, la
+        // misma fuente que ya usa el propio TextClock con
+        // format12Hour/format24Hour) — no se fuerza un formato fijo.
+        //
+        // diffDays: RESTA primero los dos "inicio de día" en millis y recién
+        // DESPUÉS divide (con Math.round, no división entera) — no divide
+        // cada uno por separado y resta los resultados. Con un huso horario
+        // de offset no entero (hay unos cuantos de 30/45 minutos) esas dos
+        // formas NO dan siempre el mismo resultado; esta es la misma que ya
+        // se usa en ReminderPickerSheet.kt (formatNextTrigger) por el mismo
+        // motivo.
+        private fun formatReminderWhen(context: Context, triggerAt: Long): String {
+            fun startOfDay(millis: Long): Long = Calendar.getInstance().apply {
+                timeInMillis = millis
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+
+            val dayMillis = 24L * 60L * 60L * 1000L
+            val diffDays = Math.round((startOfDay(triggerAt) - startOfDay(System.currentTimeMillis())) / dayMillis.toDouble())
+            val dayPart = when (diffDays) {
+                0L -> "Hoy"
+                1L -> "Mañana"
+                else -> java.text.SimpleDateFormat("EEE", Locale("es")).format(Date(triggerAt)).replaceFirstChar { it.uppercase() }
+            }
+            val timePart = DateFormat.getTimeFormat(context).format(Date(triggerAt))
+            return "$dayPart $timePart"
         }
     }
 }

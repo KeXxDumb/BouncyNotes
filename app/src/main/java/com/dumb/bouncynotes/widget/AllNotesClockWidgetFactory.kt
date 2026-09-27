@@ -60,6 +60,7 @@ class AllNotesClockWidgetFactory(private val context: Context, private val widge
             if (note.pinned) setInt(R.id.RowPin, "setColorFilter", colors.textPrimary)
             setTextViewText(R.id.RowPreview, notePreviewLine(note))
             setTextColor(R.id.RowPreview, colors.textSecondary)
+            setInt(R.id.RowDivider, "setBackgroundColor", colors.divider)
             // Fill-in intent SOLO con extras (sin action/data/component) —
             // ver el comentario grande en AllNotesClockWidgetProvider sobre
             // por qué esto alcanza para que la plantilla de Activity

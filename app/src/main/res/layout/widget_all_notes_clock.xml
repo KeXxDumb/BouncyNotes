@@ -1,69 +1,121 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    REDISEÑADO (a partir de un boceto del usuario): antes era reloj arriba +
+    lista scrolleable abajo, todo apilado verticalmente. Ahora es un split
+    horizontal — lista de notas a la izquierda (más ancha, es lo que más
+    espacio necesita para leerse), reloj + próximo recordatorio apilados a
+    la derecha. Mismo fondo/estilo de siempre (un solo widget_background_*,
+    sin paneles ni tarjetas nuevas) — el boceto separaba visualmente las
+    secciones con líneas finas, no con fondos propios, así que se resolvió
+    con divisores (mismo criterio que HeaderDivider de antes: un
+    LinearLayout vacío de 1dp, coloreado en tiempo de ejecución, NO una
+    View — ver ese comentario viejo sobre por qué).
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/Layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background_light"
-    android:orientation="vertical">
+    android:orientation="horizontal">
 
-    <!-- TextClock: vista nativa, se actualiza sola cada minuto. La
-         apariencia se configura con long press > Configurar (ver
-         widgetFeatures="reconfigurable" en el widget-info) — sin ícono
-         propio en el widget, redundante con eso. -->
-    <TextClock
-        android:id="@+id/Clock"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:gravity="center"
-        android:paddingTop="12dp"
-        android:paddingBottom="4dp"
-        android:format12Hour="h:mm a"
-        android:format24Hour="H:mm"
-        android:textSize="20sp"
-        android:textStyle="bold" />
+    <!-- Columna izquierda: la lista scrolleable de siempre (mismo Factory,
+         mismo click template, mismo layout de fila) — solo cambió DÓNDE
+         vive dentro del widget, no cómo funciona. -->
+    <FrameLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1.4">
 
-    <!-- Divisor entre el reloj y la lista de notas — mismo criterio que
-         HeaderDivider en widget_pinned_note.xml (LinearLayout vacío, NO
-         View: RemoteViews para widgets de pantalla de inicio no tiene a
-         android.view.View en su lista de vistas permitidas — rompía TODO
-         el widget al agregarlo). -->
+        <ListView
+            android:id="@+id/ListView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp" />
+
+        <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera
+             y privadas, igual que el resto de los widgets). -->
+        <TextView
+            android:id="@+id/Empty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:padding="16dp"
+            android:text="@string/all_notes_clock_widget_empty"
+            android:textColor="?android:attr/textColorSecondary" />
+    </FrameLayout>
+
+    <!-- Divisor VERTICAL entre las dos columnas. -->
     <LinearLayout
-        android:id="@+id/HeaderDivider"
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_marginTop="4dp" />
+        android:id="@+id/VerticalDivider"
+        android:layout_width="1dp"
+        android:layout_height="match_parent" />
 
-    <!--
-        ListView + RemoteViewsFactory de nuevo (se había sacado por el bug
-        de clicks rotos en Xiaomi/MIUI, ver el historial en
-        AllNotesClockWidgetProvider.kt) — ScrollView no está permitido en
-        RemoteViews para widgets de pantalla de inicio, así que sin
-        ListView no hay forma de scrollear de verdad. El bug de clicks se
-        resolvió de otra forma (plantilla de Activity DIRECTA con datos por
-        extra, ver el comentario grande en el provider), así que se puede
-        volver a tener las dos cosas: scroll real Y clicks confiables.
-    -->
-    <ListView
-        android:id="@+id/ListView"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
+    <!-- Columna derecha: reloj arriba, recordatorio próximo abajo. -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
         android:layout_weight="1"
-        android:divider="@null"
-        android:dividerHeight="0dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp" />
+        android:orientation="vertical">
 
-    <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera y
-         privadas, igual que el resto de los widgets). -->
-    <TextView
-        android:id="@+id/Empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:padding="16dp"
-        android:text="@string/all_notes_clock_widget_empty"
-        android:textColor="?android:attr/textColorSecondary" />
+        <!-- TextClock: vista nativa, se actualiza sola cada minuto. Más
+             grande que antes (20sp -> 30sp) para llenar bien esta mitad
+             superior, como en el boceto. La apariencia (tema/fondo) se
+             configura con long press > Configurar. -->
+        <TextClock
+            android:id="@+id/Clock"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:format12Hour="h:mm a"
+            android:format24Hour="H:mm"
+            android:textSize="30sp"
+            android:textStyle="bold" />
+
+        <LinearLayout
+            android:id="@+id/HeaderDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp" />
+
+        <!-- Próximo recordatorio entre TODAS las notas (no de una nota en
+             particular) — ver ReminderScheduler.nextTrigger, reusado tal
+             cual en AllNotesClockWidgetProvider. Tocable: abre la nota
+             dueña de ese recordatorio, directo (mismo
+             openNotePendingIntent que ya usan los otros widgets). Sin
+             click si no hay ningún recordatorio próximo (Empty=true) —
+             no tiene sentido "abrir" nada en ese caso. -->
+        <LinearLayout
+            android:id="@+id/ReminderBox"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
+
+            <TextView
+                android:id="@+id/ReminderLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/all_notes_clock_widget_reminder_label"
+                android:textSize="11sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <TextView
+                android:id="@+id/ReminderValue"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorPrimary" />
+        </LinearLayout>
+    </LinearLayout>
 
 </LinearLayout>

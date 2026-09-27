@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -110,6 +112,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -387,6 +390,7 @@ fun NoteListScreen(
         Scaffold(
             containerColor = if (settings.backgroundImagePath != null) Color.Transparent else MaterialTheme.colorScheme.background,
             topBar = {
+                Column {
                 if (selectionMode) {
                     TopAppBar(
                         title = { Text("${selectedIds.size} seleccionadas") },
@@ -482,6 +486,15 @@ fun NoteListScreen(
                         }
                     )
                 }
+                // Línea divisora entre la barra superior y la lista de
+                // notas — pedida a propósito sutil: el color por defecto de
+                // HorizontalDivider (outlineVariant) ya es un tono de bajo
+                // contraste en Material 3, así que alcanza sin necesidad de
+                // fijar un alpha a mano. Va acá (después del if/else, dentro
+                // del mismo Column) para que aparezca sin importar cuál de
+                // las dos TopAppBar esté activa (selección o normal).
+                HorizontalDivider()
+                }
             },
             floatingActionButton = {
                 if (!selectionMode && (viewMode == ViewMode.ALL || viewMode == ViewMode.PRIVATE)) {
@@ -575,9 +588,28 @@ fun NoteListScreen(
                     if (settings.noteLayout == NoteLayout.LIST) {
                         // Lista tradicional: una columna, tarjetas de ancho completo,
                         // sin el efecto "mampostería" (staggered) de la cuadrícula.
+                        // El contenedor llega hasta el borde REAL de la
+                        // pantalla (bottom = 0 acá, en vez del bottom que da
+                        // Scaffold) — así el propio LazyColumn se dibuja por
+                        // detrás de la barra de navegación transparente
+                        // (pedido a propósito). El alcance/scroll de verdad
+                        // NO cambia en nada: el mismo espacio que antes se
+                        // reservaba acá afuera ahora se reserva adentro, en
+                        // el `bottom` de `contentPadding` — la última nota
+                        // sigue topando exactamente en el mismo lugar de
+                        // siempre, tan tocable como cualquier otra.
                         LazyColumn(
-                            modifier = Modifier.fillMaxSize().padding(padding),
-                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.fillMaxSize().padding(
+                                top = padding.calculateTopPadding(),
+                                start = padding.calculateStartPadding(LocalLayoutDirection.current),
+                                end = padding.calculateEndPadding(LocalLayoutDirection.current)
+                            ),
+                            contentPadding = PaddingValues(
+                                start = 8.dp,
+                                end = 8.dp,
+                                top = 8.dp,
+                                bottom = 8.dp + padding.calculateBottomPadding()
+                            ),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(currentNotes, key = { it.id }) { note ->
@@ -611,10 +643,24 @@ fun NoteListScreen(
                             }
                         }
                     } else {
+                        // Mismo criterio que en el LazyColumn de arriba (ver
+                        // ese comentario): el contenedor llega al borde real
+                        // de la pantalla, y el espacio reservado se mueve al
+                        // `bottom` de `contentPadding` para que el alcance de
+                        // scroll no cambie en nada.
                         LazyVerticalStaggeredGrid(
                             columns = StaggeredGridCells.Fixed(settings.gridColumns.coerceIn(1, 3)),
-                            modifier = Modifier.fillMaxSize().padding(padding),
-                            contentPadding = PaddingValues(8.dp),
+                            modifier = Modifier.fillMaxSize().padding(
+                                top = padding.calculateTopPadding(),
+                                start = padding.calculateStartPadding(LocalLayoutDirection.current),
+                                end = padding.calculateEndPadding(LocalLayoutDirection.current)
+                            ),
+                            contentPadding = PaddingValues(
+                                start = 8.dp,
+                                end = 8.dp,
+                                top = 8.dp,
+                                bottom = 8.dp + padding.calculateBottomPadding()
+                            ),
                             verticalItemSpacing = 8.dp,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
