@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.text.format.DateFormat
+import android.view.View
 import android.widget.RemoteViews
 import com.dumb.bouncynotes.MainActivity
 import com.dumb.bouncynotes.R
@@ -73,7 +74,8 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             views.setInt(R.id.Clock, "setBackgroundResource", colors.tileBackgroundRes)
             views.setInt(R.id.ReminderBox, "setBackgroundResource", colors.tileBackgroundRes)
             views.setInt(R.id.ReminderIcon, "setColorFilter", colors.textSecondary)
-            views.setTextColor(R.id.ReminderValue, colors.textPrimary)
+            views.setTextColor(R.id.ReminderDate, colors.textPrimary)
+            views.setTextColor(R.id.ReminderTitle, colors.textSecondary)
 
             // Recuadro de "próximo recordatorio" (rediseño a partir de un
             // boceto del usuario) — a diferencia de la lista de la
@@ -96,13 +98,15 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
 
             if (nextReminder != null) {
                 val (note, triggerAt) = nextReminder
-                views.setTextViewText(
-                    R.id.ReminderValue,
-                    "${formatReminderWhen(context, triggerAt)} · ${note.title.ifBlank { "(Sin título)" }}"
-                )
+                // Fecha arriba, nota abajo. Se fijan las visibilidades en
+                // AMBOS casos (los RemoteViews se reciclan entre updates).
+                views.setTextViewText(R.id.ReminderDate, formatReminderWhen(context, triggerAt))
+                views.setTextViewText(R.id.ReminderTitle, note.title.ifBlank { "(Sin título)" })
+                views.setViewVisibility(R.id.ReminderTitle, View.VISIBLE)
                 views.setOnClickPendingIntent(R.id.ReminderBox, PinnedNoteWidgetProvider.openNotePendingIntent(context, note.id))
             } else {
-                views.setTextViewText(R.id.ReminderValue, "Sin recordatorios próximos")
+                views.setTextViewText(R.id.ReminderDate, "Sin recordatorios próximos")
+                views.setViewVisibility(R.id.ReminderTitle, View.GONE)
                 // Sin click: no hay ninguna nota puntual a la que llevar al
                 // tocar acá (ver el comentario en el layout).
             }
@@ -154,7 +158,7 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             ids.forEach { widgetId -> updateWidget(context, manager, widgetId) }
         }
 
-        // "Hoy 9:00 AM" / "Mañana 9:00 AM" / "Vie 9:00 AM" — formato chico a
+        // "Hoy" + salto + "9:00 AM" / "Mañana" + ... / "Vie" + ... — formato chico a
         // propósito, para el recuadro angosto de la derecha. La HORA respeta
         // el formato de 12/24hs del sistema (DateFormat.getTimeFormat, la
         // misma fuente que ya usa el propio TextClock con
@@ -183,8 +187,11 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
                 1L -> "Mañana"
                 else -> java.text.SimpleDateFormat("EEE", Locale("es")).format(Date(triggerAt)).replaceFirstChar { it.uppercase() }
             }
-            val timePart = DateFormat.getTimeFormat(context).format(Date(triggerAt))
-            return "$dayPart $timePart"
+            // Espacios NO cortables en la hora: "11:30 a. m." es angosto pero
+            // tiene espacios adentro, y sin esto puede partirse en dos
+            // líneas ("11:30 a." / "m.") en una tarjeta chica.
+            val timePart = DateFormat.getTimeFormat(context).format(Date(triggerAt)).replace(' ', '\u00A0')
+            return "$dayPart\n$timePart"
         }
     }
 }
