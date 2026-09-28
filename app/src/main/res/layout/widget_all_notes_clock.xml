@@ -59,7 +59,12 @@
         android:orientation="vertical">
 
         <!-- TextClock: vista nativa, se actualiza sola cada minuto. El
-             propio TextClock ES la tarjeta (lleva el fondo directo). -->
+             propio TextClock ES la tarjeta (lleva el fondo directo).
+             Hora apilada en tres líneas (hora / raya / minutos): el patrón
+             de formato admite texto literal entre comillas simples, y
+             &#10; es un salto de línea. Va un poco más chico y con
+             interlineado apretado para que las tres líneas entren en la
+             tarjeta. Formato de 12hs sin AM/PM (como en el ejemplo pedido). -->
         <TextClock
             android:id="@+id/Clock"
             android:layout_width="match_parent"
@@ -67,9 +72,11 @@
             android:layout_marginBottom="8dp"
             android:layout_weight="1"
             android:gravity="center"
-            android:format12Hour="h:mm a"
-            android:format24Hour="H:mm"
-            android:textSize="30sp"
+            android:includeFontPadding="false"
+            android:lineSpacingMultiplier="0.85"
+            android:format12Hour="h'&#10;—&#10;'mm"
+            android:format24Hour="H'&#10;—&#10;'mm"
+            android:textSize="24sp"
             android:textStyle="bold" />
 
         <!-- Próximo recordatorio entre TODAS las notas — ver
@@ -86,13 +93,15 @@
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
-            <TextView
-                android:id="@+id/ReminderLabel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/all_notes_clock_widget_reminder_label"
-                android:textColor="?android:attr/textColorSecondary"
-                android:textSize="11sp" />
+            <!-- Ícono de reloj (el mismo Alarm que usa la app) en lugar del
+                 texto "Próximo recordatorio", que queda como descripción de
+                 accesibilidad. Se tiñe en tiempo de ejecución. -->
+            <ImageView
+                android:id="@+id/ReminderIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="@string/all_notes_clock_widget_reminder_label"
+                android:src="@drawable/ic_widget_alarm" />
 
             <TextView
                 android:id="@+id/ReminderValue"

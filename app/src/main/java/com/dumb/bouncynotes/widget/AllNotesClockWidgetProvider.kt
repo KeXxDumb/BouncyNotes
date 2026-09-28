@@ -72,7 +72,7 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             views.setInt(R.id.NotesTile, "setBackgroundResource", colors.tileBackgroundRes)
             views.setInt(R.id.Clock, "setBackgroundResource", colors.tileBackgroundRes)
             views.setInt(R.id.ReminderBox, "setBackgroundResource", colors.tileBackgroundRes)
-            views.setTextColor(R.id.ReminderLabel, colors.textSecondary)
+            views.setInt(R.id.ReminderIcon, "setColorFilter", colors.textSecondary)
             views.setTextColor(R.id.ReminderValue, colors.textPrimary)
 
             // Recuadro de "próximo recordatorio" (rediseño a partir de un
