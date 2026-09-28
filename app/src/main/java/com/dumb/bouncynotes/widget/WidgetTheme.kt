@@ -17,7 +17,11 @@ data class WidgetColors(
     // todo) — texto/divisor/botones no dependen de esto, siguen
     // calculándose igual sea cual sea el modo de fondo, para que sigan
     // siendo legibles sobre cualquier wallpaper.
-    val backgroundMode: WidgetBackgroundMode
+    val backgroundMode: WidgetBackgroundMode,
+    // Tarjeta interna más oscura que el fondo (solo la usa el widget de
+    // reloj+notas). Con valor por defecto para no romper los constructores
+    // posicionales de las Factories, que arman un WidgetColors "vacío".
+    val tileBackgroundRes: Int = 0
 )
 
 private const val TEXT_PRIMARY_LIGHT = 0xFF1C1B1F.toInt()
@@ -57,7 +61,8 @@ fun resolveWidgetColors(context: Context, widgetId: Int): WidgetColors {
             textSecondary = TEXT_SECONDARY_DARK,
             divider = DIVIDER_DARK,
             buttonBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_button_dark,
-            backgroundMode = backgroundMode
+            backgroundMode = backgroundMode,
+            tileBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_tile_dark
         )
     } else {
         WidgetColors(
@@ -66,7 +71,8 @@ fun resolveWidgetColors(context: Context, widgetId: Int): WidgetColors {
             textSecondary = TEXT_SECONDARY_LIGHT,
             divider = DIVIDER_LIGHT,
             buttonBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_button_light,
-            backgroundMode = backgroundMode
+            backgroundMode = backgroundMode,
+            tileBackgroundRes = com.dumb.bouncynotes.R.drawable.widget_tile_light
         )
     }
 }

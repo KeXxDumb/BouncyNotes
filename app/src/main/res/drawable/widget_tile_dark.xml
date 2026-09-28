@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Tarjeta interna del widget de reloj+notas (ver widget_all_notes_clock.xml):
+    negro semitransparente ENCIMA del fondo del widget, en vez de un color
+    fijo — así queda siempre más oscuro que el fondo (que es lo que pide el
+    diseño: cuadrados oscuros dentro de uno más claro) sin importar si el
+    fondo está en modo sólido, translúcido o invisible.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="12dp" />
+    <solid android:color="#73000000" />
+</shape>

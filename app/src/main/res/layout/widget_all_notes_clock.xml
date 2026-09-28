@@ -1,27 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    REDISEÑADO (a partir de un boceto del usuario): antes era reloj arriba +
-    lista scrolleable abajo, todo apilado verticalmente. Ahora es un split
-    horizontal — lista de notas a la izquierda (más ancha, es lo que más
-    espacio necesita para leerse), reloj + próximo recordatorio apilados a
-    la derecha. Mismo fondo/estilo de siempre (un solo widget_background_*,
-    sin paneles ni tarjetas nuevas) — el boceto separaba visualmente las
-    secciones con líneas finas, no con fondos propios, así que se resolvió
-    con divisores (mismo criterio que HeaderDivider de antes: un
-    LinearLayout vacío de 1dp, coloreado en tiempo de ejecución, NO una
-    View — ver ese comentario viejo sobre por qué).
+    Widget de reloj + notas, según el boceto del usuario: TRES tarjetas
+    redondeadas más oscuras (lista de notas, reloj, próximo recordatorio)
+    dentro del rectángulo redondeado más claro que es el fondo del widget
+    (widget_background_*, sin cambios). Las tarjetas se separan entre sí
+    con el hueco de 8dp del fondo, no con líneas — las únicas líneas que
+    quedan son las que separan una nota de otra DENTRO de la tarjeta de la
+    lista.
+
+    Cada tarjeta lleva su fondo (widget_tile_*) puesto en tiempo de
+    ejecución por el provider (setBackgroundResource), porque depende del
+    tema claro/oscuro elegido para ESTE widget.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/Layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background_light"
-    android:orientation="horizontal">
+    android:orientation="horizontal"
+    android:padding="8dp">
 
-    <!-- Columna izquierda: la lista scrolleable de siempre (mismo Factory,
-         mismo click template, mismo layout de fila) — solo cambió DÓNDE
-         vive dentro del widget, no cómo funciona. -->
+    <!-- Tarjeta izquierda: la lista scrolleable de siempre (mismo Factory,
+         mismo click template, mismo layout de fila). -->
     <FrameLayout
+        android:id="@+id/NotesTile"
         android:layout_width="0dp"
         android:layout_height="match_parent"
         android:layout_weight="1.4">
@@ -32,8 +34,8 @@
             android:layout_height="match_parent"
             android:divider="@null"
             android:dividerHeight="0dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="4dp" />
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp" />
 
         <!-- Visible cuando todavía no hay ninguna nota (sin contar papelera
              y privadas, igual que el resto de los widgets). -->
@@ -47,27 +49,22 @@
             android:textColor="?android:attr/textColorSecondary" />
     </FrameLayout>
 
-    <!-- Divisor VERTICAL entre las dos columnas. -->
-    <LinearLayout
-        android:id="@+id/VerticalDivider"
-        android:layout_width="1dp"
-        android:layout_height="match_parent" />
-
-    <!-- Columna derecha: reloj arriba, recordatorio próximo abajo. -->
+    <!-- Columna derecha: dos tarjetas apiladas, con 8dp entre sí y 8dp
+         respecto de la lista. -->
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="match_parent"
+        android:layout_marginStart="8dp"
         android:layout_weight="1"
         android:orientation="vertical">
 
-        <!-- TextClock: vista nativa, se actualiza sola cada minuto. Más
-             grande que antes (20sp -> 30sp) para llenar bien esta mitad
-             superior, como en el boceto. La apariencia (tema/fondo) se
-             configura con long press > Configurar. -->
+        <!-- TextClock: vista nativa, se actualiza sola cada minuto. El
+             propio TextClock ES la tarjeta (lleva el fondo directo). -->
         <TextClock
             android:id="@+id/Clock"
             android:layout_width="match_parent"
             android:layout_height="0dp"
+            android:layout_marginBottom="8dp"
             android:layout_weight="1"
             android:gravity="center"
             android:format12Hour="h:mm a"
@@ -75,25 +72,17 @@
             android:textSize="30sp"
             android:textStyle="bold" />
 
-        <LinearLayout
-            android:id="@+id/HeaderDivider"
-            android:layout_width="match_parent"
-            android:layout_height="1dp" />
-
-        <!-- Próximo recordatorio entre TODAS las notas (no de una nota en
-             particular) — ver ReminderScheduler.nextTrigger, reusado tal
-             cual en AllNotesClockWidgetProvider. Tocable: abre la nota
-             dueña de ese recordatorio, directo (mismo
-             openNotePendingIntent que ya usan los otros widgets). Sin
-             click si no hay ningún recordatorio próximo (Empty=true) —
-             no tiene sentido "abrir" nada en ese caso. -->
+        <!-- Próximo recordatorio entre TODAS las notas — ver
+             ReminderScheduler.nextTrigger, usado en
+             AllNotesClockWidgetProvider. Tocable: abre la nota dueña; sin
+             click si no hay ningún recordatorio próximo. -->
         <LinearLayout
             android:id="@+id/ReminderBox"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
-            android:orientation="vertical"
             android:gravity="center_vertical"
+            android:orientation="vertical"
             android:paddingStart="12dp"
             android:paddingEnd="12dp">
 
@@ -102,19 +91,19 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/all_notes_clock_widget_reminder_label"
-                android:textSize="11sp"
-                android:textColor="?android:attr/textColorSecondary" />
+                android:textColor="?android:attr/textColorSecondary"
+                android:textSize="11sp" />
 
             <TextView
                 android:id="@+id/ReminderValue"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:maxLines="2"
                 android:ellipsize="end"
                 android:fontFamily="sans-serif-medium"
-                android:textSize="13sp"
-                android:textColor="?android:attr/textColorPrimary" />
+                android:maxLines="2"
+                android:textColor="?android:attr/textColorPrimary"
+                android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
 

@@ -66,8 +66,12 @@ class AllNotesClockWidgetProvider : AppWidgetProvider() {
             applyWidgetBackground(views, R.id.Layout, colors)
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.Empty, colors.textSecondary)
-            views.setInt(R.id.VerticalDivider, "setBackgroundColor", colors.divider)
-            views.setInt(R.id.HeaderDivider, "setBackgroundColor", colors.divider)
+            // Las tres tarjetas redondeadas (lista, reloj, recordatorio),
+            // más oscuras que el fondo del widget — ver
+            // widget_all_notes_clock.xml.
+            views.setInt(R.id.NotesTile, "setBackgroundResource", colors.tileBackgroundRes)
+            views.setInt(R.id.Clock, "setBackgroundResource", colors.tileBackgroundRes)
+            views.setInt(R.id.ReminderBox, "setBackgroundResource", colors.tileBackgroundRes)
             views.setTextColor(R.id.ReminderLabel, colors.textSecondary)
             views.setTextColor(R.id.ReminderValue, colors.textPrimary)
 

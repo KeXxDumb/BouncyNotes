@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Versión clara de widget_tile_dark.xml: un velo oscuro mucho más suave,
+     porque el fondo claro ya es casi blanco y con la misma opacidad que el
+     tema oscuro quedaría un gris sucio y pesado. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="12dp" />
+    <solid android:color="#14000000" />
+</shape>
