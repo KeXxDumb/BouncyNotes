@@ -60,11 +60,17 @@
 
         <!-- TextClock: vista nativa, se actualiza sola cada minuto. El
              propio TextClock ES la tarjeta (lleva el fondo directo).
-             Hora apilada en tres líneas (hora / raya / minutos): el patrón
-             de formato admite texto literal entre comillas simples, y
-             &#10; es un salto de línea. Va un poco más chico y con
-             interlineado apretado para que las tres líneas entren en la
-             tarjeta. Formato de 12hs sin AM/PM (como en el ejemplo pedido). -->
+             Hora arriba ("2:45") y día de la semana completo abajo
+             ("Miércoles" — EEEE), en dos líneas: el patrón de formato
+             admite texto literal entre comillas simples, y &#10; es un
+             salto de línea. Formato de 12hs sin AM/PM (como en el ejemplo
+             pedido).
+             OJO: EEEE respeta el idioma/formato del SISTEMA (es un
+             TextClock nativo, no texto propio) — en español eso normalmente
+             sale en minúscula ("miércoles"), la forma correcta en este
+             idioma, aunque no se pueda forzar una mayúscula inicial sin
+             dejar de usar TextClock (perdiendo la actualización sola cada
+             minuto). -->
         <TextClock
             android:id="@+id/Clock"
             android:layout_width="match_parent"
@@ -73,10 +79,10 @@
             android:layout_weight="1"
             android:gravity="center"
             android:includeFontPadding="false"
-            android:lineSpacingMultiplier="0.85"
-            android:format12Hour="h'&#10;—&#10;'mm"
-            android:format24Hour="H'&#10;—&#10;'mm"
-            android:textSize="24sp"
+            android:lineSpacingMultiplier="0.9"
+            android:format12Hour="h:mm'&#10;'EEEE"
+            android:format24Hour="H:mm'&#10;'EEEE"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
         <!-- Próximo recordatorio entre TODAS las notas — ver

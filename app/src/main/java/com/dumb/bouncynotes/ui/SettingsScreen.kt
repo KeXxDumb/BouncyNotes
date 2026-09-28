@@ -192,9 +192,20 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                val imported = BackupManager.importNotes(context, uri)
-                noteViewModel.importNotes(imported)
-                statusMessage = "${imported.size} notas importadas"
+                // El chequeo de "llave" va PRIMERO y aparte de importNotes():
+                // si es un zip especial (bouncynotes-key.json en la raíz),
+                // NO tiene notes.json, así que importNotes() de por sí no
+                // haría nada con él — pero igual se llama a ambas funciones
+                // con la misma URI, cada una ignora lo que no reconoce.
+                val unlockedIcon = BackupManager.tryUnlockIconFromKeyZip(uri, context)
+                if (unlockedIcon != null) {
+                    onUpdate { it.copy(secretPeachIconUnlocked = true) }
+                    statusMessage = "🍑 ¡Ícono secreto desbloqueado! Elegilo en \"Ícono de la app\""
+                } else {
+                    val imported = BackupManager.importNotes(context, uri)
+                    noteViewModel.importNotes(imported)
+                    statusMessage = "${imported.size} notas importadas"
+                }
             }
         }
     }
@@ -559,7 +570,7 @@ fun SettingsScreen(
                                                     SettingsDivider()
                                                     Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                                                     Spacer(Modifier.height(4.dp))
-                                                    AppIconSetting()
+                                                    AppIconSetting(secretUnlocked = settings.secretPeachIconUnlocked)
 
                                                     // Divisor: la imagen de fondo es, de nuevo, un tema
                                                     // aparte del ícono.
@@ -1141,7 +1152,7 @@ private fun <T> CycleSetting(label: String, options: List<Pair<T, String>>, sele
 // manifiesto). El estado real vive en PackageManager, no en nuestro
 // DataStore, así que lo leemos directo de ahí al entrar a esta pantalla.
 @Composable
-private fun AppIconSetting() {
+private fun AppIconSetting(secretUnlocked: Boolean) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
     // Diagnóstico: estado REAL que devuelve PackageManager para cada alias,
@@ -1162,7 +1173,10 @@ private fun AppIconSetting() {
             .padding(bottom = 4.dp)
             .horizontalScroll(rememberScrollState())
     ) {
-        AppIcon.entries.forEach { icon ->
+        // Los íconos "hidden" (hoy, solo SECRET_PEACH) no aparecen en esta
+        // fila a menos que ya se hayan desbloqueado — ver el comentario en
+        // AppIcon.SECRET_PEACH y BackupManager.tryUnlockIconFromKeyZip.
+        AppIcon.entries.filter { !it.hidden || secretUnlocked }.forEach { icon ->
             val isSelected = icon == selected
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

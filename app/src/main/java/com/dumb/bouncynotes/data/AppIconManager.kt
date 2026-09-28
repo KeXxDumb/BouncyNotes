@@ -17,11 +17,25 @@ import kotlin.system.exitProcess
 // Android 8, y el que finalmente funcionó en el dispositivo real. v10: se
 // sacaron los 3 íconos de prueba de color (ya cumplieron su función) y
 // Note Girl pasó a ser la ilustración remasterizada del artista.
-enum class AppIcon(val alias: String, val label: String, val drawableResId: Int) {
+enum class AppIcon(val alias: String, val label: String, val drawableResId: Int, val hidden: Boolean = false) {
     PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.drawable.ic_icon_peach),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.drawable.ic_icon_notegirl),
     MELONS("com.dumb.bouncynotes.MelonsIconAlias", "Melones", R.drawable.ic_icon_melons),
-    MIMORPHA("com.dumb.bouncynotes.MimorphaIconAlias", "Mimorpha", R.drawable.ic_icon_mimorpha)
+    MIMORPHA("com.dumb.bouncynotes.MimorphaIconAlias", "Mimorpha", R.drawable.ic_icon_mimorpha),
+    // Ícono secreto (easter egg): NO aparece en el selector normal de
+    // Ajustes (hidden = true) — solo se agrega a la lista visible cuando
+    // AppSettings.secretPeachIconUnlocked está en true, algo que solo pasa
+    // importando el zip "llave" correcto (ver
+    // BackupManager.tryUnlockIconFromKeyZip). El alias en sí funciona
+    // exactamente igual que cualquier otro (activity-alias normal,
+    // compilado en el APK de antemano) — lo único "secreto" es si la UI
+    // decide mostrarlo o no.
+    SECRET_PEACH(
+        "com.dumb.bouncynotes.SecretPeachIconAlias",
+        "??? (secreto)",
+        R.drawable.ic_icon_secret_peach,
+        hidden = true
+    )
 }
 
 object AppIconManager {

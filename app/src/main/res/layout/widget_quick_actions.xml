@@ -1,33 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    Rediseñado con el mismo lenguaje visual del widget de reloj+notas
+    (widget_all_notes_clock.xml): tarjetas redondeadas más oscuras
+    (widget_tile_*) dentro del fondo redondeado más claro de siempre
+    (widget_background_*) que une todo. Antes el reloj y los botones no
+    tenían ningún fondo propio, solo flotaban sobre el fondo general.
+
+    Arriba: UNA tarjeta grande con el reloj y, debajo (misma vista, dos
+    líneas — ver el comentario del TextClock), la fecha completa. Abajo: una
+    fila con las dos tarjetas chicas de los botones, mismo tamaño entre sí.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/Layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_background_light"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="8dp">
 
-    <!-- TextClock es una vista nativa de Android: se actualiza sola cada
-         minuto sin que la app tenga que hacer nada — a diferencia de un
-         widget de Compose/Glance, acá no hace falta programar ningún
-         refresco periódico para esto. La apariencia se configura con long
-         press > Configurar (ver widgetFeatures="reconfigurable" en el
-         widget-info) — sin ícono propio en el widget, redundante con eso. -->
+    <!-- Tarjeta grande de arriba: el propio TextClock ES la tarjeta (lleva
+         el fondo directo, como el reloj del otro widget). Reloj + fecha en
+         dos líneas con UN SOLO TextClock (mismo truco que
+         widget_all_notes_clock.xml): el patrón de formato admite texto
+         literal entre comillas simples, y &#10; es un salto de línea.
+         Formato de 12hs sin AM/PM. La fecha (EEEE, d 'de' MMMM) sigue el
+         idioma del sistema — en español sale en minúscula, la forma
+         correcta en ese idioma. -->
     <TextClock
         android:id="@+id/Clock"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:format12Hour="h:mm a"
-        android:format24Hour="H:mm"
-        android:textSize="26sp"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="2"
+        android:layout_marginBottom="8dp"
+        android:gravity="center"
+        android:includeFontPadding="false"
+        android:lineSpacingMultiplier="1.1"
+        android:format12Hour="h:mm'&#10;'EEEE, d 'de' MMMM"
+        android:format24Hour="H:mm'&#10;'EEEE, d 'de' MMMM"
+        android:textSize="30sp"
         android:textStyle="bold" />
 
+    <!-- Fila de abajo: los dos botones, cada uno en su propia tarjeta
+         chica, mismo alto que antes (weight=1 combinado). -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp"
         android:orientation="horizontal">
 
         <LinearLayout
@@ -35,7 +53,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_margin="4dp"
+            android:layout_marginEnd="4dp"
             android:foreground="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -44,17 +62,17 @@
 
             <ImageView
                 android:id="@+id/NewNoteIcon"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:src="@android:drawable/ic_menu_add" />
 
             <TextView
                 android:id="@+id/NewNoteLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:text="@string/quick_actions_widget_new_note"
-                android:textSize="15sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -63,7 +81,7 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:layout_margin="4dp"
+            android:layout_marginStart="4dp"
             android:foreground="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
@@ -72,17 +90,17 @@
 
             <ImageView
                 android:id="@+id/NewChecklistIcon"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:src="@android:drawable/ic_menu_add" />
 
             <TextView
                 android:id="@+id/NewChecklistLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:text="@string/quick_actions_widget_new_checklist"
-                android:textSize="15sp"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>

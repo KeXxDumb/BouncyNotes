@@ -71,6 +71,46 @@ object BackupManager {
         return result
     }
 
+    // Easter egg de "íconos con llave" (ver AppIcon.SECRET_PEACH): un zip
+    // especial, DISTINTO de un respaldo de notas normal, que trae un solo
+    // archivo de texto en la raíz — "bouncynotes-key.json" — con este
+    // formato:
+    //   { "type": "bouncynotes-icon-key", "formatVersion": 1, "unlocks": "SECRET_PEACH" }
+    // "unlocks" tiene que ser el nombre EXACTO (mayúsculas incluidas) de una
+    // entrada de AppIcon marcada como `hidden = true` — un valor que no
+    // matchee ningún ícono oculto (typo, ícono ya no oculto, formato viejo)
+    // simplemente no desbloquea nada, sin tirar error.
+    //
+    // Reusa el mismo botón "Importar" que ya existe para respaldos: un zip
+    // sin "bouncynotes-key.json" en la raíz no entra nunca acá (se llama a
+    // esta función Y a importNotes() con la misma URI; si es un respaldo
+    // normal, esta simplemente no encuentra la marca y devuelve null sin
+    // tocar nada).
+    fun tryUnlockIconFromKeyZip(srcUri: Uri, context: Context): AppIcon? {
+        try {
+            context.contentResolver.openInputStream(srcUri)?.use { input ->
+                ZipInputStream(input).use { zip ->
+                    var entry = zip.nextEntry
+                    while (entry != null) {
+                        if (entry.name == "bouncynotes-key.json") {
+                            val json = JSONObject(zip.readBytes().decodeToString())
+                            zip.closeEntry()
+                            if (json.optString("type") == "bouncynotes-icon-key") {
+                                val wanted = json.optString("unlocks")
+                                return AppIcon.entries.firstOrNull { it.hidden && it.name == wanted }
+                            }
+                            return null
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+            }
+        } catch (e: Exception) {
+        }
+        return null
+    }
+
     private fun noteToJson(note: Note): JSONObject {
         val o = JSONObject()
         o.put("type", note.type.name)

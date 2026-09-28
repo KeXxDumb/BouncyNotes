@@ -29,14 +29,14 @@ class QuickActionsWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.Clock, colors.textPrimary)
             views.setTextColor(R.id.NewNoteLabel, colors.textPrimary)
             views.setTextColor(R.id.NewChecklistLabel, colors.textPrimary)
-            // Botones más "notorios" (pedido): antes solo tenían el ripple
-            // de selectableItemBackground al tocar, sin ningún límite
-            // visible en reposo. Ahora tienen una píldora semitransparente
-            // de fondo siempre visible, más el ícono con el mismo tinte que
-            // el texto (antes quedaba con el color de ícono por defecto del
-            // sistema, sin relación con el tema claro/oscuro del widget).
-            views.setInt(R.id.NewNoteButton, "setBackgroundResource", colors.buttonBackgroundRes)
-            views.setInt(R.id.NewChecklistButton, "setBackgroundResource", colors.buttonBackgroundRes)
+            // Mismo lenguaje visual que el widget de reloj+notas: TODO
+            // (el reloj grande de arriba y los dos botones de abajo) es
+            // ahora una tarjeta redondeada más oscura (tileBackgroundRes),
+            // no la píldora semitransparente que tenían antes los botones
+            // (buttonBackgroundRes, que queda sin usar en este widget).
+            views.setInt(R.id.Clock, "setBackgroundResource", colors.tileBackgroundRes)
+            views.setInt(R.id.NewNoteButton, "setBackgroundResource", colors.tileBackgroundRes)
+            views.setInt(R.id.NewChecklistButton, "setBackgroundResource", colors.tileBackgroundRes)
             views.setInt(R.id.NewNoteIcon, "setColorFilter", colors.textPrimary)
             views.setInt(R.id.NewChecklistIcon, "setColorFilter", colors.textPrimary)
 

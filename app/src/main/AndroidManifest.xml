@@ -109,6 +109,27 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Ícono secreto (easter egg de "íconos con llave" — ver
+             AppIconManager.kt / BackupManager.tryUnlockIconFromKeyZip):
+             deshabilitado al principio como cualquier otro alternativo,
+             pero además NO aparece en el selector de Ajustes hasta
+             desbloquearlo (AppSettings.secretPeachIconUnlocked) — el alias
+             en sí no tiene nada especial, ya está compilado en el APK como
+             los demás, lo único oculto es si la UI decide mostrarlo. -->
+        <activity-alias
+            android:name=".SecretPeachIconAlias"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@drawable/ic_icon_secret_peach"
+            android:roundIcon="@drawable/ic_icon_secret_peach"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <receiver
             android:name=".data.ReminderReceiver"
             android:exported="false" />
