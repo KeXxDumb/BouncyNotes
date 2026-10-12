@@ -66,6 +66,23 @@ object ImageStorage {
         }
     }
 
+    // Guarda un Bitmap YA EN MEMORIA como un archivo nuevo — a diferencia
+    // de copyFromUri/compressFromUri, que parten de una Uri. Pensado para
+    // BackgroundCropDialog: el recorte elegido ya es un Bitmap (recortado a
+    // mano con Bitmap.createBitmap), no algo que se pueda releer de la Uri
+    // original. No hace falta `recycle()` acá — eso es responsabilidad de
+    // quien crea el Bitmap (el llamador), ya que esta función no lo creó.
+    fun saveBitmap(context: Context, bitmap: Bitmap, quality: Int = 90): String? {
+        return try {
+            val fileName = newFileName("jpg")
+            val outFile = File(imagesDir(context), fileName)
+            outFile.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out) }
+            fileName
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     fun compressInPlace(context: Context, fileName: String, quality: Int) {
         // No re-comprimir gifs en el lugar tampoco, por la misma razón de arriba.
         if (fileName.endsWith(".gif", ignoreCase = true)) return

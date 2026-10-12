@@ -106,13 +106,10 @@ data class AppSettings(
     // Slider vertical de navegación rápida en notas largas (NoteScrubber).
     // Activado por defecto — quien no lo quiera lo apaga en Ajustes.
     val showNoteScrubber: Boolean = true,
-    // Easter egg: importar un zip especial con una "llave" (ver
-    // BackupManager.tryUnlockIconFromKeyZip) revela un ícono secreto extra
-    // en el selector de Ajustes (AppIcon.SECRET_PEACH, oculto por defecto —
-    // ver AppIconManager.kt). Solo se puede PONER en true desde ese import;
-    // no hay forma de desactivarlo de nuevo a propósito, es un logro
-    // permanente, no un ajuste normal.
-    val secretPeachIconUnlocked: Boolean = false
+    // Easter egg "pack de texturas" (ver TexturePackManager): path absoluto
+    // de la textura de melocotón importada por el usuario, o null para usar
+    // la de fábrica (img_peach_bounce, ver BouncyPeach en NoteListScreen).
+    val customPeachTexturePath: String? = null
 )
 
 class SettingsRepository(private val context: Context) {
@@ -156,7 +153,7 @@ class SettingsRepository(private val context: Context) {
         val WIDGET_TRANSPARENT_BACKGROUND = booleanPreferencesKey("widget_transparent_background")
         val SHOW_BACKGROUND_IN_NOTES = booleanPreferencesKey("show_background_in_notes")
         val SHOW_NOTE_SCRUBBER = booleanPreferencesKey("show_note_scrubber")
-        val SECRET_PEACH_ICON_UNLOCKED = booleanPreferencesKey("secret_peach_icon_unlocked")
+        val CUSTOM_PEACH_TEXTURE_PATH = stringPreferencesKey("custom_peach_texture_path")
         val BACKGROUND_IMAGE_POOL = stringPreferencesKey("background_image_pool")
     }
 
@@ -210,7 +207,7 @@ class SettingsRepository(private val context: Context) {
                 ?.filter { it.isNotBlank() }
                 ?: emptyList(),
             showNoteScrubber = prefs[Keys.SHOW_NOTE_SCRUBBER] ?: true,
-            secretPeachIconUnlocked = prefs[Keys.SECRET_PEACH_ICON_UNLOCKED] ?: false
+            customPeachTexturePath = prefs[Keys.CUSTOM_PEACH_TEXTURE_PATH]?.takeIf { it.isNotBlank() }
         )
     }.onEach { real ->
         // Cada vez que llega un valor REAL desde DataStore (la fuente de
@@ -267,7 +264,11 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.SHOW_BACKGROUND_IN_NOTES] = updated.showBackgroundInNotes
             prefs[Keys.BACKGROUND_IMAGE_POOL] = updated.backgroundImagePaths.joinToString(",")
             prefs[Keys.SHOW_NOTE_SCRUBBER] = updated.showNoteScrubber
-            prefs[Keys.SECRET_PEACH_ICON_UNLOCKED] = updated.secretPeachIconUnlocked
+            if (updated.customPeachTexturePath != null) {
+                prefs[Keys.CUSTOM_PEACH_TEXTURE_PATH] = updated.customPeachTexturePath
+            } else {
+                prefs.remove(Keys.CUSTOM_PEACH_TEXTURE_PATH)
+            }
         }
         // BUG (ya resuelto) que motivó agregar esto: SettingsCache (el
         // caché sincrónico que usan varias cosas fuera de Compose, como el

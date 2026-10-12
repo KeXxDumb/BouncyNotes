@@ -2,7 +2,10 @@ package com.dumb.bouncynotes.ui
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.ContextWrapper
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -63,6 +66,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import com.dumb.bouncynotes.ui.components.BackgroundCropDialog
 import com.dumb.bouncynotes.ui.components.CompactIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +95,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
@@ -107,6 +112,7 @@ import com.dumb.bouncynotes.data.AppIconManager
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.BackupManager
+import com.dumb.bouncynotes.data.TexturePackManager
 import com.dumb.bouncynotes.data.CheckboxPosition
 import com.dumb.bouncynotes.data.FontScale
 import com.dumb.bouncynotes.data.GalleryLayout
@@ -192,15 +198,15 @@ fun SettingsScreen(
     ) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
-                // El chequeo de "llave" va PRIMERO y aparte de importNotes():
-                // si es un zip especial (bouncynotes-key.json en la raíz),
-                // NO tiene notes.json, así que importNotes() de por sí no
-                // haría nada con él — pero igual se llama a ambas funciones
-                // con la misma URI, cada una ignora lo que no reconoce.
-                val unlockedIcon = BackupManager.tryUnlockIconFromKeyZip(uri, context)
-                if (unlockedIcon != null) {
-                    onUpdate { it.copy(secretPeachIconUnlocked = true) }
-                    statusMessage = "🍑 ¡Ícono secreto desbloqueado! Elegilo en \"Ícono de la app\""
+                // Easter egg "pack de texturas" (ver TexturePackManager):
+                // se prueba PRIMERO con la misma URI. Un respaldo de notas
+                // normal no tiene "bouncynotes-pack.json" en la raíz, así
+                // que esto devuelve null enseguida y sigue el camino de
+                // siempre sin ningún efecto secundario.
+                val texturePath = TexturePackManager.tryImportPeachTexture(context, uri)
+                if (texturePath != null) {
+                    onUpdate { it.copy(customPeachTexturePath = texturePath) }
+                    statusMessage = "🍑 Nueva textura del melocotón importada"
                 } else {
                     val imported = BackupManager.importNotes(context, uri)
                     noteViewModel.importNotes(imported)
@@ -210,13 +216,63 @@ fun SettingsScreen(
         }
     }
 
+    // Extraído de handlePickedBackgroundImages para poder reusarlo también
+    // desde la confirmación del recorte (BackgroundCropDialog) — la lógica
+    // de "sumar al pool y, si hace falta, activar una imagen" es la misma
+    // sin importar si el archivo salió de un recorte o de una copia directa.
+    fun addBackgroundFileNamesToPool(newFileNames: List<String>) {
+        if (newFileNames.isEmpty()) return
+        onUpdate { s ->
+            val newPool = (s.backgroundImagePaths + newFileNames).distinct()
+            // Si todavía no había una imagen activa (pool vacío antes de
+            // este agregado) o la que estaba activa ya no está en el pool
+            // (se borró), activamos una ya mismo — así elegir la primera
+            // imagen ya "prende" el fondo, sin un paso aparte.
+            val newPath = if (s.backgroundImagePath == null || s.backgroundImagePath !in newPool) {
+                newPool.randomOrNull()
+            } else {
+                s.backgroundImagePath
+            }
+            s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
+        }
+    }
+
+    // Bitmap pendiente de recortar (ver BackgroundCropDialog, más abajo en
+    // este archivo) — no null mientras el diálogo de recorte está abierto.
+    var pendingCropBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
     // Único picker para el fondo de imagen (ver comentario grande más abajo
     // sobre por qué se unificó): elegir 1 imagen la activa directo, elegir
     // varias (o agregar más después con "+") activa la rotación
     // automáticamente — no hay un switch aparte que haya que acordarse de
     // prender.
+    //
+    // Pedido explícito: poder AJUSTAR el recorte antes de aplicarlo, en vez
+    // de que Compose lo centre solo con ContentScale.Crop. Esto solo se
+    // ofrece cuando se elige UNA sola imagen — con varias de una (selección
+    // múltiple para el pool) se sigue el camino viejo (recorte automático
+    // centrado), para no tener que armar una cola de "recortar la 1 de 5,
+    // ahora la 2 de 5...". Si en algún momento hace falta eso también, se
+    // puede agregar después sin tocar esta función de acá.
     fun handlePickedBackgroundImages(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        if (uris.size == 1) {
+            scope.launch {
+                val bitmap = withContext(Dispatchers.IO) {
+                    decodeCappedBitmap(context, uris.first(), maxDimension = 2048)
+                }
+                if (bitmap != null) {
+                    pendingCropBitmap = bitmap
+                } else {
+                    // No se pudo decodificar (archivo corrupto, formato raro,
+                    // etc.) — se sigue el camino viejo como respaldo, en vez
+                    // de no hacer nada.
+                    val fileName = withContext(Dispatchers.IO) { ImageStorage.copyFromUri(context, uris.first()) }
+                    addBackgroundFileNamesToPool(listOfNotNull(fileName))
+                }
+            }
+            return
+        }
         // Mismo fix que en el editor de notas (NoteEditScreen.handlePickedImages):
         // copiar el archivo es I/O de disco real en una función no-suspend,
         // llamada desde el hilo principal — se saca a un hilo de fondo para
@@ -226,20 +282,7 @@ fun SettingsScreen(
             val newFileNames = withContext(Dispatchers.IO) {
                 uris.mapNotNull { ImageStorage.copyFromUri(context, it) }
             }
-            if (newFileNames.isEmpty()) return@launch
-            onUpdate { s ->
-                val newPool = (s.backgroundImagePaths + newFileNames).distinct()
-                // Si todavía no había una imagen activa (pool vacío antes de
-                // este agregado) o la que estaba activa ya no está en el pool
-                // (se borró), activamos una ya mismo — así elegir la primera
-                // imagen ya "prende" el fondo, sin un paso aparte.
-                val newPath = if (s.backgroundImagePath == null || s.backgroundImagePath !in newPool) {
-                    newPool.randomOrNull()
-                } else {
-                    s.backgroundImagePath
-                }
-                s.copy(backgroundImagePaths = newPool, backgroundImagePath = newPath)
-            }
+            addBackgroundFileNamesToPool(newFileNames)
         }
     }
 
@@ -570,7 +613,7 @@ fun SettingsScreen(
                                                     SettingsDivider()
                                                     Text("Ícono de la app", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                                                     Spacer(Modifier.height(4.dp))
-                                                    AppIconSetting(secretUnlocked = settings.secretPeachIconUnlocked)
+                                                    AppIconSetting()
 
                                                     // Divisor: la imagen de fondo es, de nuevo, un tema
                                                     // aparte del ícono.
@@ -1029,6 +1072,62 @@ fun SettingsScreen(
             }
         }
     }
+
+    // Diálogo de recorte del fondo (ver handlePickedBackgroundImages más
+    // arriba) — el aspecto del marco es el de la PANTALLA REAL de este
+    // dispositivo, para que lo que se recorta acá coincida con cómo se va a
+    // ver de verdad como fondo (que ocupa toda la pantalla).
+    pendingCropBitmap?.let { bitmap ->
+        val cfg = LocalConfiguration.current
+        BackgroundCropDialog(
+            sourceBitmap = bitmap,
+            frameAspectRatio = cfg.screenWidthDp.toFloat() / cfg.screenHeightDp.toFloat(),
+            onDismiss = {
+                bitmap.recycle()
+                pendingCropBitmap = null
+            },
+            onConfirm = { cropped ->
+                pendingCropBitmap = null
+                scope.launch {
+                    val fileName = withContext(Dispatchers.IO) {
+                        val saved = ImageStorage.saveBitmap(context, cropped)
+                        bitmap.recycle()
+                        cropped.recycle()
+                        saved
+                    }
+                    addBackgroundFileNamesToPool(listOfNotNull(fileName))
+                }
+            }
+        )
+    }
+}
+
+// Decodifica una Uri a un Bitmap, reducido si hace falta para que el lado
+// más largo no supere `maxDimension` — una foto de cámara moderna puede
+// tener miles de píxeles de lado, mucho más de lo que hace falta para un
+// fondo (que como mucho ocupa la pantalla del dispositivo) y a esa
+// resolución completa el diálogo de recorte podría quedarse sin memoria
+// decodificándola. inJustDecodeBounds lee solo el encabezado (rápido, sin
+// decodificar la imagen entera) para calcular cuánto reducir ANTES de
+// decodificar de verdad.
+private fun decodeCappedBitmap(context: Context, uri: Uri, maxDimension: Int): Bitmap? {
+    return try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+            sample *= 2
+        }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        }
+    } catch (e: Exception) {
+        null
+    }
 }
 
 @Composable
@@ -1152,7 +1251,7 @@ private fun <T> CycleSetting(label: String, options: List<Pair<T, String>>, sele
 // manifiesto). El estado real vive en PackageManager, no en nuestro
 // DataStore, así que lo leemos directo de ahí al entrar a esta pantalla.
 @Composable
-private fun AppIconSetting(secretUnlocked: Boolean) {
+private fun AppIconSetting() {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(AppIconManager.current(context)) }
     // Diagnóstico: estado REAL que devuelve PackageManager para cada alias,
@@ -1173,10 +1272,7 @@ private fun AppIconSetting(secretUnlocked: Boolean) {
             .padding(bottom = 4.dp)
             .horizontalScroll(rememberScrollState())
     ) {
-        // Los íconos "hidden" (hoy, solo SECRET_PEACH) no aparecen en esta
-        // fila a menos que ya se hayan desbloqueado — ver el comentario en
-        // AppIcon.SECRET_PEACH y BackupManager.tryUnlockIconFromKeyZip.
-        AppIcon.entries.filter { !it.hidden || secretUnlocked }.forEach { icon ->
+        AppIcon.entries.forEach { icon ->
             val isSelected = icon == selected
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,

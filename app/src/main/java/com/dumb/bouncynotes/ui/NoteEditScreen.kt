@@ -72,6 +72,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.SubdirectoryArrowRight
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.Image
@@ -285,6 +287,13 @@ private val NoteStateSaver: Saver<Note, String> = Saver(
         )
     }
 )
+
+// Prefijos de punto/subpunto (ver toggleLinePrefix, más abajo) — caracteres
+// Unicode simples insertados como texto plano, no una estructura de datos
+// nueva. Subpunto indentado con 4 espacios + un círculo hueco, para que se
+// distinga del punto normal a simple vista.
+private const val BULLET_PREFIX = "• "
+private const val SUB_BULLET_PREFIX = "    ◦ "
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -644,6 +653,48 @@ fun NoteEditScreen(
                 newSegments[segIndex] = seg.copy(fileNames = newFileNames, captions = newCaptions)
             }
         }
+        updateContentFromSegments(newSegments)
+    }
+
+    // Punto/subpunto: a diferencia de negrita/cursiva/etc (que envuelven la
+    // SELECCIÓN con marcadores), esto actúa sobre el inicio de la LÍNEA
+    // actual — no hace falta seleccionar nada, alcanza con tener el cursor
+    // en la línea. Son simples caracteres Unicode insertados como texto
+    // plano (•, ◦), NO una estructura de datos nueva como las notas de tipo
+    // checklist (`EditSegment`/`ContentPart` no se tocan) — el renderer de
+    // markdown ya los muestra tal cual, sin parsearlos de forma especial,
+    // porque no significan nada particular para él.
+    // Es un toggle: tocar el botón de nuevo sobre una línea que YA tiene
+    // ese prefijo lo saca; tocarlo sobre una línea que tiene el OTRO
+    // prefijo (punto vs subpunto) lo reemplaza en vez de acumular los dos.
+    fun toggleLinePrefix(prefix: String) {
+        val idx = activeSegmentIndex.coerceIn(0, segments.size - 1)
+        val seg = segments.getOrNull(idx) as? EditSegment.TextSeg ?: return
+        val text = seg.value.text
+        val cursor = seg.value.selection.start.coerceIn(0, text.length)
+        val lineStart = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
+        val restOfLine = text.substring(lineStart)
+        val otherPrefixes = listOf(BULLET_PREFIX, SUB_BULLET_PREFIX).filter { it != prefix }
+        val newText: String
+        val cursorDelta: Int
+        when {
+            restOfLine.startsWith(prefix) -> {
+                newText = text.substring(0, lineStart) + text.substring(lineStart + prefix.length)
+                cursorDelta = -prefix.length
+            }
+            otherPrefixes.any { restOfLine.startsWith(it) } -> {
+                val existing = otherPrefixes.first { restOfLine.startsWith(it) }
+                newText = text.substring(0, lineStart) + prefix + text.substring(lineStart + existing.length)
+                cursorDelta = prefix.length - existing.length
+            }
+            else -> {
+                newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
+                cursorDelta = prefix.length
+            }
+        }
+        val newCursor = (cursor + cursorDelta).coerceIn(0, newText.length)
+        val newSegments = segments.toMutableList()
+        newSegments[idx] = EditSegment.TextSeg(TextFieldValue(newText, TextRange(newCursor)))
         updateContentFromSegments(newSegments)
     }
 
@@ -1218,6 +1269,12 @@ fun NoteEditScreen(
                     }
                     IconButton(onClick = { wrapActiveSelection("`") }) {
                         Icon(Icons.Filled.Code, contentDescription = "Monoespaciado")
+                    }
+                    IconButton(onClick = { toggleLinePrefix(BULLET_PREFIX) }) {
+                        Icon(Icons.Filled.FormatListBulleted, contentDescription = "Punto")
+                    }
+                    IconButton(onClick = { toggleLinePrefix(SUB_BULLET_PREFIX) }) {
+                        Icon(Icons.Filled.SubdirectoryArrowRight, contentDescription = "Subpunto")
                     }
                 }
                 if (isEditing) {

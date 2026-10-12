@@ -117,6 +117,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
 import com.dumb.bouncynotes.R
 import com.dumb.bouncynotes.data.AppSettings
 import com.dumb.bouncynotes.data.CheckboxPosition
@@ -475,7 +476,7 @@ fun NoteListScreen(
                                     Icon(Icons.Filled.DeleteSweep, contentDescription = "Vaciar papelera")
                                 }
                             }
-                            BouncyPeach()
+                            BouncyPeach(texturePath = settings.customPeachTexturePath)
                         },
                         colors = if (settings.backgroundImagePath != null) {
                             TopAppBarDefaults.topAppBarColors(
@@ -748,7 +749,7 @@ private fun SmartTitle(settings: AppSettings, viewMode: ViewMode) {
 }
 
 @Composable
-private fun BouncyPeach() {
+private fun BouncyPeach(texturePath: String?) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     // Un solo PeachSoundPlayer por composición de este botón (no uno nuevo
@@ -790,8 +791,21 @@ private fun BouncyPeach() {
     // cadena de modifiers (la animación gelatina, el click) es EXACTAMENTE
     // la misma que antes, porque le aplica a lo que sea que esté adentro sin
     // importarle si es texto o una imagen.
+    //
+    // Easter egg "pack de texturas" (ver TexturePackManager): si el usuario
+    // importó una textura propia, `texturePath` apunta a un archivo real en
+    // el dispositivo (no un recurso compilado) — para ESE caso hace falta
+    // Coil (rememberAsyncImagePainter), que sabe cargar un File; el dibujo
+    // de fábrica sigue siendo painterResource, un recurso normal del APK.
+    // El resto del composable (animación, click, sonido) no sabe ni le
+    // importa cuál de los dos está mostrando.
+    val painter = if (texturePath != null) {
+        rememberAsyncImagePainter(model = java.io.File(texturePath))
+    } else {
+        painterResource(R.drawable.img_peach_bounce)
+    }
     Image(
-        painter = painterResource(R.drawable.img_peach_bounce),
+        painter = painter,
         contentDescription = null,
         // .padding(end = 8.dp) antes del tamaño: un emoji de fuente trae su
         // propio margen invisible alrededor del glyph (parte del diseño de
