@@ -48,6 +48,7 @@ object SettingsCache {
         const val COMPRESS_IMAGES = "compress_images"
         const val IMAGE_QUALITY = "image_quality"
         const val DOUBLE_TAP_EDIT = "double_tap_edit"
+        const val FAB_ON_LEFT = "fab_on_left"
         const val BACKGROUND_IMAGE = "background_image"
         const val BACKGROUND_MONOCHROME = "background_monochrome"
         const val BACKGROUND_FADE = "background_fade"
@@ -94,6 +95,7 @@ object SettingsCache {
             compressImages = prefs.getBoolean(K.COMPRESS_IMAGES, d.compressImages),
             imageQuality = prefs.getInt(K.IMAGE_QUALITY, d.imageQuality),
             doubleTapToEdit = prefs.getBoolean(K.DOUBLE_TAP_EDIT, d.doubleTapToEdit),
+            fabOnLeft = prefs.getBoolean(K.FAB_ON_LEFT, d.fabOnLeft),
             backgroundImagePath = prefs.getString(K.BACKGROUND_IMAGE, null)?.takeIf { it.isNotBlank() },
             backgroundMonochrome = prefs.getBoolean(K.BACKGROUND_MONOCHROME, d.backgroundMonochrome),
             backgroundImageOpacity = prefs.getInt(K.BACKGROUND_IMAGE_OPACITY, (d.backgroundImageOpacity * 100).toInt()) / 100f,
@@ -147,6 +149,7 @@ object SettingsCache {
             putBoolean(K.COMPRESS_IMAGES, settings.compressImages)
             putInt(K.IMAGE_QUALITY, settings.imageQuality)
             putBoolean(K.DOUBLE_TAP_EDIT, settings.doubleTapToEdit)
+            putBoolean(K.FAB_ON_LEFT, settings.fabOnLeft)
             putString(K.BACKGROUND_IMAGE, settings.backgroundImagePath ?: "")
             putBoolean(K.BACKGROUND_MONOCHROME, settings.backgroundMonochrome)
             putInt(K.BACKGROUND_IMAGE_OPACITY, (settings.backgroundImageOpacity * 100).toInt())

@@ -77,6 +77,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -361,6 +362,7 @@ fun NoteListScreen(
                 HorizontalDivider()
                 }
             },
+            floatingActionButtonPosition = if (settings.fabOnLeft) FabPosition.Start else FabPosition.End,
             floatingActionButton = {
                 if (!selectionMode) {
                     val fabRotation by animateFloatAsState(
@@ -368,7 +370,8 @@ fun NoteListScreen(
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
                         label = "fabRotation"
                     )
-                    Column(horizontalAlignment = Alignment.End) {
+                    val fabSide = if (settings.fabOnLeft) Alignment.Start else Alignment.End
+                    Column(horizontalAlignment = fabSide) {
                         // Menú del botón "+", con dos plegables:
                         // 1) VERTICAL (arriba del "+"): crear nota/checklist,
                         //    más las etiquetas (filtro) si hay. Con muchas
@@ -385,7 +388,7 @@ fun NoteListScreen(
                                 slideOutVertically(animationSpec = tween(120)) { it / 2 }
                         ) {
                             Column(
-                                horizontalAlignment = Alignment.End,
+                                horizontalAlignment = fabSide,
                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier
                                     .heightIn(max = 460.dp)
@@ -420,64 +423,50 @@ fun NoteListScreen(
                                 }
                             }
                         }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            AnimatedVisibility(
-                                visible = fabExpanded,
-                                enter = fadeIn(animationSpec = tween(150)) +
-                                    slideInHorizontally(animationSpec = tween(150)) { it / 2 },
-                                exit = fadeOut(animationSpec = tween(120)) +
-                                    slideOutHorizontally(animationSpec = tween(120)) { it / 2 }
-                            ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (settings.useTrash) {
-                                        FabSquareItem(
-                                            icon = Icons.Filled.Delete,
-                                            description = "Papelera",
-                                            selected = viewMode == ViewMode.TRASH,
-                                            onClick = {
-                                                fabExpanded = false
-                                                viewModel.setViewMode(ViewMode.TRASH)
-                                            }
-                                        )
-                                    }
-                                    FabSquareItem(
-                                        icon = Icons.Filled.Notes,
-                                        description = "Todas las notas",
-                                        selected = viewMode == ViewMode.ALL && labelFilter == null,
-                                        onClick = {
-                                            fabExpanded = false
-                                            viewModel.setViewMode(ViewMode.ALL)
-                                        }
-                                    )
-                                    FabSquareItem(
-                                        icon = Icons.Filled.Lock,
-                                        description = "Privadas",
-                                        selected = viewMode == ViewMode.PRIVATE,
-                                        onClick = {
-                                            fabExpanded = false
-                                            viewModel.setViewMode(ViewMode.PRIVATE)
-                                        }
-                                    )
-                                    FabSquareItem(
-                                        icon = Icons.Filled.Settings,
-                                        description = "Ajustes",
-                                        selected = false,
-                                        onClick = {
-                                            fabExpanded = false
-                                            onOpenSettings()
-                                        }
-                                    )
-                                }
+                        // Orden pedido (de izquierda a derecha, con el "+" a la
+                        // derecha): Ajustes, Papelera, Privadas, Todas las notas,
+                        // "+". En modo zurdo el "+" pasa a la izquierda y el
+                        // orden se espeja, así "Todas las notas" sigue siendo
+                        // la más cercana al botón.
+                        val squareItems = buildList {
+                            add(FabSquare(Icons.Filled.Settings, "Ajustes", false) {
+                                fabExpanded = false
+                                onOpenSettings()
+                            })
+                            if (settings.useTrash) {
+                                add(FabSquare(Icons.Filled.Delete, "Papelera", viewMode == ViewMode.TRASH) {
+                                    fabExpanded = false
+                                    viewModel.setViewMode(ViewMode.TRASH)
+                                })
                             }
+                            add(FabSquare(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE) {
+                                fabExpanded = false
+                                viewModel.setViewMode(ViewMode.PRIVATE)
+                            })
+                            add(FabSquare(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null) {
+                                fabExpanded = false
+                                viewModel.setViewMode(ViewMode.ALL)
+                            })
+                        }
+                        val plusButton: @Composable () -> Unit = {
                             FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
                                 Icon(
                                     Icons.Filled.Add,
                                     contentDescription = "Menú y nueva nota",
                                     modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
                                 )
+                            }
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (settings.fabOnLeft) {
+                                plusButton()
+                                FabHorizontalMenu(fabExpanded, fromLeft = true, items = squareItems.reversed())
+                            } else {
+                                FabHorizontalMenu(fabExpanded, fromLeft = false, items = squareItems)
+                                plusButton()
                             }
                         }
                     }
@@ -619,6 +608,35 @@ fun NoteListScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// Datos de un botón cuadrado del plegable horizontal del "+".
+private data class FabSquare(
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val description: String,
+    val selected: Boolean,
+    val onClick: () -> Unit
+)
+
+// Plegable horizontal del "+". Función propia (sin receptor de Row/Column) a
+// propósito: así AnimatedVisibility siempre resuelve a la versión simple y
+// no a la de ColumnScope/RowScope de un layout lejano (ya dio error de
+// compilación una vez). `fromLeft` espeja la animación para el modo zurdo.
+@Composable
+private fun FabHorizontalMenu(visible: Boolean, fromLeft: Boolean, items: List<FabSquare>) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(150)) +
+            slideInHorizontally(animationSpec = tween(150)) { if (fromLeft) -it / 2 else it / 2 },
+        exit = fadeOut(animationSpec = tween(120)) +
+            slideOutHorizontally(animationSpec = tween(120)) { if (fromLeft) -it / 2 else it / 2 }
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.forEach { item ->
+                FabSquareItem(item.icon, item.description, item.selected, item.onClick)
             }
         }
     }

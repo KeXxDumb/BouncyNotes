@@ -52,6 +52,8 @@ data class AppSettings(
     val compressImages: Boolean = false,
     val imageQuality: Int = 85,
     val doubleTapToEdit: Boolean = true,
+    // Modo zurdo: el botón flotante "+" (y su menú) va a la izquierda.
+    val fabOnLeft: Boolean = false,
     val backgroundImagePath: String? = null,
     val backgroundMonochrome: Boolean = true,
     val backgroundImageOpacity: Float = 1f,
@@ -135,6 +137,7 @@ class SettingsRepository(private val context: Context) {
         val COMPRESS_IMAGES = booleanPreferencesKey("compress_images")
         val IMAGE_QUALITY = intPreferencesKey("image_quality")
         val DOUBLE_TAP_EDIT = booleanPreferencesKey("double_tap_edit")
+        val FAB_ON_LEFT = booleanPreferencesKey("fab_on_left")
         val BACKGROUND_IMAGE = stringPreferencesKey("background_image")
         val BACKGROUND_MONOCHROME = booleanPreferencesKey("background_monochrome")
         val BACKGROUND_FADE = booleanPreferencesKey("background_fade")
@@ -179,6 +182,7 @@ class SettingsRepository(private val context: Context) {
             compressImages = prefs[Keys.COMPRESS_IMAGES] ?: false,
             imageQuality = prefs[Keys.IMAGE_QUALITY] ?: 85,
             doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true,
+            fabOnLeft = prefs[Keys.FAB_ON_LEFT] ?: false,
             backgroundImagePath = prefs[Keys.BACKGROUND_IMAGE]?.takeIf { it.isNotBlank() },
             backgroundMonochrome = prefs[Keys.BACKGROUND_MONOCHROME] ?: true,
             backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true,
@@ -245,6 +249,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.COMPRESS_IMAGES] = updated.compressImages
             prefs[Keys.IMAGE_QUALITY] = updated.imageQuality
             prefs[Keys.DOUBLE_TAP_EDIT] = updated.doubleTapToEdit
+            prefs[Keys.FAB_ON_LEFT] = updated.fabOnLeft
             prefs[Keys.BACKGROUND_IMAGE] = updated.backgroundImagePath ?: ""
             prefs[Keys.BACKGROUND_MONOCHROME] = updated.backgroundMonochrome
             prefs[Keys.BACKGROUND_FADE] = updated.backgroundFade

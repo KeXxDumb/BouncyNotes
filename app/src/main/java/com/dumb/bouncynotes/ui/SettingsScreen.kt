@@ -726,6 +726,11 @@ fun SettingsScreen(
                                                         checked = settings.doubleTapToEdit,
                                                         onCheckedChange = { v -> onUpdate { it.copy(doubleTapToEdit = v) } }
                                                     )
+                                                    SwitchSetting(
+                                                        label = "Botón + a la izquierda (modo zurdo)",
+                                                        checked = settings.fabOnLeft,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(fabOnLeft = v) } }
+                                                    )
                                                     // Divisor: de "checklists y edición" pasamos a
                                                     // "navegación e interfaz", otro tema distinto.
                                                     SettingsDivider()
