@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1873,14 +1874,24 @@ fun NoteEditScreen(
                             if (total > 1) editLazyListState.firstVisibleItemIndex.toFloat() / (total - 1) else 0f
                         }
                     }
-                    AnimatedVisibility(
-                        visible = scrubberVisible,
-                        enter = fadeIn(animationSpec = tween(150)),
-                        exit = fadeOut(animationSpec = tween(250)),
+                    // Opacidad animada en vez de AnimatedVisibility: dentro de
+                    // este Box, el compilador resolvía AnimatedVisibility a la
+                    // versión de ColumnScope (por el Column que lo envuelve) y
+                    // fallaba con "cannot be called in this context with an
+                    // implicit receiver". Mientras el alpha es 0 el scrubber ni
+                    // se compone, así que no intercepta toques.
+                    val scrubberAlpha by animateFloatAsState(
+                        targetValue = if (scrubberVisible) 1f else 0f,
+                        animationSpec = tween(if (scrubberVisible) 150 else 250),
+                        label = "scrubberAlpha"
+                    )
+                    if (scrubberAlpha > 0f) {
+                    Box(
                         modifier = Modifier
                             .align(Alignment.CenterEnd)
                             .fillMaxHeight(0.55f)
                             .padding(end = 6.dp, bottom = bottomBarCompensation)
+                            .graphicsLayer { alpha = scrubberAlpha }
                     ) {
                     NoteScrubber(
                         progress = scrubProgress,
@@ -1914,6 +1925,7 @@ fun NoteEditScreen(
                         },
                         modifier = Modifier.fillMaxHeight()
                     )
+                    }
                     }
                 }
             }
