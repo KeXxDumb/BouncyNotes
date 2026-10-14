@@ -1331,7 +1331,6 @@ private fun AppIconSetting() {
 // estado se actualiza al toque (no hay que "guardar" para verlo), la maqueta
 // también se actualiza en vivo, sin necesidad de superponer nada sobre la
 // pantalla de verdad.
-@Composable
 // Consolida TODOS los ajustes de fondo (antes repartidos en la lista larga
 // de Ajustes: miniaturas, monocromo, opacidades, desvanecido, mostrar en
 // notas) en una sola pantalla — pedido explícito, para que quede más
