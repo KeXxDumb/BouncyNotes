@@ -14,6 +14,8 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -367,17 +369,20 @@ fun NoteListScreen(
                         label = "fabRotation"
                     )
                     Column(horizontalAlignment = Alignment.End) {
-                        // Menú del botón "+": reemplaza a la antigua barra
-                        // lateral (vistas, etiquetas, Ajustes) y suma abajo
-                        // las dos acciones de siempre (nueva nota/checklist).
-                        // Con muchas etiquetas puede no entrar en pantalla,
-                        // por eso hace scroll con un alto máximo.
+                        // Menú del botón "+", con dos plegables:
+                        // 1) VERTICAL (arriba del "+"): crear nota/checklist,
+                        //    más las etiquetas (filtro) si hay. Con muchas
+                        //    etiquetas puede no entrar en pantalla, por eso
+                        //    hace scroll con un alto máximo.
+                        // 2) HORIZONTAL (a la izquierda del "+"): vistas y
+                        //    Ajustes, como botones cuadrados con solo el
+                        //    ícono, del mismo estilo que el propio "+".
                         AnimatedVisibility(
                             visible = fabExpanded,
                             enter = fadeIn(animationSpec = tween(150)) +
-                                slideInHorizontally(animationSpec = tween(150)) { it / 2 },
+                                slideInVertically(animationSpec = tween(150)) { it / 2 },
                             exit = fadeOut(animationSpec = tween(120)) +
-                                slideOutHorizontally(animationSpec = tween(120)) { it / 2 }
+                                slideOutVertically(animationSpec = tween(120)) { it / 2 }
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.End,
@@ -387,15 +392,6 @@ fun NoteListScreen(
                                     .verticalScroll(rememberScrollState())
                                     .padding(bottom = 8.dp)
                             ) {
-                                FabMenuItem(
-                                    icon = Icons.Filled.Settings,
-                                    text = "Ajustes",
-                                    selected = false,
-                                    onClick = {
-                                        fabExpanded = false
-                                        onOpenSettings()
-                                    }
-                                )
                                 labels.forEach { label ->
                                     FabMenuItem(
                                         icon = Icons.Filled.Label,
@@ -407,58 +403,82 @@ fun NoteListScreen(
                                         }
                                     )
                                 }
-                                if (settings.useTrash) {
-                                    FabMenuItem(
-                                        icon = Icons.Filled.Delete,
-                                        text = "Papelera",
-                                        selected = viewMode == ViewMode.TRASH,
-                                        onClick = {
-                                            fabExpanded = false
-                                            viewModel.setViewMode(ViewMode.TRASH)
-                                        }
-                                    )
-                                }
-                                FabMenuItem(
-                                    icon = Icons.Filled.Lock,
-                                    text = "Privadas",
-                                    selected = viewMode == ViewMode.PRIVATE,
-                                    onClick = {
-                                        fabExpanded = false
-                                        viewModel.setViewMode(ViewMode.PRIVATE)
-                                    }
-                                )
-                                FabMenuItem(
-                                    icon = Icons.Filled.Notes,
-                                    text = "Todas las notas",
-                                    selected = viewMode == ViewMode.ALL && labelFilter == null,
-                                    onClick = {
-                                        fabExpanded = false
-                                        viewModel.setViewMode(ViewMode.ALL)
-                                    }
-                                )
                                 // En la papelera no tiene sentido crear notas.
                                 if (viewMode != ViewMode.TRASH) {
                                     FabMenuItem(
                                         icon = Icons.Filled.Checklist,
-                                        text = "Checklist",
+                                        text = "Nuevo checklist",
                                         selected = false,
                                         onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) }
                                     )
                                     FabMenuItem(
                                         icon = Icons.Filled.Edit,
-                                        text = "Nota",
+                                        text = "Nueva nota",
                                         selected = false,
                                         onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) }
                                     )
                                 }
                             }
                         }
-                        FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
-                            Icon(
-                                Icons.Filled.Add,
-                                contentDescription = "Menú y nueva nota",
-                                modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AnimatedVisibility(
+                                visible = fabExpanded,
+                                enter = fadeIn(animationSpec = tween(150)) +
+                                    slideInHorizontally(animationSpec = tween(150)) { it / 2 },
+                                exit = fadeOut(animationSpec = tween(120)) +
+                                    slideOutHorizontally(animationSpec = tween(120)) { it / 2 }
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (settings.useTrash) {
+                                        FabSquareItem(
+                                            icon = Icons.Filled.Delete,
+                                            description = "Papelera",
+                                            selected = viewMode == ViewMode.TRASH,
+                                            onClick = {
+                                                fabExpanded = false
+                                                viewModel.setViewMode(ViewMode.TRASH)
+                                            }
+                                        )
+                                    }
+                                    FabSquareItem(
+                                        icon = Icons.Filled.Notes,
+                                        description = "Todas las notas",
+                                        selected = viewMode == ViewMode.ALL && labelFilter == null,
+                                        onClick = {
+                                            fabExpanded = false
+                                            viewModel.setViewMode(ViewMode.ALL)
+                                        }
+                                    )
+                                    FabSquareItem(
+                                        icon = Icons.Filled.Lock,
+                                        description = "Privadas",
+                                        selected = viewMode == ViewMode.PRIVATE,
+                                        onClick = {
+                                            fabExpanded = false
+                                            viewModel.setViewMode(ViewMode.PRIVATE)
+                                        }
+                                    )
+                                    FabSquareItem(
+                                        icon = Icons.Filled.Settings,
+                                        description = "Ajustes",
+                                        selected = false,
+                                        onClick = {
+                                            fabExpanded = false
+                                            onOpenSettings()
+                                        }
+                                    )
+                                }
+                            }
+                            FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "Menú y nueva nota",
+                                    modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
+                                )
+                            }
                         }
                     }
                 }
@@ -601,6 +621,27 @@ fun NoteListScreen(
                 }
             }
         }
+    }
+}
+
+// Botón cuadrado redondeado (solo ícono) del plegable horizontal del "+":
+// mismo estilo que el propio FloatingActionButton. La vista activa se
+// resalta con el color primario del tema.
+@Composable
+private fun FabSquareItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    FloatingActionButton(
+        onClick = onClick,
+        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
+    ) {
+        Icon(icon, contentDescription = description)
     }
 }
 
