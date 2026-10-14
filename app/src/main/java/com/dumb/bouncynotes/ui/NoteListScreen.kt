@@ -35,9 +35,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
@@ -56,7 +60,6 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.PlayCircle
@@ -70,7 +73,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButton
@@ -78,16 +80,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -154,8 +152,6 @@ fun NoteListScreen(
     val labelFilter by viewModel.labelFilter.collectAsState()
     val labels by viewModel.allLabels.collectAsState()
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var fabExpanded by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
@@ -169,20 +165,9 @@ fun NoteListScreen(
     var noteToDeleteForever by remember { mutableStateOf<Note?>(null) }
     var showEmptyTrashConfirm by remember { mutableStateOf(false) }
 
-    // Bug reportado: abrir Ajustes, cerrarlo y tocar rápido y repetido la
-    // esquina superior izquierda dejaba la pantalla en negro. Con el log de
-    // diagnóstico (tag "BouncyDrawerDebug", ya retirado) se confirmó que no
-    // había ningún gesto de swipe disparándose de más: el problema era que
-    // un segundo toque "fantasma" llegaba a alcanzar a scope.launch { } y
-    // disparaba una segunda apertura del drawer, o una segunda navegación a
-    // Ajustes, mientras la transición anterior todavía estaba en curso y
-    // NoteListScreen estaba a medio recomponer al volver. Eso se arregla en
-    // dos frentes: 1. navigateSafe()/popBackStackSafe() en MainActivity, que
-    // ignoran una navegación si la pantalla actual aún no llegó a RESUMED, y
-    // 2. acá abajo, ignorando toques en el botón de menú mientras el drawer
-    // ya está animando (isAnimationRunning), para que un doble-toque
-    // accidental no dispare dos animaciones open()/close() superpuestas.
-    var navigatingToSettings by remember { mutableStateOf(false) }
+    // Con el menú desplegado, el botón "atrás" del sistema lo cierra en
+    // vez de salir de la app.
+    BackHandler(enabled = fabExpanded) { fabExpanded = false }
 
     LaunchedEffect(viewMode, labelFilter) {
         selectedIds = emptySet()
@@ -241,22 +226,11 @@ fun NoteListScreen(
         modifier = Modifier
             .fillMaxSize()
             // Deslizar desde el borde IZQUIERDO: acción configurable en
-            // Ajustes (abrir Ajustes, no hacer nada, o abrir la barra
-            // lateral). Se vuelve a armar el detector de gesto cada vez que
-            // cambia la acción elegida O el estado del drawer (pointerInput
-            // queda "atado" a esas keys), así siempre usa la más reciente
-            // sin quedar con una copia vieja.
-            //
-            // A propósito el gesto queda DESACTIVADO mientras el drawer ya
-            // está abierto o animando: ese es el mismo borde que usa el
-            // propio drawer para su gesto nativo de "deslizar para cerrar"
-            // (ver gesturesEnabled = drawerState.isOpen más abajo), así que
-            // sin este chequeo los dos detectores de gesto podrían terminar
-            // compitiendo por el mismo toque mientras el drawer está
-            // abriéndose o cerrándose.
-            .pointerInput(settings.rightEdgeSwipeAction, drawerState.isOpen, drawerState.isAnimationRunning) {
+            // Ajustes (abrir Ajustes, no hacer nada, o desplegar el menú del
+            // botón "+"). Se vuelve a armar el detector cada vez que cambia
+            // la acción elegida (pointerInput queda "atado" a esa key).
+            .pointerInput(settings.rightEdgeSwipeAction) {
                 if (settings.rightEdgeSwipeAction == RightEdgeSwipeAction.NOTHING) return@pointerInput
-                if (drawerState.isOpen || drawerState.isAnimationRunning) return@pointerInput
                 val edgeWidthPx = 32.dp.toPx()
                 var startedNearLeftEdge = false
                 var totalDragX = 0f
@@ -273,11 +247,10 @@ fun NoteListScreen(
                         if (startedNearLeftEdge && totalDragX > 100f) {
                             when (settings.rightEdgeSwipeAction) {
                                 RightEdgeSwipeAction.SETTINGS -> onOpenSettings()
-                                RightEdgeSwipeAction.SIDEBAR -> {
-                                    if (!drawerState.isAnimationRunning) {
-                                        scope.launch { drawerState.open() }
-                                    }
-                                }
+                                // La barra lateral ya no existe: sus opciones
+                                // viven en el menú del botón flotante "+", así
+                                // que este gesto lo despliega.
+                                RightEdgeSwipeAction.SIDEBAR -> fabExpanded = true
                                 RightEdgeSwipeAction.NOTHING -> Unit
                             }
                         }
@@ -294,100 +267,6 @@ fun NoteListScreen(
     ) {
         NoteBackgroundImage(settings = settings, context = context)
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        // Por defecto el drawer tiene un gesto de "deslizar desde el borde
-        // izquierdo para abrir" activo en TODA la altura de la pantalla, no solo
-        // sobre el botón de 3 líneas. Ese detector de gesto es independiente del
-        // botón y quedaba viviendo ahí incluso recién se vuelve de Ajustes; un
-        // toque justo en esa franja del borde (más una recomposición reciente al
-        // volver de otra pantalla) terminaba en el drawer quedando a medio
-        // renderizar: pantalla negra. Lo desactivamos cuando el drawer está
-        // cerrado (solo se abre con el botón, de forma controlada) y lo dejamos
-        // activo cuando ya está abierto, para poder cerrarlo deslizando como es
-        // normal.
-        gesturesEnabled = drawerState.isOpen,
-        drawerContent = {
-            ModalDrawerSheet {
-                Spacer(Modifier.height(12.dp))
-                Text("Notas", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
-                NavigationDrawerItem(
-                    label = { Text("Todas las notas") },
-                    selected = viewMode == ViewMode.ALL && labelFilter == null,
-                    icon = { Icon(Icons.Filled.Notes, contentDescription = null) },
-                    onClick = {
-                        viewModel.setViewMode(ViewMode.ALL)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Privadas") },
-                    selected = viewMode == ViewMode.PRIVATE,
-                    icon = { Icon(Icons.Filled.Lock, contentDescription = null) },
-                    onClick = {
-                        viewModel.setViewMode(ViewMode.PRIVATE)
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                if (settings.useTrash) {
-                    NavigationDrawerItem(
-                        label = { Text("Papelera") },
-                        selected = viewMode == ViewMode.TRASH,
-                        icon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                        onClick = {
-                            viewModel.setViewMode(ViewMode.TRASH)
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp)
-                    )
-                }
-                if (labels.isNotEmpty()) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                    Text(
-                        "Etiquetas",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-                    labels.forEach { label ->
-                        NavigationDrawerItem(
-                            label = { Text(label) },
-                            selected = labelFilter == label,
-                            icon = { Icon(Icons.Filled.Label, contentDescription = null) },
-                            onClick = {
-                                viewModel.setLabelFilter(label)
-                                scope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
-                    }
-                }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                NavigationDrawerItem(
-                    label = { Text("Ajustes") },
-                    selected = false,
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
-                    onClick = {
-                        // Ignoramos toques repetidos mientras ya hay una
-                        // navegación a Ajustes en curso: esto era justamente lo
-                        // que dejaba dos animaciones/navegaciones superpuestas
-                        // y terminaba en pantalla negra.
-                        if (!navigatingToSettings) {
-                            navigatingToSettings = true
-                            scope.launch {
-                                drawerState.close()
-                                onOpenSettings()
-                                navigatingToSettings = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-        }
-    ) {
         Scaffold(
             containerColor = if (settings.backgroundImagePath != null) Color.Transparent else MaterialTheme.colorScheme.background,
             topBar = {
@@ -452,23 +331,6 @@ fun NoteListScreen(
                 } else {
                     TopAppBar(
                         title = { SmartTitle(settings = settings, viewMode = viewMode) },
-                        navigationIcon = {
-                            IconButton(
-                                onClick = {
-                                    // Mientras el drawer ya está animando (abriéndose o
-                                    // cerrándose) ignoramos toques nuevos, para que un
-                                    // doble-toque accidental (justo lo que describía el
-                                    // reporte del bug) no dispare dos animaciones open()
-                                    // superpuestas sobre el mismo drawerState.
-                                    if (!drawerState.isAnimationRunning) {
-                                        scope.launch { drawerState.open() }
-                                    }
-                                },
-                                enabled = !drawerState.isAnimationRunning
-                            ) {
-                                Icon(Icons.Filled.Menu, contentDescription = "Menú")
-                            }
-                        },
                         actions = {
                             // Solo en la papelera y solo si hay algo que vaciar.
                             if (viewMode == ViewMode.TRASH && notes.orEmpty().isNotEmpty()) {
@@ -498,57 +360,103 @@ fun NoteListScreen(
                 }
             },
             floatingActionButton = {
-                if (!selectionMode && (viewMode == ViewMode.ALL || viewMode == ViewMode.PRIVATE)) {
+                if (!selectionMode) {
                     val fabRotation by animateFloatAsState(
                         targetValue = if (fabExpanded) 45f else 0f,
                         animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
                         label = "fabRotation"
                     )
                     Column(horizontalAlignment = Alignment.End) {
-                        // Antes las dos opciones aparecían/desaparecían juntas,
-                        // de golpe, en un solo AnimatedVisibility compartido.
-                        // Ahora cada una tiene el suyo, con un pequeño delay
-                        // escalonado entre una y otra (70ms) y un
-                        // deslizamiento desde la derecha en vez de solo
-                        // escala+desvanecido — se sigue viendo (y sintiendo)
-                        // como un menú que se despliega en cascada, no como
-                        // un solo bloque que aparece entero.
+                        // Menú del botón "+": reemplaza a la antigua barra
+                        // lateral (vistas, etiquetas, Ajustes) y suma abajo
+                        // las dos acciones de siempre (nueva nota/checklist).
+                        // Con muchas etiquetas puede no entrar en pantalla,
+                        // por eso hace scroll con un alto máximo.
                         AnimatedVisibility(
                             visible = fabExpanded,
-                            enter = fadeIn(animationSpec = tween(150, delayMillis = 0)) +
-                                slideInHorizontally(animationSpec = tween(150, delayMillis = 0)) { it / 2 },
-                            exit = fadeOut(animationSpec = tween(120, delayMillis = 70)) +
-                                slideOutHorizontally(animationSpec = tween(120, delayMillis = 70)) { it / 2 }
+                            enter = fadeIn(animationSpec = tween(150)) +
+                                slideInHorizontally(animationSpec = tween(150)) { it / 2 },
+                            exit = fadeOut(animationSpec = tween(120)) +
+                                slideOutHorizontally(animationSpec = tween(120)) { it / 2 }
                         ) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                ExtendedFloatingActionButton(
-                                    onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) },
-                                    icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
-                                    text = { Text("Checklist") }
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .heightIn(max = 460.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(bottom = 8.dp)
+                            ) {
+                                FabMenuItem(
+                                    icon = Icons.Filled.Settings,
+                                    text = "Ajustes",
+                                    selected = false,
+                                    onClick = {
+                                        fabExpanded = false
+                                        onOpenSettings()
+                                    }
                                 )
-                                Spacer(Modifier.height(8.dp))
-                            }
-                        }
-                        AnimatedVisibility(
-                            visible = fabExpanded,
-                            enter = fadeIn(animationSpec = tween(150, delayMillis = 70)) +
-                                slideInHorizontally(animationSpec = tween(150, delayMillis = 70)) { it / 2 },
-                            exit = fadeOut(animationSpec = tween(120, delayMillis = 0)) +
-                                slideOutHorizontally(animationSpec = tween(120, delayMillis = 0)) { it / 2 }
-                        ) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                ExtendedFloatingActionButton(
-                                    onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) },
-                                    icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                                    text = { Text("Nota") }
+                                labels.forEach { label ->
+                                    FabMenuItem(
+                                        icon = Icons.Filled.Label,
+                                        text = label,
+                                        selected = labelFilter == label,
+                                        onClick = {
+                                            fabExpanded = false
+                                            viewModel.setLabelFilter(label)
+                                        }
+                                    )
+                                }
+                                if (settings.useTrash) {
+                                    FabMenuItem(
+                                        icon = Icons.Filled.Delete,
+                                        text = "Papelera",
+                                        selected = viewMode == ViewMode.TRASH,
+                                        onClick = {
+                                            fabExpanded = false
+                                            viewModel.setViewMode(ViewMode.TRASH)
+                                        }
+                                    )
+                                }
+                                FabMenuItem(
+                                    icon = Icons.Filled.Lock,
+                                    text = "Privadas",
+                                    selected = viewMode == ViewMode.PRIVATE,
+                                    onClick = {
+                                        fabExpanded = false
+                                        viewModel.setViewMode(ViewMode.PRIVATE)
+                                    }
                                 )
-                                Spacer(Modifier.height(8.dp))
+                                FabMenuItem(
+                                    icon = Icons.Filled.Notes,
+                                    text = "Todas las notas",
+                                    selected = viewMode == ViewMode.ALL && labelFilter == null,
+                                    onClick = {
+                                        fabExpanded = false
+                                        viewModel.setViewMode(ViewMode.ALL)
+                                    }
+                                )
+                                // En la papelera no tiene sentido crear notas.
+                                if (viewMode != ViewMode.TRASH) {
+                                    FabMenuItem(
+                                        icon = Icons.Filled.Checklist,
+                                        text = "Checklist",
+                                        selected = false,
+                                        onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) }
+                                    )
+                                    FabMenuItem(
+                                        icon = Icons.Filled.Edit,
+                                        text = "Nota",
+                                        selected = false,
+                                        onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) }
+                                    )
+                                }
                             }
                         }
                         FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
                             Icon(
                                 Icons.Filled.Add,
-                                contentDescription = "Nueva nota",
+                                contentDescription = "Menú y nueva nota",
                                 modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
                             )
                         }
@@ -694,7 +602,26 @@ fun NoteListScreen(
             }
         }
     }
-    }
+}
+
+// Opción del menú desplegable del botón "+". La opción activa (vista o
+// etiqueta actual) se resalta con el color primario del tema.
+@Composable
+private fun FabMenuItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    ExtendedFloatingActionButton(
+        onClick = onClick,
+        icon = { Icon(icon, contentDescription = null) },
+        text = { Text(text) },
+        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
+    )
 }
 
 // Título de la barra superior, a la izquierda del 🍑. Dos capas:

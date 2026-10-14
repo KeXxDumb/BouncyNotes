@@ -791,7 +791,7 @@ fun SettingsScreen(
                                                         label = "Deslizar desde el borde izquierdo",
                                                         options = listOf(
                                                             RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
-                                                            RightEdgeSwipeAction.SIDEBAR to "Barra lateral",
+                                                            RightEdgeSwipeAction.SIDEBAR to "Menú del botón +",
                                                             RightEdgeSwipeAction.NOTHING to "Nada"
                                                         ),
                                                         selected = settings.rightEdgeSwipeAction,

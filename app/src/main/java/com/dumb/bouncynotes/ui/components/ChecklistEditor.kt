@@ -4,15 +4,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -20,7 +17,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,22 +58,16 @@ fun ChecklistEditor(
     // ella. Se pasa desde NoteEditScreen (mismo valor que usa el Spacer de
     // compensación al final de la lista).
     extraBottomInset: Dp = 0.dp,
-    // Si está activo, NoteEditScreen reordena la lista completa (marcados al
-    // final, orden estable) en su propio onItemsChange CADA VEZ que algo
-    // cambia — incluido agregar un elemento nuevo. ChecklistEditor necesita
-    // saber esto SOLO para calcular bien a qué índice pedirle el foco (ver
-    // pendingFocusIndex más abajo): si hay elementos marcados, el nuevo
-    // elemento (sin marcar) NO termina en el último índice de la lista
-    // entera, sino en el último índice del grupo de los NO marcados.
-    autoSortChecked: Boolean = false,
+    // Índice de un elemento recién agregado (desde el botón "+" de la barra
+    // inferior de NoteEditScreen) al que hay que pedirle el foco UNA sola vez
+    // apenas entra en composición, para que se abra el teclado con el cursor
+    // puesto. Quien agrega el elemento (NoteEditScreen) ya calculó el índice
+    // final, incluido el reordenamiento de marcados. Al consumirlo se avisa
+    // con onFocusRequestHandled para que vuelva a null.
+    focusRequestIndex: Int? = null,
+    onFocusRequestHandled: () -> Unit = {},
     onItemsChange: (List<ChecklistItem>) -> Unit
 ) {
-    // Índice del elemento recién agregado con "Agregar elemento": se usa una
-    // sola vez para pedirle el foco apenas entra en composición, y después se
-    // limpia. Antes no existía nada de esto, así que agregar un elemento lo
-    // dejaba en la lista sin el teclado abierto ni el cursor puesto — había
-    // que tocarlo a mano para empezar a escribir.
-    var pendingFocusIndex by remember { mutableStateOf<Int?>(null) }
     val extraBottomInsetPx = with(LocalDensity.current) { extraBottomInset.toPx() }
     val coroutineScope = rememberCoroutineScope()
 
@@ -179,39 +169,14 @@ fun ChecklistEditor(
                     }
                 }
 
-                if (!readOnly && index == pendingFocusIndex) {
+                if (!readOnly && index == focusRequestIndex) {
                     // Corre una sola vez, justo cuando ESTE índice entra en
                     // composición por primera vez (recién agregado).
                     LaunchedEffect(Unit) {
                         focusRequester.requestFocus()
-                        pendingFocusIndex = null
+                        onFocusRequestHandled()
                     }
                 }
-            }
-        }
-        if (!readOnly) {
-            TextButton(onClick = {
-                val newList = items + ChecklistItem()
-                // El reordenamiento en sí lo aplica NoteEditScreen (arriba,
-                // en onItemsChange) con sortedBy { it.checked }, que es
-                // ESTABLE: los no marcados conservan su orden relativo entre
-                // sí, y el elemento recién agregado (sin marcar) era el
-                // último de TODA la lista antes de ordenar, así que después
-                // de ordenar sigue siendo el último dentro del grupo de los
-                // NO marcados — sin importar cuántos marcados haya al
-                // final. Por eso alcanza con contar, no hace falta
-                // reproducir el ordenamiento acá para saber dónde queda.
-                val newIndex = if (autoSortChecked) {
-                    newList.count { !it.checked } - 1
-                } else {
-                    newList.size - 1
-                }
-                onItemsChange(newList)
-                pendingFocusIndex = newIndex
-            }) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(4.dp))
-                Text("Agregar elemento")
             }
         }
     }

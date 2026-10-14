@@ -126,6 +126,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -414,6 +419,16 @@ fun NoteEditScreen(
     // no puede volver a pasar: no hay "el otro scroll" al que sincronizar,
     // porque nunca hay dos.
     val editLazyListState = rememberLazyListState()
+    // Checklist: índice del elemento recién agregado con el botón "+" de la
+    // barra inferior, al que hay que pedirle el foco una sola vez. Vive acá
+    // (y no dentro de ChecklistEditor) porque ahora el botón de agregar está
+    // en la barra inferior, fuera del editor.
+    var checklistFocusRequest by remember { mutableStateOf<Int?>(null) }
+    // Barra de scroll rápida (NoteScrubber): solo se muestra tras un scroll
+    // moderadamente rápido, y se oculta 1.5 s después de dejar de scrollear
+    // (ver el LaunchedEffect y el nestedScroll más abajo).
+    var scrubberVisible by remember { mutableStateOf(false) }
+    var scrubberDragging by remember { mutableStateOf(false) }
     // Para el botón de "ir al final" (animateScrollTo/animateScrollToItem
     // son funciones suspend).
     val scope = rememberCoroutineScope()
@@ -858,6 +873,22 @@ fun NoteEditScreen(
         onBack()
     }
 
+    // Botón/gesto atrás estando en modo edición de una nota ya existente:
+    // vuelve a modo vista (mismo efecto que el botón del ojo) en vez de salir
+    // de la nota. Un segundo "atrás" ya sale. Solo cuando existe un modo
+    // vista al que volver (doble toque para editar activo) y la nota no es
+    // nueva; si no, "atrás" sigue guardando y saliendo como siempre. Va
+    // DESPUÉS del BackHandler de salida para tener prioridad sobre él.
+    BackHandler(
+        enabled = loaded && viewerStartPos == null && isEditing &&
+            settings.doubleTapToEdit && noteId != 0L &&
+            !(current.isPrivate && !biometricUnlockedForPrivate && !unlockedThisNote)
+    ) {
+        focusManager.clearFocus(force = true)
+        if (!isNoteEmpty(current)) viewModel.save(current)
+        isEditing = false
+    }
+
     if (!loaded) {
         Box(modifier = Modifier.fillMaxSize())
         return
@@ -1141,6 +1172,46 @@ fun NoteEditScreen(
     }
 
 
+    // Detecta la velocidad del scroll para mostrar la barra rápida solo con
+    // un scroll moderadamente rápido (arrastre o "fling"). nestedScroll en el
+    // contenedor recibe los deltas tanto del Column de la checklist como de
+    // la LazyColumn de texto, sin tocarlos (devuelve cero: no consume nada).
+    val scrubberDensity = LocalDensity.current
+    val scrubberSpeedThresholdPx = with(scrubberDensity) { 1100.dp.toPx() } // px/s
+    val scrubberConnection = remember(scrubberSpeedThresholdPx) {
+        object : NestedScrollConnection {
+            private var windowStartNanos = 0L
+            private var windowDeltaPx = 0f
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val now = System.nanoTime()
+                if (windowStartNanos == 0L || now - windowStartNanos > 300_000_000L) {
+                    windowStartNanos = now
+                    windowDeltaPx = 0f
+                }
+                windowDeltaPx += kotlin.math.abs(available.y)
+                val elapsedSec = (now - windowStartNanos) / 1_000_000_000f
+                // Ventana mínima de 40 ms para no medir ruido de un solo evento.
+                if (elapsedSec >= 0.04f && windowDeltaPx / elapsedSec >= scrubberSpeedThresholdPx) {
+                    scrubberVisible = true
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (kotlin.math.abs(available.y) >= scrubberSpeedThresholdPx) scrubberVisible = true
+                windowStartNanos = 0L
+                return Velocity.Zero
+            }
+        }
+    }
+    val anyScrollInProgress = checklistScrollState.isScrollInProgress || editLazyListState.isScrollInProgress
+    LaunchedEffect(scrubberVisible, anyScrollInProgress, scrubberDragging) {
+        if (scrubberVisible && !anyScrollInProgress && !scrubberDragging) {
+            kotlinx.coroutines.delay(1500)
+            scrubberVisible = false
+        }
+    }
+
     val bottomBarHeight = 56.dp
     // El Spacer de compensación al final del contenido necesita el alto TOTAL
     // que ocupa la barra en pantalla, no solo sus 56dp fijos: más abajo, el
@@ -1247,6 +1318,25 @@ fun NoteEditScreen(
                         }
                     }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Borrar")
+                    }
+                }
+                if (current.type == NoteType.CHECKLIST && isEditing) {
+                    IconButton(onClick = {
+                        // El reordenamiento (marcados al final) lo aplica
+                        // igual que en el onItemsChange del editor: sortedBy
+                        // es estable, así que el elemento nuevo (sin marcar)
+                        // queda último dentro del grupo de los NO marcados.
+                        val newList = current.checklistItems + ChecklistItem()
+                        val finalList = if (settings.autoSortChecked) newList.sortedBy { it.checked } else newList
+                        val newIndex = if (settings.autoSortChecked) {
+                            newList.count { !it.checked } - 1
+                        } else {
+                            newList.size - 1
+                        }
+                        current = current.copy(checklistItems = finalList)
+                        checklistFocusRequest = newIndex
+                    }) {
+                        Icon(Icons.Filled.Add, contentDescription = "Agregar elemento")
                     }
                 }
                 if (current.type == NoteType.TEXT && isEditing) {
@@ -1445,7 +1535,12 @@ fun NoteEditScreen(
                 Spacer(Modifier.height(8.dp))
             }
 
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .nestedScroll(scrubberConnection)
+            ) {
                 if (current.type == NoteType.CHECKLIST) {
                     Column(
                         modifier = Modifier
@@ -1471,7 +1566,8 @@ fun NoteEditScreen(
                             checkboxPosition = settings.checkboxPosition,
                             readOnly = !isEditing,
                             extraBottomInset = bottomBarCompensation,
-                            autoSortChecked = settings.autoSortChecked,
+                            focusRequestIndex = checklistFocusRequest,
+                            onFocusRequestHandled = { checklistFocusRequest = null },
                             onItemsChange = { newItems ->
                                 val finalItems = if (settings.autoSortChecked) {
                                     newItems.sortedBy { it.checked }
@@ -1777,8 +1873,18 @@ fun NoteEditScreen(
                             if (total > 1) editLazyListState.firstVisibleItemIndex.toFloat() / (total - 1) else 0f
                         }
                     }
+                    AnimatedVisibility(
+                        visible = scrubberVisible,
+                        enter = fadeIn(animationSpec = tween(150)),
+                        exit = fadeOut(animationSpec = tween(250)),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight(0.55f)
+                            .padding(end = 6.dp, bottom = bottomBarCompensation)
+                    ) {
                     NoteScrubber(
                         progress = scrubProgress,
+                        onDraggingChange = { scrubberDragging = it },
                         onScrub = { p ->
                             when {
                                 current.type == NoteType.CHECKLIST -> {
@@ -1806,11 +1912,9 @@ fun NoteEditScreen(
                                 }
                             }
                         },
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight(0.55f)
-                            .padding(end = 6.dp, bottom = bottomBarCompensation)
+                        modifier = Modifier.fillMaxHeight()
                     )
+                    }
                 }
             }
             // Cierra el Column original (título + contenido) que envuelve

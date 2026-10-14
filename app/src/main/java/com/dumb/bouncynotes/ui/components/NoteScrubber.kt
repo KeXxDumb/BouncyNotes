@@ -36,6 +36,9 @@ import kotlin.math.roundToInt
 fun NoteScrubber(
     progress: Float,
     onScrub: (Float) -> Unit,
+    // Avisa cuando el usuario empieza/termina de arrastrar la barra, para que
+    // quien la muestra no la oculte mientras se está usando.
+    onDraggingChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var trackHeightPx by remember { mutableStateOf(0f) }
@@ -51,12 +54,16 @@ fun NoteScrubber(
             .pointerInputScrub(
                 onStart = { y ->
                     isDragging = true
+                    onDraggingChange(true)
                     if (trackHeightPx > 0f) onScrub((y / trackHeightPx).coerceIn(0f, 1f))
                 },
                 onDrag = { y ->
                     if (trackHeightPx > 0f) onScrub((y / trackHeightPx).coerceIn(0f, 1f))
                 },
-                onEnd = { isDragging = false }
+                onEnd = {
+                    isDragging = false
+                    onDraggingChange(false)
+                }
             )
     ) {
         // Riel: una línea vertical fina, apenas visible, de punta a punta.
