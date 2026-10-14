@@ -21,6 +21,20 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- Visibilidad de paquetes (Android 11+): sin esto, queryIntentActivities()
+         solo devuelve apps del sistema y el selector de "app para imágenes y
+         video" de Ajustes no encuentra ningún administrador de archivos o
+         galería de terceros. Se declara el MISMO intent que usa
+         queryMediaPickerApps() (ACTION_GET_CONTENT, cualquier tipo, abrible)
+         en vez de pedir QUERY_ALL_PACKAGES, que Google Play restringe. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <category android:name="android.intent.category.OPENABLE" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
     <application
         android:name=".BouncyNotesApp"
         android:allowBackup="true"
