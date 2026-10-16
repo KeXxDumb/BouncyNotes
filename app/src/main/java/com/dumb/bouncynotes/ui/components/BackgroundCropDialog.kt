@@ -1,7 +1,7 @@
 package com.dumb.bouncynotes.ui.components
 
 import android.graphics.Bitmap
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,12 +48,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -131,6 +133,10 @@ fun BackgroundCropDialog(
     var selectedTool by remember { mutableStateOf(BgTool.IMAGES) }
     var showMock by remember { mutableStateOf(true) }
     val context = LocalContext.current
+    val imageBitmap = remember(sourceBitmap) { sourceBitmap.asImageBitmap() }
+    // Leído acá porque dentro del Canvas (DrawScope) no se puede acceder a
+    // MaterialTheme.
+    val tintColor = MaterialTheme.colorScheme.primary
 
     val srcW = sourceBitmap.width.toFloat()
     val srcH = sourceBitmap.height.toFloat()
@@ -210,28 +216,35 @@ fun BackgroundCropDialog(
                                 else MaterialTheme.colorScheme.background
                             )
                     )
-                    Image(
-                        bitmap = sourceBitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.None,
-                        colorFilter = if (settings.backgroundMonochrome) {
-                            ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
-                        } else null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                val base = baseFillScale(frameSize, srcW, srcH)
-                                val eff = base * userScale
-                                scaleX = eff
-                                scaleY = eff
-                                translationX = panX
-                                translationY = panY
-                                // Opacidad por graphicsLayer (no por el alpha
-                                // de Image) para que el tinte también se
-                                // desvanezca — mismo criterio que la lista.
-                                alpha = settings.backgroundImageOpacity
-                            }
-                    )
+                    // Se dibuja con Canvas + drawImage (y no con el composable
+                    // Image + graphicsLayer): Image recorta su contenido a SUS
+                    // propios límites (clipToBounds) ANTES de que graphicsLayer
+                    // lo escale/mueva, así que al arrastrar o acercar quedaban
+                    // zonas del marco sin imagen (se veía el respaldo) aunque
+                    // el recorte final, calculado en cropToBitmap, fuera
+                    // correcto. Acá el bitmap se dibuja entero, con la MISMA
+                    // transformación que invierte cropToBitmap (escala base ×
+                    // zoom alrededor del centro, y después el desplazamiento),
+                    // y solo el marco redondeado de afuera lo recorta.
+                    // alpha va dentro de drawImage para que el tinte también se
+                    // desvanezca (mismo criterio que la lista de notas).
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val eff = baseFillScale(frameSize, srcW, srcH) * userScale
+                        withTransform({
+                            translate(left = panX, top = panY)
+                            scale(scaleX = eff, scaleY = eff, pivot = center)
+                        }) {
+                            drawImage(
+                                image = imageBitmap,
+                                topLeft = Offset((size.width - srcW) / 2f, (size.height - srcH) / 2f),
+                                alpha = settings.backgroundImageOpacity,
+                                colorFilter = if (settings.backgroundMonochrome) {
+                                    ColorFilter.tint(tintColor, BlendMode.Color)
+                                } else null,
+                                filterQuality = FilterQuality.Medium
+                            )
+                        }
+                    }
                     if (settings.backgroundFade) {
                         val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
                         Box(
@@ -476,7 +489,7 @@ private fun baseFillScale(frameSize: IntSize, srcW: Float, srcH: Float): Float {
 // La inversa EXACTA de la transformación de dibujado de arriba (mismo
 // baseFillScale, mismo centrado, mismo pan) — por construcción, lo que
 // recorta esta función es pixel a pixel lo mismo que se vio encuadrado en
-// el marco. Si algún día se toca el graphicsLayer de arriba, esta función
+// el marco. Si algún día se toca la transformación del Canvas de arriba, esta función
 // tiene que actualizarse junto con él.
 private fun cropToBitmap(source: Bitmap, frameSize: IntSize, userScale: Float, panX: Float, panY: Float): Bitmap {
     val srcW = source.width.toFloat()
