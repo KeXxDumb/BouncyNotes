@@ -73,7 +73,7 @@ import kotlin.math.roundToInt
 // Herramientas del riel inferior que abren un control propio (un deslizador
 // o la tira de miniaturas) en el área fija de arriba del riel. Las otras
 // opciones del riel son interruptores que actúan al tocarlas.
-private enum class BgTool { IMAGES, IMAGE_OPACITY, FADE_OPACITY, TOP_BAR_OPACITY }
+private enum class BgTool { IMAGES, IMAGE_OPACITY, FADE, TOP_BAR_OPACITY }
 
 // Ajustar el recorte de la imagen de fondo ANTES de aplicarla — pedido
 // explícito, porque antes el recorte lo elegía Compose solo
@@ -135,9 +135,7 @@ fun BackgroundCropDialog(
     val srcW = sourceBitmap.width.toFloat()
     val srcH = sourceBitmap.height.toFloat()
 
-    // Si estaba elegida "Op. bordes" y se apaga el desvanecido, esa
-    // herramienta desaparece del riel: se vuelve a Imágenes.
-    val tool = if (selectedTool == BgTool.FADE_OPACITY && !settings.backgroundFade) BgTool.IMAGES else selectedTool
+    val tool = selectedTool
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -381,10 +379,17 @@ fun BackgroundCropDialog(
                         value = settings.backgroundImageOpacity,
                         onValueChange = { v -> onUpdate { it.copy(backgroundImageOpacity = v) } }
                     )
-                    BgTool.FADE_OPACITY -> RailSlider(
-                        label = "Opacidad del desvanecido",
-                        value = settings.backgroundFadeOpacity,
-                        onValueChange = { v -> onUpdate { it.copy(backgroundFadeOpacity = v) } }
+                    // Bordes: un solo deslizador. En 0% el desvanecido está
+                    // apagado (backgroundFade = false); arriba de 0% queda
+                    // prendido con esa intensidad. Se sigue guardando en los
+                    // mismos dos campos de siempre, así que no cambia el
+                    // formato de los ajustes ni lo que lee el resto de la app.
+                    BgTool.FADE -> RailSlider(
+                        label = "Desvanecido de bordes",
+                        value = if (settings.backgroundFade) settings.backgroundFadeOpacity else 0f,
+                        onValueChange = { v ->
+                            onUpdate { it.copy(backgroundFadeOpacity = v, backgroundFade = v > 0f) }
+                        }
                     )
                     BgTool.TOP_BAR_OPACITY -> RailSlider(
                         label = "Opacidad de la barra de título",
@@ -410,12 +415,7 @@ fun BackgroundCropDialog(
                     onUpdate { it.copy(backgroundMonochrome = !it.backgroundMonochrome) }
                 }
                 RailTile(Icons.Filled.Opacity, "Opacidad", tool == BgTool.IMAGE_OPACITY) { selectedTool = BgTool.IMAGE_OPACITY }
-                RailTile(Icons.Filled.BlurOn, "Bordes", settings.backgroundFade) {
-                    onUpdate { it.copy(backgroundFade = !it.backgroundFade) }
-                }
-                if (settings.backgroundFade) {
-                    RailTile(Icons.Filled.Opacity, "Op. bordes", tool == BgTool.FADE_OPACITY) { selectedTool = BgTool.FADE_OPACITY }
-                }
+                RailTile(Icons.Filled.BlurOn, "Bordes", tool == BgTool.FADE) { selectedTool = BgTool.FADE }
                 RailTile(Icons.Filled.VerticalAlignTop, "Barra", tool == BgTool.TOP_BAR_OPACITY) { selectedTool = BgTool.TOP_BAR_OPACITY }
                 RailTile(Icons.Filled.Description, "En notas", settings.showBackgroundInNotes) {
                     onUpdate { it.copy(showBackgroundInNotes = !it.showBackgroundInNotes) }

@@ -663,8 +663,6 @@ fun SettingsScreen(
                                                     // en MainActivity) — sin un paso aparte que haya que
                                                     // acordarse de prender.
                                                     if (settings.backgroundImagePaths.isNotEmpty()) {
-                                                        BackgroundPreviewMockup(settings = settings, context = context)
-                                                        Spacer(Modifier.height(8.dp))
                                                         OutlinedButton(onClick = {
                                                             // Abre directo la pantalla de recorte (que ahora
                                                             // trae todas las opciones del fondo en un riel)
@@ -1333,120 +1331,6 @@ private fun AppIconSetting() {
         )
     }
 }
-
-// Capas del fondo (imagen + tinte monocromático + desvanecido de bordes),
-// de la maqueta chica de Ajustes (el editor completo del fondo vive en
-// BackgroundCropDialog, que dibuja sus propias capas sobre el marco).
-@Composable
-private fun BackgroundPreviewLayers(settings: AppSettings, context: android.content.Context) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        settings.backgroundImagePath?.let { path ->
-            if (settings.backgroundMonochrome) {
-                // Mismo arreglo que en NoteListScreen: fondo negro plano de
-                // respaldo en modo monocromático, no el color del tema.
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black))
-            }
-            AsyncImage(
-                model = File(ImageStorage.imagesDir(context), path),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                colorFilter = if (settings.backgroundMonochrome) {
-                    ColorFilter.tint(MaterialTheme.colorScheme.primary, BlendMode.Color)
-                } else null,
-                // Mismo arreglo que en NoteListScreen: graphicsLayer en vez de
-                // alpha propio de AsyncImage, para que el tinte de color
-                // también se desvanezca (ver el comentario largo allá).
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(alpha = settings.backgroundImageOpacity)
-            )
-            if (settings.backgroundFade) {
-                val fadeColor = MaterialTheme.colorScheme.background.copy(alpha = settings.backgroundFadeOpacity)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .drawWithCache {
-                            val fadeWidth = size.width * 0.35f
-                            val fadeHeight = size.height * 0.35f
-                            onDrawBehind {
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
-                                        startX = 0f,
-                                        endX = fadeWidth
-                                    )
-                                )
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
-                                        startX = size.width - fadeWidth,
-                                        endX = size.width
-                                    )
-                                )
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(0f to fadeColor, 1f to Color.Transparent),
-                                        startY = 0f,
-                                        endY = fadeHeight
-                                    )
-                                )
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        colorStops = arrayOf(0f to Color.Transparent, 1f to fadeColor),
-                                        startY = size.height - fadeHeight,
-                                        endY = size.height
-                                    )
-                                )
-                            }
-                        }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun BackgroundPreviewMockup(settings: AppSettings, context: android.content.Context) {
-    Text(
-        "Vista previa en vivo",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(4.dp))
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(130.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        BackgroundPreviewLayers(settings = settings, context = context)
-        // Franja arriba simulando la barra de título con su opacidad real.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(24.dp)
-                .align(Alignment.TopCenter)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity))
-        )
-        // Un par de "tarjetas" de ejemplo, nada más para dar contexto de cómo
-        // se va a ver el fondo con contenido real encima.
-        Row(
-            modifier = Modifier.align(Alignment.BottomStart).padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            repeat(2) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 64.dp, height = 44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f))
-                )
-            }
-        }
-    }
-}
-
 
 @Composable
 private fun DiscreteSlider(
