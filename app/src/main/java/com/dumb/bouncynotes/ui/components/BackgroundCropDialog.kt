@@ -48,7 +48,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -233,10 +232,16 @@ fun BackgroundCropDialog(
                         withTransform({
                             translate(left = panX, top = panY)
                             scale(scaleX = eff, scaleY = eff, pivot = center)
+                            // Centra el bitmap (tamaño nativo) en el marco. Va
+                            // como transformación y no como topLeft porque la
+                            // versión de drawImage que acepta filterQuality
+                            // no tiene ese parámetro (solo ofrece offsets
+                            // enteros de origen/destino), y así tampoco se
+                            // pierde medio píxel por redondeo.
+                            translate(left = (size.width - srcW) / 2f, top = (size.height - srcH) / 2f)
                         }) {
                             drawImage(
                                 image = imageBitmap,
-                                topLeft = Offset((size.width - srcW) / 2f, (size.height - srcH) / 2f),
                                 alpha = settings.backgroundImageOpacity,
                                 colorFilter = if (settings.backgroundMonochrome) {
                                     ColorFilter.tint(tintColor, BlendMode.Color)
