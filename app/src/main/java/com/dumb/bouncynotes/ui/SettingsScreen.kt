@@ -35,7 +35,6 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -59,7 +58,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -92,7 +90,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -253,7 +250,6 @@ fun SettingsScreen(
     // reemplazar (no sobreescribir — ver el comentario grande en
     // reeditBackgroundImage sobre por qué) una vez confirmado el recorte.
     var cropExistingFileName by remember { mutableStateOf<String?>(null) }
-    var showBackgroundSettingsDialog by remember { mutableStateOf(false) }
 
     // Reabre el recorte para una imagen que YA está en el pool, en vez de
     // una recién elegida — pedido explícito ("tocar en una imagen de la
@@ -294,6 +290,10 @@ fun SettingsScreen(
                     decodeCappedBitmap(context, uris.first(), maxDimension = 2048)
                 }
                 if (bitmap != null) {
+                    // Es una imagen NUEVA: si se eligió desde el riel con
+                    // otra imagen del pool abierta, no hay que reemplazar
+                    // esa al confirmar.
+                    cropExistingFileName = null
                     pendingCropBitmap = bitmap
                 } else {
                     // No se pudo decodificar (archivo corrupto, formato raro,
@@ -665,7 +665,15 @@ fun SettingsScreen(
                                                     if (settings.backgroundImagePaths.isNotEmpty()) {
                                                         BackgroundPreviewMockup(settings = settings, context = context)
                                                         Spacer(Modifier.height(8.dp))
-                                                        OutlinedButton(onClick = { showBackgroundSettingsDialog = true }) {
+                                                        OutlinedButton(onClick = {
+                                                            // Abre directo la pantalla de recorte (que ahora
+                                                            // trae todas las opciones del fondo en un riel)
+                                                            // sobre la imagen activa.
+                                                            val target = settings.backgroundImagePath
+                                                                ?.takeIf { it in settings.backgroundImagePaths }
+                                                                ?: settings.backgroundImagePaths.first()
+                                                            reeditBackgroundImage(target)
+                                                        }) {
                                                             Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
                                                             Spacer(Modifier.width(6.dp))
                                                             Text("Editar fondo")
@@ -1021,6 +1029,15 @@ fun SettingsScreen(
         BackgroundCropDialog(
             sourceBitmap = bitmap,
             frameAspectRatio = cfg.screenWidthDp.toFloat() / cfg.screenHeightDp.toFloat(),
+            settings = settings,
+            onUpdate = onUpdate,
+            poolFileNames = settings.backgroundImagePaths,
+            currentFileName = cropExistingFileName,
+            // Cambiar de imagen desde el riel descarta el encuadre sin
+            // confirmar de la que se estaba ajustando.
+            onSelectImage = { reeditBackgroundImage(it) },
+            onRemoveImage = { removeBackgroundImage(it) },
+            onAddImages = { launchBackgroundImagePicker() },
             onDismiss = {
                 bitmap.recycle()
                 pendingCropBitmap = null
@@ -1061,17 +1078,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showBackgroundSettingsDialog) {
-        BackgroundSettingsDialog(
-            settings = settings,
-            context = context,
-            onUpdate = onUpdate,
-            onAddClick = { launchBackgroundImagePicker() },
-            onRemove = { removeBackgroundImage(it) },
-            onReedit = { reeditBackgroundImage(it) },
-            onDismiss = { showBackgroundSettingsDialog = false }
-        )
-    }
 }
 
 // Decodifica una Uri a un Bitmap, reducido si hace falta para que el lado
@@ -1328,352 +1334,9 @@ private fun AppIconSetting() {
     }
 }
 
-// Vista previa en vivo de "Imagen de fondo": se pidió algo como desvanecer
-// Ajustes y dejar ver la lista de notas real detrás mientras se arrastra un
-// slider, pero eso implica que Ajustes y la lista convivan en la misma
-// pantalla (hoy son rutas separadas de navegación) — un cambio bastante más
-// grande. Esta es la versión barata: una maqueta chica, ACÁ MISMO en
-// Ajustes, que reproduce exactamente el mismo renderizado que usa la lista
-// real (imagen + opacidad + monocromo + desvanecido + barra superior) leyendo
-// el mismo `settings` que ya están tocando los sliders de abajo — como ese
-// estado se actualiza al toque (no hay que "guardar" para verlo), la maqueta
-// también se actualiza en vivo, sin necesidad de superponer nada sobre la
-// pantalla de verdad.
-// Consolida TODOS los ajustes de fondo (antes repartidos en la lista larga
-// de Ajustes: miniaturas, monocromo, opacidades, desvanecido, mostrar en
-// notas) en una sola pantalla — pedido explícito, para que quede más
-// compacto. El punto de entrada en la lista de Ajustes ahora es solo una
-// vista previa + un botón "Editar fondo".
-//
-// Tocar una miniatura reabre el recorte de ESA imagen puntual (onReedit) —
-// el mismo BackgroundCropDialog que ya se usaba para una imagen recién
-// elegida, reusado tal cual para este segundo caso (ver
-// reeditBackgroundImage más arriba en este archivo). El diálogo de recorte
-// se abre y cierra desde el nivel de SettingsScreen (no desde acá adentro),
-// así que sigue viéndose "encima" de este diálogo sin conflicto.
-@Composable
-private fun BackgroundSettingsDialog(
-    settings: AppSettings,
-    context: Context,
-    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
-    onAddClick: () -> Unit,
-    onRemove: (String) -> Unit,
-    onReedit: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            // Estilo "editor de imagen": arriba el título, en el medio la vista
-            // previa con TODA la pantalla de ejemplo (barra superior, notas de
-            // prueba, botón +), y abajo un solo panel con todos los ajustes.
-            Column(modifier = Modifier.fillMaxSize()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) { Text("Cerrar") }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text("Fondo", style = MaterialTheme.typography.titleMedium)
-                    }
-                    // Espaciador del mismo ancho aproximado que el botón de
-                    // la izquierda, para que el título quede centrado de
-                    // verdad en vez de corrido hacia la derecha.
-                    Spacer(modifier = Modifier.width(64.dp))
-                }
-                if (settings.backgroundImagePaths.isNotEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                        BackgroundFullPreview(settings = settings, context = context)
-                    }
-                    BackgroundEditorPanel(
-                        settings = settings,
-                        context = context,
-                        onUpdate = onUpdate,
-                        onAddClick = onAddClick,
-                        onRemove = onRemove,
-                        onReedit = onReedit
-                    )
-                } else {
-                    // Puede pasar si se quitan todas las imágenes del
-                    // pool con este mismo diálogo abierto — se queda
-                    // abierto en vez de cerrarse solo, mostrando el
-                    // botón para elegir una de nuevo.
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        OutlinedButton(onClick = onAddClick) {
-                            Text("Elegir imagen de fondo")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Panel inferior con TODOS los ajustes de fondo en una sola barra: miniaturas
-// del pool arriba y, debajo, los interruptores y deslizadores (con scroll
-// propio y alto máximo para que la vista previa siga teniendo lugar).
-@Composable
-private fun BackgroundEditorPanel(
-    settings: AppSettings,
-    context: Context,
-    onUpdate: ((AppSettings) -> AppSettings) -> Unit,
-    onAddClick: () -> Unit,
-    onRemove: (String) -> Unit,
-    onReedit: (String) -> Unit
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(settings.backgroundImagePaths, key = { it }) { fileName ->
-                    Box(modifier = Modifier.size(56.dp)) {
-                        AsyncImage(
-                            model = File(ImageStorage.imagesDir(context), fileName),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onReedit(fileName) }
-                        )
-                        CompactIconButton(
-                            onClick = { onRemove(fileName) },
-                            icon = Icons.Filled.Close,
-                            contentDescription = "Quitar imagen",
-                            modifier = Modifier.align(Alignment.TopEnd),
-                            buttonSize = 22.dp,
-                            iconSize = 14.dp,
-                            tint = Color.White,
-                            containerColor = Color.Black.copy(alpha = 0.55f)
-                        )
-                    }
-                }
-                item {
-                    Box(
-                        modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { onAddClick() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = "Agregar imagen")
-                    }
-                }
-            }
-            Text(
-                "Tocá una imagen para reajustar su recorte",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp)
-            )
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 240.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = 4.dp)
-            ) {
-                BackgroundSwitchRow(
-                    label = "Monocromática (usa el color del tema)",
-                    checked = settings.backgroundMonochrome,
-                    onCheckedChange = { v -> onUpdate { it.copy(backgroundMonochrome = v) } }
-                )
-                // Muestra la MISMA imagen también adentro de cada nota
-                // (NoteEditScreen), con una opacidad un poco más baja (ver
-                // NoteBackgroundImage.opacityReduction) para que el texto
-                // siga siendo legible.
-                BackgroundSwitchRow(
-                    label = "Mostrar también adentro de las notas",
-                    checked = settings.showBackgroundInNotes,
-                    onCheckedChange = { v -> onUpdate { it.copy(showBackgroundInNotes = v) } }
-                )
-                BackgroundSliderRow(
-                    label = "Opacidad de la imagen",
-                    value = settings.backgroundImageOpacity,
-                    onValueChange = { v -> onUpdate { it.copy(backgroundImageOpacity = v) } }
-                )
-                // Con imagen de fondo, la barra de título sólida tapaba parte
-                // de la imagen y desentonaba; es semitransparente con
-                // opacidad ajustable.
-                BackgroundSliderRow(
-                    label = "Opacidad de la barra de título",
-                    value = settings.topBarOpacity,
-                    onValueChange = { v -> onUpdate { it.copy(topBarOpacity = v) } }
-                )
-                BackgroundSwitchRow(
-                    label = "Desvanecer bordes",
-                    checked = settings.backgroundFade,
-                    onCheckedChange = { v -> onUpdate { it.copy(backgroundFade = v) } }
-                )
-                if (settings.backgroundFade) {
-                    BackgroundSliderRow(
-                        label = "Opacidad del desvanecido",
-                        value = settings.backgroundFadeOpacity,
-                        onValueChange = { v -> onUpdate { it.copy(backgroundFadeOpacity = v) } }
-                    )
-                }
-                if (settings.backgroundImagePaths.size > 1) {
-                    Text(
-                        "Con más de una imagen, se sortea una al azar cada vez que se abre la app (no cada vez que se gira la pantalla).",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-// Fila compacta de interruptor para el panel del editor de fondo.
-@Composable
-private fun BackgroundSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-// Fila compacta de deslizador: etiqueta a la izquierda, deslizador al medio y
-// porcentaje a la derecha, todo en una sola línea para ahorrar alto.
-@Composable
-private fun BackgroundSliderRow(label: String, value: Float, onValueChange: (Float) -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.width(104.dp)
-        )
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = 0f..1f,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            "${(value * 100).toInt()}%",
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.width(40.dp)
-        )
-    }
-}
-
-// Vista previa a pantalla completa (todo el espacio entre el título y el
-// panel de ajustes): fondo con sus capas reales + una barra superior de
-// ejemplo con la opacidad real, un par de notas de prueba y el botón +,
-// todo con los colores del tema (Material You) para ver cómo queda de verdad.
-@Composable
-private fun BackgroundFullPreview(settings: AppSettings, context: android.content.Context) {
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        BackgroundPreviewLayers(settings = settings, context = context)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 65.dp, start = 12.dp, end = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            PreviewNoteCard(
-                title = "Nota de prueba",
-                lines = listOf(
-                    "Así se ve el texto de una nota sobre el fondo.",
-                    "Segunda línea de ejemplo."
-                )
-            )
-            PreviewNoteCard(
-                title = "Checklist de prueba",
-                lines = listOf("Primer elemento", "Segundo elemento"),
-                checklist = true
-            )
-        }
-        // Barra superior de ejemplo, con la opacidad real configurada.
-        Column(modifier = Modifier.align(Alignment.TopCenter)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = settings.topBarOpacity))
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("BouncyNotes", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                Icon(Icons.Filled.Search, contentDescription = null)
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            )
-        }
-        // Botón + de ejemplo, del lado que corresponda (modo zurdo).
-        Box(
-            modifier = Modifier
-                .align(if (settings.fabOnLeft) Alignment.BottomStart else Alignment.BottomEnd)
-                .padding(16.dp)
-                .size(56.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Filled.Add,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-        }
-    }
-}
-
-// Tarjeta de nota de ejemplo para la vista previa del fondo.
-@Composable
-private fun PreviewNoteCard(title: String, lines: List<String>, checklist: Boolean = false) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(6.dp))
-            lines.forEach { line ->
-                Row(
-                    modifier = Modifier.padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (checklist) {
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(4.dp))
-                        )
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    Text(
-                        line,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
 // Capas del fondo (imagen + tinte monocromático + desvanecido de bordes),
-// compartidas por la maqueta chica de Ajustes y la vista previa a pantalla
-// completa del editor de fondo, para que las dos se vean exactamente igual.
+// de la maqueta chica de Ajustes (el editor completo del fondo vive en
+// BackgroundCropDialog, que dibuja sus propias capas sobre el marco).
 @Composable
 private fun BackgroundPreviewLayers(settings: AppSettings, context: android.content.Context) {
     Box(modifier = Modifier.fillMaxSize()) {
