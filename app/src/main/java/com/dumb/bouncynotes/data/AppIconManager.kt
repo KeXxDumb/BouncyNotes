@@ -17,6 +17,15 @@ import kotlin.system.exitProcess
 // Android 8, y el que finalmente funcionó en el dispositivo real. v10: se
 // sacaron los 3 íconos de prueba de color (ya cumplieron su función) y
 // Note Girl pasó a ser la ilustración remasterizada del artista.
+// v11: el ícono del LAUNCHER (manifest) vuelve a ser adaptativo, pero con otra
+// estructura que la de v7-v8: capas en mipmap-anydpi-v26/ic_launcher_*.xml
+// (fondo en degradado + arte en <inset 16%>, sin monochrome) más un respaldo
+// plano en mipmap-nodpi/ para Android 7-. Motivo: como @drawable plano,
+// launchers como MIUI/One UI trataban el ícono como "viejo" y lo mostraban
+// achicado dentro de un cuadrado blanco. El fallo de entonces era el shrinker
+// de recursos, hoy desactivado (ver app/build.gradle.kts). La UI de Ajustes
+// sigue usando el @drawable plano (drawableResId): painterResource() no sabe
+// cargar un <adaptive-icon>.
 enum class AppIcon(val alias: String, val label: String, val drawableResId: Int) {
     PEACH("com.dumb.bouncynotes.PeachIconAlias", "Durazno", R.drawable.ic_icon_peach),
     NOTE_GIRL("com.dumb.bouncynotes.NoteGirlIconAlias", "Note Girl", R.drawable.ic_icon_notegirl),

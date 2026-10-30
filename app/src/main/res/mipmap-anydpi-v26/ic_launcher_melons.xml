@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono adaptativo "melons" (Android 8+). El arte (ic_icon_melons.webp, que es
+     un cuadrado a sangre completa) va dentro de un <inset 16%> sobre un
+     fondo del mismo color, para que quepa en la zona segura de 72dp del
+     lienzo de 108dp y el launcher lo vea como adaptativo: sin esto, MIUI,
+     Samsung One UI y otros lo tratan como ícono "viejo" y lo achican dentro
+     de un cuadrado blanco. No lleva capa <monochrome>: no hay silueta
+     real del arte y una improvisada se vería mal con íconos temáticos.
+     En Android 7 y anteriores se usa mipmap-nodpi/ic_launcher_melons.webp. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_bg_melons" />
+    <foreground>
+        <inset
+            android:drawable="@drawable/ic_icon_melons"
+            android:inset="16%" />
+    </foreground>
+</adaptive-icon>

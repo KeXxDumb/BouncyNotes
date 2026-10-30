@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fondo del ícono adaptativo "peach": degradado vertical con los colores
+     promedio del borde superior e inferior de ic_icon_peach.webp, para que lo
+     que rodea al arte (zona que casi nunca se ve, ver ic_launcher_peach.xml)
+     sea del mismo color que el borde de la imagen. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#FFB74D"
+        android:endColor="#FFB74D" />
+</shape>

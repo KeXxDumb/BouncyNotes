@@ -38,9 +38,9 @@
     <application
         android:name=".BouncyNotesApp"
         android:allowBackup="true"
-        android:icon="@drawable/ic_icon_peach"
+        android:icon="@mipmap/ic_launcher_peach"
         android:label="@string/app_name"
-        android:roundIcon="@drawable/ic_icon_peach"
+        android:roundIcon="@mipmap/ic_launcher_peach"
         android:supportsRtl="true"
         android:theme="@style/Theme.Notes"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -57,15 +57,15 @@
             android:theme="@style/Theme.Notes" />
 
         <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
-             (ver ic_icon_peach.webp, ícono plano sin adaptive-icon).
+             (ver ic_icon_peach.webp; el ícono del launcher es el adaptativo mipmap/ic_launcher_peach).
              Habilitado al principio. -->
         <activity-alias
             android:name=".PeachIconAlias"
             android:targetActivity=".MainActivity"
             android:enabled="true"
             android:exported="true"
-            android:icon="@drawable/ic_icon_peach"
-            android:roundIcon="@drawable/ic_icon_peach"
+            android:icon="@mipmap/ic_launcher_peach"
+            android:roundIcon="@mipmap/ic_launcher_peach"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -80,8 +80,8 @@
             android:targetActivity=".MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:icon="@drawable/ic_icon_notegirl"
-            android:roundIcon="@drawable/ic_icon_notegirl"
+            android:icon="@mipmap/ic_launcher_notegirl"
+            android:roundIcon="@mipmap/ic_launcher_notegirl"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -97,8 +97,8 @@
             android:targetActivity=".MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:icon="@drawable/ic_icon_melons"
-            android:roundIcon="@drawable/ic_icon_melons"
+            android:icon="@mipmap/ic_launcher_melons"
+            android:roundIcon="@mipmap/ic_launcher_melons"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -107,15 +107,15 @@
         </activity-alias>
 
         <!-- "Mimorpha": ilustración subida por el usuario (PNG plano, mismo
-             criterio que el resto: sin adaptive-icon, ver AppIconManager.kt).
+             criterio que el resto: ícono adaptativo en mipmap/, ver AppIconManager.kt).
              Deshabilitado al principio; se activa desde Ajustes. -->
         <activity-alias
             android:name=".MimorphaIconAlias"
             android:targetActivity=".MainActivity"
             android:enabled="false"
             android:exported="true"
-            android:icon="@drawable/ic_icon_mimorpha"
-            android:roundIcon="@drawable/ic_icon_mimorpha"
+            android:icon="@mipmap/ic_launcher_mimorpha"
+            android:roundIcon="@mipmap/ic_launcher_mimorpha"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
