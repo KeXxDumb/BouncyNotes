@@ -54,6 +54,9 @@ data class AppSettings(
     val doubleTapToEdit: Boolean = true,
     // Modo zurdo: el botón flotante "+" (y su menú) va a la izquierda.
     val fabOnLeft: Boolean = false,
+    // true = todos los tipos de nota (texto, checklist, diario) mezclados en
+    // una sola lista, sin barra inferior de tipos (como era antes).
+    val allTypesInOneList: Boolean = false,
     val backgroundImagePath: String? = null,
     val backgroundMonochrome: Boolean = true,
     val backgroundImageOpacity: Float = 1f,
@@ -138,6 +141,7 @@ class SettingsRepository(private val context: Context) {
         val IMAGE_QUALITY = intPreferencesKey("image_quality")
         val DOUBLE_TAP_EDIT = booleanPreferencesKey("double_tap_edit")
         val FAB_ON_LEFT = booleanPreferencesKey("fab_on_left")
+        val ALL_TYPES_ONE_LIST = booleanPreferencesKey("all_types_one_list")
         val BACKGROUND_IMAGE = stringPreferencesKey("background_image")
         val BACKGROUND_MONOCHROME = booleanPreferencesKey("background_monochrome")
         val BACKGROUND_FADE = booleanPreferencesKey("background_fade")
@@ -183,6 +187,7 @@ class SettingsRepository(private val context: Context) {
             imageQuality = prefs[Keys.IMAGE_QUALITY] ?: 85,
             doubleTapToEdit = prefs[Keys.DOUBLE_TAP_EDIT] ?: true,
             fabOnLeft = prefs[Keys.FAB_ON_LEFT] ?: false,
+            allTypesInOneList = prefs[Keys.ALL_TYPES_ONE_LIST] ?: false,
             backgroundImagePath = prefs[Keys.BACKGROUND_IMAGE]?.takeIf { it.isNotBlank() },
             backgroundMonochrome = prefs[Keys.BACKGROUND_MONOCHROME] ?: true,
             backgroundFade = prefs[Keys.BACKGROUND_FADE] ?: true,
@@ -250,6 +255,7 @@ class SettingsRepository(private val context: Context) {
             prefs[Keys.IMAGE_QUALITY] = updated.imageQuality
             prefs[Keys.DOUBLE_TAP_EDIT] = updated.doubleTapToEdit
             prefs[Keys.FAB_ON_LEFT] = updated.fabOnLeft
+            prefs[Keys.ALL_TYPES_ONE_LIST] = updated.allTypesInOneList
             prefs[Keys.BACKGROUND_IMAGE] = updated.backgroundImagePath ?: ""
             prefs[Keys.BACKGROUND_MONOCHROME] = updated.backgroundMonochrome
             prefs[Keys.BACKGROUND_FADE] = updated.backgroundFade

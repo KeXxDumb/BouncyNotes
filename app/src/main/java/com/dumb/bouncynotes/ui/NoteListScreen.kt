@@ -22,6 +22,12 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
+import com.dumb.bouncynotes.ui.components.GlassBottomBar
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import java.util.TimeZone
 import java.util.Date
 import java.util.Calendar
@@ -178,7 +184,10 @@ fun NoteListScreen(
     // el filtro por tipo, para que la búsqueda encuentre en todos lados.
     var typeTabName by rememberSaveable { mutableStateOf(NoteType.TEXT.name) }
     val typeTab = NoteType.valueOf(typeTabName)
-    val notes: List<Note>? = if (query.isNotBlank()) allNotes else allNotes?.filter { it.type == typeTab }
+    // Con el ajuste "todos los tipos en una sola lista", no hay pestañas ni
+    // filtro por tipo: todo se mezcla como antes.
+    val separateTypes = !settings.allTypesInOneList
+    val notes: List<Note>? = if (query.isNotBlank() || !separateTypes) allNotes else allNotes?.filter { it.type == typeTab }
 
     // Diario: una página por día, de hoy hacia atrás (ver JournalPager).
     // Se hoistea acá para que la página elegida sobreviva a cambiar de
@@ -394,7 +403,9 @@ fun NoteListScreen(
                 }
             },
             bottomBar = {
-                NoteTypeBottomBar(selected = typeTab, onSelect = { typeTabName = it.name })
+                if (separateTypes) {
+                    NoteTypeBottomBar(selected = typeTab, onSelect = { typeTabName = it.name })
+                }
             },
             floatingActionButtonPosition = if (settings.fabOnLeft) FabPosition.Start else FabPosition.End,
             floatingActionButton = {
@@ -442,10 +453,15 @@ fun NoteListScreen(
                                 }
                                 // En la papelera no tiene sentido crear notas.
                                 if (viewMode != ViewMode.TRASH) {
-                                    // El tipo de la pestaña actual va al final, o sea
-                                    // lo más cerca del "+". Crear uno de otro tipo
-                                    // cambia a su pestaña, así al volver se lo ve.
-                                    val createTypes = (listOf(NoteType.JOURNAL, NoteType.CHECKLIST, NoteType.TEXT) - typeTab) + typeTab
+                                    // Con pestañas por tipo, el "+" solo ofrece crear
+                                    // el tipo de la pestaña en la que estás. Con el
+                                    // ajuste "todos los tipos en una sola lista",
+                                    // ofrece los tres como antes.
+                                    val createTypes = if (separateTypes) {
+                                        listOf(typeTab)
+                                    } else {
+                                        listOf(NoteType.JOURNAL, NoteType.CHECKLIST, NoteType.TEXT)
+                                    }
                                     createTypes.forEach { type ->
                                         FabMenuItem(
                                             icon = when (type) {
@@ -465,7 +481,7 @@ fun NoteListScreen(
                                                 // Entrada de diario: nace en el día que se
                                                 // está viendo, con la hora actual (así
                                                 // se ordena bien dentro del día). 0 = hoy.
-                                                val day = if (type == NoteType.JOURNAL &&
+                                                val day = if (separateTypes && type == NoteType.JOURNAL &&
                                                     journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
                                                 ) {
                                                     journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
@@ -552,7 +568,7 @@ fun NoteListScreen(
                     // segundo justo al abrir la app.
                     Box(modifier = Modifier.fillMaxSize().padding(padding))
                 }
-                typeTab == NoteType.JOURNAL && query.isBlank() -> {
+                separateTypes && typeTab == NoteType.JOURNAL && query.isBlank() -> {
                     JournalPager(
                         notes = currentNotes,
                         pagerState = journalPagerState,
@@ -704,48 +720,28 @@ private val TYPE_TABS = listOf(
     Triple(NoteType.JOURNAL, Icons.Filled.Book, "Diario")
 )
 
-// Barra inferior con una pestaña por tipo de nota. Mismo criterio visual que
-// la barra del editor (tinte negro semitransparente, sin desenfoque): el
-// fondo se extiende por detrás de la barra de navegación del sistema
-// (background ANTES de navigationBarsPadding) para no dejar un hueco.
+// Barra inferior con una pestaña por tipo de nota. Es la MISMA GlassBottomBar
+// que usa el editor de notas (misma altura de 56dp, mismo tinte, borde y
+// extensión por detrás de la barra de navegación), con botones de solo ícono
+// como los de esa barra; el tipo elegido se resalta con el color del tema.
 @Composable
 private fun NoteTypeBottomBar(selected: NoteType, onSelect: (NoteType) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.35f))
-            .navigationBarsPadding()
-            .height(60.dp)
-            .padding(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+    GlassBottomBar(
+        height = 56.dp,
+        navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+        centered = true
     ) {
         TYPE_TABS.forEach { (type, icon, label) ->
             val isSelected = type == selected
-            Column(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable { onSelect(type) }
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White.copy(alpha = 0.75f)
-                    )
-                }
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.75f)
+            IconButton(
+                onClick = { onSelect(type) },
+                modifier = Modifier.padding(horizontal = 12.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
                 )
+            ) {
+                Icon(icon, contentDescription = label)
             }
         }
     }

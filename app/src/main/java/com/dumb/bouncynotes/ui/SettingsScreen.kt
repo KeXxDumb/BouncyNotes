@@ -740,6 +740,11 @@ fun SettingsScreen(
                                                         checked = settings.fabOnLeft,
                                                         onCheckedChange = { v -> onUpdate { it.copy(fabOnLeft = v) } }
                                                     )
+                                                    SwitchSetting(
+                                                        label = "Todos los tipos de nota en una sola lista",
+                                                        checked = settings.allTypesInOneList,
+                                                        onCheckedChange = { v -> onUpdate { it.copy(allTypesInOneList = v) } }
+                                                    )
                                                     // Divisor: de "checklists y edición" pasamos a
                                                     // "navegación e interfaz", otro tema distinto.
                                                     SettingsDivider()
