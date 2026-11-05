@@ -324,17 +324,23 @@ class MainActivity : FragmentActivity() {
                                         biometricUnlockedForPrivate = biometricValid,
                                         onRequestBiometric = { requestBiometric {} },
                                         onNoteClick = { id -> navController.navigateSafe("edit/$id?type=TEXT") },
-                                        onAddClick = { type -> navController.navigateSafe("edit/0?type=${type.name}") },
+                                        onAddClick = { type, day -> navController.navigateSafe("edit/0?type=${type.name}&day=$day") },
                                         onOpenSettings = { navController.navigateSafe("settings") }
                                     )
                                 }
                                 composable(
-                                    route = "edit/{noteId}?type={type}",
+                                    route = "edit/{noteId}?type={type}&day={day}",
                                     arguments = listOf(
                                         navArgument("noteId") { type = NavType.LongType },
                                         navArgument("type") {
                                             type = NavType.StringType
                                             defaultValue = "TEXT"
+                                        },
+                                        // Fecha de creación para una entrada NUEVA de
+                                        // diario creada desde un día pasado (0 = ahora).
+                                        navArgument("day") {
+                                            type = NavType.LongType
+                                            defaultValue = 0L
                                         }
                                     )
                                 ) { backStackEntry ->
@@ -345,9 +351,11 @@ class MainActivity : FragmentActivity() {
                                     } catch (e: Exception) {
                                         NoteType.TEXT
                                     }
+                                    val dayArg = backStackEntry.arguments?.getLong("day") ?: 0L
                                     NoteEditScreen(
                                         noteId = noteId,
                                         initialType = initialType,
+                                        initialCreatedAt = dayArg,
                                         viewModel = noteViewModel,
                                         settings = settings,
                                         biometricUnlockedForPrivate = biometricValid,

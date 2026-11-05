@@ -300,7 +300,7 @@ fun buildInlineSpannable(text: String): CharSequence {
 fun isNoteEmpty(note: Note): Boolean {
     if (note.title.isNotBlank()) return false
     return when (note.type) {
-        NoteType.TEXT -> {
+        NoteType.TEXT, NoteType.JOURNAL -> {
             if (extractImageFileNames(note.content).isNotEmpty()) return false
             parseNoteContent(note.content).filterIsInstance<ContentPart.TextPart>().all { it.text.isBlank() }
         }
@@ -317,7 +317,7 @@ fun buildPlainTextPreview(note: Note): String = when (note.type) {
     NoteType.CHECKLIST -> note.checklistItems.joinToString("\n") { item ->
         (if (item.checked) "☑ " else "☐ ") + item.text
     }
-    NoteType.TEXT -> parseNoteContent(note.content).joinToString("") { part ->
+    NoteType.TEXT, NoteType.JOURNAL -> parseNoteContent(note.content).joinToString("") { part ->
         when (part) {
             is ContentPart.TextPart -> part.text
             is ContentPart.ImagePart -> "📷 "
@@ -332,7 +332,7 @@ fun buildPlainTextPreview(note: Note): String = when (note.type) {
 // separado, y no vale la pena para una miniatura de widget). null si la
 // nota no tiene ninguna imagen o es de tipo checklist.
 fun firstDisplayableImage(note: Note): String? =
-    if (note.type == NoteType.TEXT) {
+    if (note.type != NoteType.CHECKLIST) {
         extractMediaRefs(note.content).firstOrNull { !it.isVideo }?.fileName
     } else null
 

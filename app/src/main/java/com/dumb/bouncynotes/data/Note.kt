@@ -3,7 +3,13 @@ package com.dumb.bouncynotes.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-enum class NoteType { TEXT, CHECKLIST }
+// JOURNAL: entrada de diario. Se edita igual que una nota de TEXTO (mismo
+// contenido con imágenes/videos embebidos), pero en la lista no va suelta:
+// se muestra en la pestaña "Diario", paginada por día según `createdAt`
+// (por eso NO hizo falta una columna nueva en Room: ver NoteListScreen).
+// Se guarda como String (nombre del enum) vía Converters, así que sumar un
+// valor no cambia el esquema de la base de datos.
+enum class NoteType { TEXT, CHECKLIST, JOURNAL }
 
 data class ChecklistItem(
     val text: String = "",

@@ -113,12 +113,16 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -306,6 +310,9 @@ private const val SUB_BULLET_PREFIX = "    ◦ "
 fun NoteEditScreen(
     noteId: Long,
     initialType: NoteType,
+    // Fecha (epoch millis) con la que nace una entrada NUEVA de diario creada
+    // desde un día pasado de la pestaña Diario; 0 = ahora.
+    initialCreatedAt: Long = 0L,
     viewModel: NoteViewModel,
     settings: AppSettings,
     biometricUnlockedForPrivate: Boolean,
@@ -316,7 +323,19 @@ fun NoteEditScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var loaded by rememberSaveable { mutableStateOf(false) }
-    var current by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = initialType)) }
+    var current by rememberSaveable(stateSaver = NoteStateSaver) {
+        mutableStateOf(
+            Note(type = initialType).let { if (initialCreatedAt > 0L) it.copy(createdAt = initialCreatedAt) else it }
+        )
+    }
+    // Última versión de la nota que se sabe que está en la base de datos (o
+    // recién cargada de ella). Sirve para saber si HAY algo que guardar:
+    // antes cada salida de la pantalla llamaba a save() sin comparar, y
+    // save() siempre actualiza `updatedAt`, así que con solo abrir una nota y
+    // volver ya figuraba como "modificada" (subía al tope de la lista y
+    // cambiaba el widget de "última nota editada"). También es
+    // rememberSaveable para sobrevivir a una rotación igual que `current`.
+    var savedSnapshot by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = initialType)) }
     var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
@@ -453,7 +472,10 @@ fun NoteEditScreen(
         // su propio rememberSaveable, ver el comentario grande de arriba).
         if (!loaded) {
             if (noteId != 0L) {
-                viewModel.getById(noteId)?.let { current = it }
+                viewModel.getById(noteId)?.let {
+                    current = it
+                    savedSnapshot = it
+                }
             }
         }
         segments = buildEditSegments(current.content)
@@ -860,6 +882,52 @@ fun NoteEditScreen(
         }
     }
 
+    // Guarda la nota SOLO si cambió respecto de lo último guardado. createdAt
+    // y updatedAt se ignoran en la comparación (updatedAt lo pone save() y
+    // createdAt difiere entre dos Note() creadas con unos ms de diferencia),
+    // así que abrir y cerrar una nota sin tocarla ya no la marca como
+    // modificada. Para una nota nueva, el callback le pone el id real a
+    // `current` Y al snapshot, así un segundo guardado (ej. autoguardado y
+    // después salir) actualiza la misma fila en vez de crear un duplicado.
+    fun persistIfDirty() {
+        if (!loaded) return
+        val note = current
+        if (isNoteEmpty(note)) return
+        if (note.copy(createdAt = 0L, updatedAt = 0L) == savedSnapshot.copy(createdAt = 0L, updatedAt = 0L)) return
+        savedSnapshot = note
+        viewModel.save(note) { id ->
+            if (current.id == 0L) current = current.copy(id = id)
+            if (savedSnapshot.id == 0L) savedSnapshot = savedSnapshot.copy(id = id)
+        }
+    }
+
+    // Bug reportado: marcar/desmarcar casillas de una checklist (en modo
+    // vista) y salir de la app, o que el sistema la cierre, perdía los
+    // cambios, porque solo se guardaba al salir con la flecha/atrás. Al pasar
+    // la app a segundo plano (ON_STOP) se guarda lo pendiente. Se lee la
+    // función vía rememberUpdatedState para que el observer, que se registra
+    // una sola vez, no use una versión vieja.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val latestPersist by rememberUpdatedState(newValue = { persistIfDirty() })
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) latestPersist()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // En modo vista lo único que se puede cambiar son cosas puntuales (casillas
+    // de una checklist, fijar la nota), sin un "cerrar edición" que las
+    // guarde: se guardan solas medio segundo después del último cambio. Solo
+    // para notas que ya existen (id != 0); una nota nueva siempre arranca en
+    // modo edición.
+    LaunchedEffect(current, isEditing, loaded) {
+        if (loaded && !isEditing && current.id != 0L) {
+            kotlinx.coroutines.delay(500)
+            persistIfDirty()
+        }
+    }
+
     // Sin esto, salir con el gesto/botón de retroceso del sistema (en vez de la
     // flecha propia de la app) descartaba cualquier cambio sin guardar, incluido
     // fijar/desfijar la nota.
@@ -870,7 +938,7 @@ fun NoteEditScreen(
         enabled = loaded && viewerStartPos == null &&
             !(current.isPrivate && !biometricUnlockedForPrivate && !unlockedThisNote)
     ) {
-        if (!isNoteEmpty(current)) viewModel.save(current)
+        persistIfDirty()
         onBack()
     }
 
@@ -886,7 +954,7 @@ fun NoteEditScreen(
             !(current.isPrivate && !biometricUnlockedForPrivate && !unlockedThisNote)
     ) {
         focusManager.clearFocus(force = true)
-        if (!isNoteEmpty(current)) viewModel.save(current)
+        persistIfDirty()
         isEditing = false
     }
 
@@ -1140,8 +1208,10 @@ fun NoteEditScreen(
                     reminderCalendarRecurring = calendarRecurring
                 )
                 current = updated
+                savedSnapshot = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
+                    if (savedSnapshot.id == 0L) savedSnapshot = savedSnapshot.copy(id = id)
                 }
                 showReminderSheet = false
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
@@ -1164,8 +1234,10 @@ fun NoteEditScreen(
                     reminderCalendarRecurring = false
                 )
                 current = updated
+                savedSnapshot = updated
                 viewModel.save(updated) { id ->
                     if (noteId == 0L) current = current.copy(id = id)
+                    if (savedSnapshot.id == 0L) savedSnapshot = savedSnapshot.copy(id = id)
                 }
                 showReminderSheet = false
             }
@@ -1235,10 +1307,20 @@ fun NoteEditScreen(
         containerColor = if (settings.showBackgroundInNotes) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    // En una entrada de diario, el título de la barra es su
+                    // fecha (la de la página del día donde vive).
+                    if (current.type == NoteType.JOURNAL) {
+                        val journalDate = remember(current.createdAt) {
+                            java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL)
+                                .format(java.util.Date(current.createdAt))
+                        }
+                        Text(journalDate, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (!isNoteEmpty(current)) viewModel.save(current)
+                        persistIfDirty()
                         onBack()
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
@@ -1340,7 +1422,7 @@ fun NoteEditScreen(
                         Icon(Icons.Filled.Add, contentDescription = "Agregar elemento")
                     }
                 }
-                if (current.type == NoteType.TEXT && isEditing) {
+                if (current.type != NoteType.CHECKLIST && isEditing) {
                     IconButton(onClick = {
                         launchMediaPicker(
                             mediaLauncher, "*/*", allowMultiple = true,
@@ -1418,7 +1500,7 @@ fun NoteEditScreen(
                 // redundante.
                 IconButton(onClick = {
                     val goingToEdit = !isEditing
-                    if (goingToEdit && current.type == NoteType.TEXT) {
+                    if (goingToEdit && current.type != NoteType.CHECKLIST) {
                         segments = buildEditSegments(current.content)
                     } else if (!goingToEdit) {
                         // BUG encontrado (relacionado con el de arriba, aunque es
@@ -1441,11 +1523,7 @@ fun NoteEditScreen(
                         // "se sale" del modo de edición, así que aprovechamos
                         // para guardar acá (antes solo se guardaba al tocar el
                         // botón de guardar dedicado, o al salir con la flecha).
-                        if (!isNoteEmpty(current)) {
-                            viewModel.save(current) { id ->
-                                if (noteId == 0L) current = current.copy(id = id)
-                            }
-                        }
+                        persistIfDirty()
                     }
                     isEditing = goingToEdit
                 }) {

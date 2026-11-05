@@ -22,6 +22,22 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
+import java.util.TimeZone
+import java.util.Date
+import java.util.Calendar
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -146,14 +162,29 @@ fun NoteListScreen(
     biometricUnlockedForPrivate: Boolean,
     onRequestBiometric: () -> Unit,
     onNoteClick: (Long) -> Unit,
-    onAddClick: (NoteType) -> Unit,
+    // Segundo parámetro: fecha de creación para una entrada de diario nueva
+    // (0 = ahora). Ver JournalPager.
+    onAddClick: (NoteType, Long) -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val notes by viewModel.notes.collectAsState()
+    val allNotes by viewModel.notes.collectAsState()
     val query by viewModel.query.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
     val labelFilter by viewModel.labelFilter.collectAsState()
     val labels by viewModel.allLabels.collectAsState()
+
+    // Pestaña de tipo de la barra inferior (Notas / Checklists / Diario).
+    // Cada tipo vive en su propio lugar. Con una búsqueda activa se ignora
+    // el filtro por tipo, para que la búsqueda encuentre en todos lados.
+    var typeTabName by rememberSaveable { mutableStateOf(NoteType.TEXT.name) }
+    val typeTab = NoteType.valueOf(typeTabName)
+    val notes: List<Note>? = if (query.isNotBlank()) allNotes else allNotes?.filter { it.type == typeTab }
+
+    // Diario: una página por día, de hoy hacia atrás (ver JournalPager).
+    // Se hoistea acá para que la página elegida sobreviva a cambiar de
+    // pestaña y volver.
+    val journalTodayStart = remember { dayStartMillis(System.currentTimeMillis()) }
+    val journalPagerState = rememberPagerState(initialPage = JOURNAL_PAGE_COUNT - 1) { JOURNAL_PAGE_COUNT }
 
     val context = LocalContext.current
     var fabExpanded by remember { mutableStateOf(false) }
@@ -172,7 +203,7 @@ fun NoteListScreen(
     // vez de salir de la app.
     BackHandler(enabled = fabExpanded) { fabExpanded = false }
 
-    LaunchedEffect(viewMode, labelFilter) {
+    LaunchedEffect(viewMode, labelFilter, typeTabName) {
         selectedIds = emptySet()
     }
 
@@ -362,6 +393,9 @@ fun NoteListScreen(
                 HorizontalDivider()
                 }
             },
+            bottomBar = {
+                NoteTypeBottomBar(selected = typeTab, onSelect = { typeTabName = it.name })
+            },
             floatingActionButtonPosition = if (settings.fabOnLeft) FabPosition.Start else FabPosition.End,
             floatingActionButton = {
                 if (!selectionMode) {
@@ -408,18 +442,39 @@ fun NoteListScreen(
                                 }
                                 // En la papelera no tiene sentido crear notas.
                                 if (viewMode != ViewMode.TRASH) {
-                                    FabMenuItem(
-                                        icon = Icons.Filled.Checklist,
-                                        text = "Nuevo checklist",
-                                        selected = false,
-                                        onClick = { fabExpanded = false; onAddClick(NoteType.CHECKLIST) }
-                                    )
-                                    FabMenuItem(
-                                        icon = Icons.Filled.Edit,
-                                        text = "Nueva nota",
-                                        selected = false,
-                                        onClick = { fabExpanded = false; onAddClick(NoteType.TEXT) }
-                                    )
+                                    // El tipo de la pestaña actual va al final, o sea
+                                    // lo más cerca del "+". Crear uno de otro tipo
+                                    // cambia a su pestaña, así al volver se lo ve.
+                                    val createTypes = (listOf(NoteType.JOURNAL, NoteType.CHECKLIST, NoteType.TEXT) - typeTab) + typeTab
+                                    createTypes.forEach { type ->
+                                        FabMenuItem(
+                                            icon = when (type) {
+                                                NoteType.TEXT -> Icons.Filled.Edit
+                                                NoteType.CHECKLIST -> Icons.Filled.Checklist
+                                                NoteType.JOURNAL -> Icons.Filled.Book
+                                            },
+                                            text = when (type) {
+                                                NoteType.TEXT -> "Nueva nota"
+                                                NoteType.CHECKLIST -> "Nuevo checklist"
+                                                NoteType.JOURNAL -> "Nueva entrada"
+                                            },
+                                            selected = false,
+                                            onClick = {
+                                                fabExpanded = false
+                                                typeTabName = type.name
+                                                // Entrada de diario: nace en el día que se
+                                                // está viendo, con la hora actual (así
+                                                // se ordena bien dentro del día). 0 = hoy.
+                                                val day = if (type == NoteType.JOURNAL &&
+                                                    journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
+                                                ) {
+                                                    journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
+                                                        (System.currentTimeMillis() - journalTodayStart)
+                                                } else 0L
+                                                onAddClick(type, day)
+                                            }
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -496,6 +551,34 @@ fun NoteListScreen(
                     // para no mentirle al usuario por una fracción de
                     // segundo justo al abrir la app.
                     Box(modifier = Modifier.fillMaxSize().padding(padding))
+                }
+                typeTab == NoteType.JOURNAL && query.isBlank() -> {
+                    JournalPager(
+                        notes = currentNotes,
+                        pagerState = journalPagerState,
+                        todayStart = journalTodayStart,
+                        padding = padding
+                    ) { note ->
+                        NoteCard(
+                            note = note,
+                            checkboxPosition = settings.checkboxPosition,
+                            selected = note.id in selectedIds,
+                            selectionMode = selectionMode,
+                            showFirstImage = settings.showFirstImage,
+                            showMedia = false,
+                            onClick = {
+                                if (selectionMode) {
+                                    selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
+                                } else {
+                                    onNoteClick(note.id)
+                                }
+                            },
+                            onLongClick = { selectedIds = selectedIds + note.id },
+                            onTogglePin = { viewModel.togglePin(note) },
+                            inTrash = viewMode == ViewMode.TRASH,
+                            onDeleteForever = { noteToDeleteForever = note }
+                        )
+                    }
                 }
                 currentNotes.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -609,6 +692,197 @@ fun NoteListScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+// ---- Barra inferior de tipos y modo Diario ----
+
+private val TYPE_TABS = listOf(
+    Triple(NoteType.TEXT, Icons.Filled.Notes, "Notas"),
+    Triple(NoteType.CHECKLIST, Icons.Filled.Checklist, "Checklists"),
+    Triple(NoteType.JOURNAL, Icons.Filled.Book, "Diario")
+)
+
+// Barra inferior con una pestaña por tipo de nota. Mismo criterio visual que
+// la barra del editor (tinte negro semitransparente, sin desenfoque): el
+// fondo se extiende por detrás de la barra de navegación del sistema
+// (background ANTES de navigationBarsPadding) para no dejar un hueco.
+@Composable
+private fun NoteTypeBottomBar(selected: NoteType, onSelect: (NoteType) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .navigationBarsPadding()
+            .height(60.dp)
+            .padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TYPE_TABS.forEach { (type, icon, label) ->
+            val isSelected = type == selected
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { onSelect(type) }
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                        .padding(horizontal = 16.dp, vertical = 2.dp)
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else Color.White.copy(alpha = 0.75f)
+                    )
+                }
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isSelected) Color.White else Color.White.copy(alpha = 0.75f)
+                )
+            }
+        }
+    }
+}
+
+// Cantidad de páginas del Diario: hoy + ~10 años hacia atrás. La última página
+// (índice COUNT-1) es HOY; deslizar a la derecha va a días anteriores. Es un
+// Pager "perezoso", así que tener miles de páginas no cuesta nada.
+private const val JOURNAL_PAGE_COUNT = 3651
+private const val DAY_MILLIS = 24L * 60 * 60 * 1000
+
+// Inicio (00:00 local) del día al que pertenece un instante.
+private fun dayStartMillis(timeMillis: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = timeMillis
+    set(Calendar.HOUR_OF_DAY, 0)
+    set(Calendar.MINUTE, 0)
+    set(Calendar.SECOND, 0)
+    set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+// Inicio del día que representa una página (con Calendar y no restando
+// 24h fijas, para que un cambio de horario de verano no desplace los días).
+// Funciona también con page = COUNT (el "día siguiente" a hoy), que se usa
+// como fin exclusivo del rango de la última página.
+private fun journalPageDayStart(todayStart: Long, page: Int): Long = Calendar.getInstance().apply {
+    timeInMillis = todayStart
+    add(Calendar.DAY_OF_YEAR, -(JOURNAL_PAGE_COUNT - 1 - page))
+}.timeInMillis
+
+// Diario: una página por día (deslizable), con las entradas de ese día en
+// orden cronológico. El día de una entrada es el de su `createdAt` — por eso
+// no hace falta ninguna columna nueva en la base de datos. Arriba hay una
+// barra para ir al día anterior/siguiente, volver a hoy o elegir una fecha.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun JournalPager(
+    notes: List<Note>,
+    pagerState: PagerState,
+    todayStart: Long,
+    padding: PaddingValues,
+    noteCard: @Composable (Note) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var showDatePicker by remember { mutableStateOf(false) }
+    val lastPage = JOURNAL_PAGE_COUNT - 1
+    val current = pagerState.currentPage
+    val dateFormat = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL) }
+
+    Column(modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { scope.launch { pagerState.animateScrollToPage((current - 1).coerceAtLeast(0)) } },
+                enabled = current > 0
+            ) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Día anterior") }
+            Text(
+                dateFormat.format(Date(journalPageDayStart(todayStart, current))),
+                style = MaterialTheme.typography.titleSmall,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                modifier = Modifier.weight(1f)
+            )
+            if (current < lastPage) {
+                TextButton(onClick = { scope.launch { pagerState.animateScrollToPage(lastPage) } }) { Text("Hoy") }
+            }
+            IconButton(
+                onClick = { scope.launch { pagerState.animateScrollToPage((current + 1).coerceAtMost(lastPage)) } },
+                enabled = current < lastPage
+            ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Día siguiente") }
+            IconButton(onClick = { showDatePicker = true }) {
+                Icon(Icons.Filled.CalendarMonth, contentDescription = "Elegir fecha")
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            key = { it }
+        ) { page ->
+            val start = journalPageDayStart(todayStart, page)
+            val end = journalPageDayStart(todayStart, page + 1)
+            val entries = remember(notes, start, end) {
+                notes.filter { it.createdAt in start until end }.sortedBy { it.createdAt }
+            }
+            if (entries.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Sin entradas este día", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 8.dp,
+                        bottom = 8.dp + padding.calculateBottomPadding()
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(entries, key = { it.id }) { note -> noteCard(note) }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        // El DatePicker de Compose trabaja SIEMPRE en UTC: se convierte la
+        // fecha local actual a "medianoche UTC de ese día" para mostrarla, y
+        // la elegida se vuelve a pasar a fecha local antes de calcular la
+        // página (ver la convención en project-instructions.md).
+        val shownLocal = Calendar.getInstance().apply { timeInMillis = journalPageDayStart(todayStart, current) }
+        val initialUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+            clear()
+            set(shownLocal.get(Calendar.YEAR), shownLocal.get(Calendar.MONTH), shownLocal.get(Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialUtc)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    val picked = pickerState.selectedDateMillis
+                    showDatePicker = false
+                    if (picked != null) {
+                        val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = picked }
+                        val localStart = Calendar.getInstance().apply {
+                            clear()
+                            set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH))
+                        }.timeInMillis
+                        val daysBack = Math.round((todayStart - localStart).toDouble() / DAY_MILLIS).toInt()
+                        scope.launch { pagerState.scrollToPage((lastPage - daysBack).coerceIn(0, lastPage)) }
+                    }
+                }) { Text("Ir") }
+            },
+            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") } }
+        ) {
+            DatePicker(state = pickerState)
         }
     }
 }
