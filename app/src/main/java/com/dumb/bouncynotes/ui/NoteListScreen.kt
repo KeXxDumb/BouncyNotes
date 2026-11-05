@@ -22,20 +22,21 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
+import androidx.compose.ui.window.Dialog
+import androidx.compose.foundation.border
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.ViewDay
+import androidx.compose.material.icons.filled.ViewAgenda
 import com.dumb.bouncynotes.ui.components.GlassBottomBar
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsets
-import java.util.TimeZone
 import java.util.Date
 import java.util.Calendar
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.rememberDatePickerState
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DatePicker
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -194,6 +195,11 @@ fun NoteListScreen(
     // pestaña y volver.
     val journalTodayStart = remember { dayStartMillis(System.currentTimeMillis()) }
     val journalPagerState = rememberPagerState(initialPage = JOURNAL_PAGE_COUNT - 1) { JOURNAL_PAGE_COUNT }
+    // true = el Diario se ve como una sola lista con todas las entradas (más
+    // nuevas primero, agrupadas por día) en vez de una página por día. Vive
+    // acá porque el "+" también lo necesita: en la lista, una entrada nueva
+    // nace hoy, no en el último día visitado.
+    var journalListMode by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
     var fabExpanded by remember { mutableStateOf(false) }
@@ -481,7 +487,7 @@ fun NoteListScreen(
                                                 // Entrada de diario: nace en el día que se
                                                 // está viendo, con la hora actual (así
                                                 // se ordena bien dentro del día). 0 = hoy.
-                                                val day = if (separateTypes && type == NoteType.JOURNAL &&
+                                                val day = if (separateTypes && type == NoteType.JOURNAL && !journalListMode &&
                                                     journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
                                                 ) {
                                                     journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
@@ -573,7 +579,9 @@ fun NoteListScreen(
                         notes = currentNotes,
                         pagerState = journalPagerState,
                         todayStart = journalTodayStart,
-                        padding = padding
+                        padding = padding,
+                        listMode = journalListMode,
+                        onListModeChange = { journalListMode = it }
                     ) { note ->
                         NoteCard(
                             note = note,
@@ -771,114 +779,338 @@ private fun journalPageDayStart(todayStart: Long, page: Int): Long = Calendar.ge
     add(Calendar.DAY_OF_YEAR, -(JOURNAL_PAGE_COUNT - 1 - page))
 }.timeInMillis
 
-// Diario: una página por día (deslizable), con las entradas de ese día en
-// orden cronológico. El día de una entrada es el de su `createdAt` — por eso
-// no hace falta ninguna columna nueva en la base de datos. Arriba hay una
-// barra para ir al día anterior/siguiente, volver a hoy o elegir una fecha.
-@OptIn(ExperimentalMaterial3Api::class)
+// Diario, con dos vistas (se alternan con el botón de la derecha del encabezado):
+//  - Por día (la de siempre): una página por día, deslizable, con las entradas
+//    de ese día en orden cronológico. Arriba hay una barra para ir al día
+//    anterior/siguiente, volver a hoy o abrir el calendario (tocando la fecha).
+//  - Lista: TODAS las entradas juntas, las más nuevas primero, agrupadas por
+//    día con su fecha de encabezado (tocar un encabezado abre ese día).
+// El día de una entrada es el de su `createdAt` — por eso no hace falta ninguna
+// columna nueva en la base de datos.
 @Composable
 private fun JournalPager(
     notes: List<Note>,
     pagerState: PagerState,
     todayStart: Long,
     padding: PaddingValues,
+    listMode: Boolean,
+    onListModeChange: (Boolean) -> Unit,
     noteCard: @Composable (Note) -> Unit
 ) {
     val scope = rememberCoroutineScope()
-    var showDatePicker by remember { mutableStateOf(false) }
+    var showCalendar by remember { mutableStateOf(false) }
     val lastPage = JOURNAL_PAGE_COUNT - 1
     val current = pagerState.currentPage
     val dateFormat = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL) }
+    // Inicio de cada día que tiene al menos una entrada (para marcarlos en el
+    // calendario).
+    val daysWithEntries = remember(notes) { notes.map { dayStartMillis(it.createdAt) }.toSet() }
+
+    // Lleva al día indicado (inicio de día, hora local) y vuelve a la vista
+    // por día si se estaba en la lista.
+    fun goToDay(dayStart: Long) {
+        val daysBack = Math.round((todayStart - dayStart).toDouble() / DAY_MILLIS).toInt()
+        val page = (lastPage - daysBack).coerceIn(0, lastPage)
+        onListModeChange(false)
+        scope.launch { pagerState.scrollToPage(page) }
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = { scope.launch { pagerState.animateScrollToPage((current - 1).coerceAtLeast(0)) } },
-                enabled = current > 0
-            ) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Día anterior") }
-            Text(
-                dateFormat.format(Date(journalPageDayStart(todayStart, current))),
-                style = MaterialTheme.typography.titleSmall,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                modifier = Modifier.weight(1f)
-            )
-            if (current < lastPage) {
-                TextButton(onClick = { scope.launch { pagerState.animateScrollToPage(lastPage) } }) { Text("Hoy") }
+        if (listMode) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Todas las entradas",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { onListModeChange(false) }) {
+                    Icon(Icons.Filled.ViewDay, contentDescription = "Ver por día")
+                }
             }
-            IconButton(
-                onClick = { scope.launch { pagerState.animateScrollToPage((current + 1).coerceAtMost(lastPage)) } },
-                enabled = current < lastPage
-            ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Día siguiente") }
-            IconButton(onClick = { showDatePicker = true }) {
-                Icon(Icons.Filled.CalendarMonth, contentDescription = "Elegir fecha")
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { scope.launch { pagerState.animateScrollToPage((current - 1).coerceAtLeast(0)) } },
+                    enabled = current > 0
+                ) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Día anterior") }
+                // Tocar la fecha abre el calendario.
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showCalendar = true }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        dateFormat.format(Date(journalPageDayStart(todayStart, current))),
+                        style = MaterialTheme.typography.titleSmall,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        Icons.Filled.CalendarMonth,
+                        contentDescription = "Abrir calendario",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                if (current < lastPage) {
+                    TextButton(onClick = { scope.launch { pagerState.animateScrollToPage(lastPage) } }) { Text("Hoy") }
+                }
+                IconButton(
+                    onClick = { scope.launch { pagerState.animateScrollToPage((current + 1).coerceAtMost(lastPage)) } },
+                    enabled = current < lastPage
+                ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Día siguiente") }
+                IconButton(onClick = { onListModeChange(true) }) {
+                    Icon(Icons.Filled.ViewAgenda, contentDescription = "Ver todas en lista")
+                }
             }
         }
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            key = { it }
-        ) { page ->
-            val start = journalPageDayStart(todayStart, page)
-            val end = journalPageDayStart(todayStart, page + 1)
-            val entries = remember(notes, start, end) {
-                notes.filter { it.createdAt in start until end }.sortedBy { it.createdAt }
-            }
-            if (entries.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Sin entradas este día", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        if (listMode) {
+            if (notes.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Todavía no hay entradas", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
+                val grouped = remember(notes) {
+                    notes.groupBy { dayStartMillis(it.createdAt) }.entries.sortedByDescending { it.key }
+                }
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(
                         start = 8.dp,
                         end = 8.dp,
-                        top = 8.dp,
+                        top = 4.dp,
                         bottom = 8.dp + padding.calculateBottomPadding()
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(entries, key = { it.id }) { note -> noteCard(note) }
+                    grouped.forEach { (dayStart, entries) ->
+                        item(key = "day-$dayStart") {
+                            Text(
+                                dateFormat.format(Date(dayStart)),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { goToDay(dayStart) }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                            )
+                        }
+                        items(entries.sortedBy { it.createdAt }, key = { it.id }) { note -> noteCard(note) }
+                    }
+                }
+            }
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                key = { it }
+            ) { page ->
+                val start = journalPageDayStart(todayStart, page)
+                val end = journalPageDayStart(todayStart, page + 1)
+                val entries = remember(notes, start, end) {
+                    notes.filter { it.createdAt in start until end }.sortedBy { it.createdAt }
+                }
+                if (entries.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Sin entradas este día", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 8.dp,
+                            end = 8.dp,
+                            top = 8.dp,
+                            bottom = 8.dp + padding.calculateBottomPadding()
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(entries, key = { it.id }) { note -> noteCard(note) }
+                    }
                 }
             }
         }
     }
 
-    if (showDatePicker) {
-        // El DatePicker de Compose trabaja SIEMPRE en UTC: se convierte la
-        // fecha local actual a "medianoche UTC de ese día" para mostrarla, y
-        // la elegida se vuelve a pasar a fecha local antes de calcular la
-        // página (ver la convención en project-instructions.md).
-        val shownLocal = Calendar.getInstance().apply { timeInMillis = journalPageDayStart(todayStart, current) }
-        val initialUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-            clear()
-            set(shownLocal.get(Calendar.YEAR), shownLocal.get(Calendar.MONTH), shownLocal.get(Calendar.DAY_OF_MONTH))
-        }.timeInMillis
-        val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialUtc)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    val picked = pickerState.selectedDateMillis
-                    showDatePicker = false
-                    if (picked != null) {
-                        val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = picked }
-                        val localStart = Calendar.getInstance().apply {
-                            clear()
-                            set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH))
-                        }.timeInMillis
-                        val daysBack = Math.round((todayStart - localStart).toDouble() / DAY_MILLIS).toInt()
-                        scope.launch { pagerState.scrollToPage((lastPage - daysBack).coerceIn(0, lastPage)) }
-                    }
-                }) { Text("Ir") }
+    if (showCalendar) {
+        JournalCalendarDialog(
+            selectedDayStart = journalPageDayStart(todayStart, current),
+            todayStart = todayStart,
+            daysWithEntries = daysWithEntries,
+            onPick = { dayStart ->
+                showCalendar = false
+                goToDay(dayStart)
             },
-            dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") } }
+            onDismiss = { showCalendar = false }
+        )
+    }
+}
+
+// Calendario propio del Diario. Se hizo a mano (en vez de usar el DatePicker
+// de Material3) porque ese no permite marcar días individuales: acá cada día
+// que tiene al menos una entrada lleva un puntito debajo del número. El día
+// elegido va resaltado, hoy con borde, y los días futuros no se pueden tocar
+// (el Diario no tiene páginas más allá de hoy). Todo trabaja en fechas LOCALES
+// (inicio de día vía Calendar), así que no hay conversiones de UTC como con
+// el DatePicker.
+@Composable
+private fun JournalCalendarDialog(
+    selectedDayStart: Long,
+    todayStart: Long,
+    daysWithEntries: Set<Long>,
+    onPick: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    fun firstOfMonth(millis: Long): Long = Calendar.getInstance().apply {
+        timeInMillis = millis
+        set(Calendar.DAY_OF_MONTH, 1)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    var monthStart by remember { mutableStateOf(firstOfMonth(selectedDayStart)) }
+    val currentMonthStart = firstOfMonth(todayStart)
+    val monthCal = Calendar.getInstance().apply { timeInMillis = monthStart }
+    val firstDow = monthCal.firstDayOfWeek
+    val leadingBlanks = (monthCal.get(Calendar.DAY_OF_WEEK) - firstDow + 7) % 7
+    val daysInMonth = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val monthTitle = remember(monthStart) {
+        java.text.SimpleDateFormat("LLLL yyyy", java.util.Locale.getDefault())
+            .format(Date(monthStart))
+            .replaceFirstChar { it.uppercase() }
+    }
+    val weekdayLabels = remember {
+        val symbols = java.text.DateFormatSymbols.getInstance().shortWeekdays
+        (0 until 7).map { i -> symbols[(firstDow - 1 + i) % 7 + 1].take(1).uppercase() }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
-            DatePicker(state = pickerState)
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        monthStart = Calendar.getInstance().apply {
+                            timeInMillis = monthStart
+                            add(Calendar.MONTH, -1)
+                        }.timeInMillis
+                    }) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Mes anterior") }
+                    Text(
+                        monthTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            monthStart = Calendar.getInstance().apply {
+                                timeInMillis = monthStart
+                                add(Calendar.MONTH, 1)
+                            }.timeInMillis
+                        },
+                        enabled = monthStart < currentMonthStart
+                    ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Mes siguiente") }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    weekdayLabels.forEach { label ->
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                val cells = leadingBlanks + daysInMonth
+                val rows = (cells + 6) / 7
+                for (row in 0 until rows) {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        for (col in 0 until 7) {
+                            val day = row * 7 + col - leadingBlanks + 1
+                            if (day < 1 || day > daysInMonth) {
+                                Spacer(Modifier.weight(1f).height(44.dp))
+                            } else {
+                                val dayStart = Calendar.getInstance().apply {
+                                    timeInMillis = monthStart
+                                    add(Calendar.DAY_OF_MONTH, day - 1)
+                                }.timeInMillis
+                                val isSelected = dayStart == selectedDayStart
+                                val isToday = dayStart == todayStart
+                                val isFuture = dayStart > todayStart
+                                val hasEntries = dayStart in daysWithEntries
+                                Box(
+                                    modifier = Modifier.weight(1f).height(44.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                                            .then(
+                                                if (isToday && !isSelected) {
+                                                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                                } else Modifier
+                                            )
+                                            .clickable(enabled = !isFuture) { onPick(dayStart) },
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            day.toString(),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = when {
+                                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                                isFuture -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                                else -> MaterialTheme.colorScheme.onSurface
+                                            }
+                                        )
+                                        // Puntito: este día tiene entradas. Alto fijo
+                                        // (también cuando no hay punto) para que los
+                                        // números no se muevan de un día a otro.
+                                        Box(
+                                            modifier = Modifier
+                                                .padding(top = 2.dp)
+                                                .size(5.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (hasEntries) {
+                                                        if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                                        else MaterialTheme.colorScheme.primary
+                                                    } else Color.Transparent
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onPick(todayStart) }) { Text("Hoy") }
+                    TextButton(onClick = onDismiss) { Text("Cerrar") }
+                }
+            }
         }
     }
 }
