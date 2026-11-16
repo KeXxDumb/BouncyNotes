@@ -11,8 +11,10 @@ import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.text.input.TextFieldValue
+import com.dumb.bouncynotes.data.ChecklistItem
 import com.dumb.bouncynotes.data.ContentPart
 import com.dumb.bouncynotes.data.GalleryLayout
+import com.dumb.bouncynotes.data.buildChecklistTag
 import com.dumb.bouncynotes.data.buildGalleryTag
 import com.dumb.bouncynotes.data.buildImageTag
 import com.dumb.bouncynotes.data.buildVideoTag
@@ -24,6 +26,8 @@ internal sealed class EditSegment {
     data class ImageSeg(val fileName: String, val caption: String) : EditSegment()
     data class GallerySeg(val layout: GalleryLayout, val fileNames: List<String>, val captions: List<String> = emptyList()) : EditSegment()
     data class VideoSeg(val fileName: String, val caption: String) : EditSegment()
+    // Bloque de checklist dentro de una nota de texto.
+    data class ChecklistSeg(val items: List<ChecklistItem>) : EditSegment()
 }
 
 internal fun buildEditSegments(content: String): List<EditSegment> {
@@ -38,7 +42,8 @@ internal fun buildEditSegments(content: String): List<EditSegment> {
     // si la nota empieza o termina con una imagen.
     val segments = mutableListOf<EditSegment>()
     fun isMediaSeg(seg: EditSegment) =
-        seg is EditSegment.ImageSeg || seg is EditSegment.GallerySeg || seg is EditSegment.VideoSeg
+        seg is EditSegment.ImageSeg || seg is EditSegment.GallerySeg || seg is EditSegment.VideoSeg ||
+            seg is EditSegment.ChecklistSeg
     parts.forEach { part ->
         when (part) {
             is ContentPart.TextPart -> segments.add(EditSegment.TextSeg(TextFieldValue(part.text)))
@@ -59,6 +64,12 @@ internal fun buildEditSegments(content: String): List<EditSegment> {
                     segments.add(EditSegment.TextSeg(TextFieldValue("")))
                 }
                 segments.add(EditSegment.VideoSeg(part.fileName, part.caption))
+            }
+            is ContentPart.ChecklistPart -> {
+                if (segments.isEmpty() || isMediaSeg(segments.last())) {
+                    segments.add(EditSegment.TextSeg(TextFieldValue("")))
+                }
+                segments.add(EditSegment.ChecklistSeg(part.items))
             }
         }
     }
@@ -96,6 +107,7 @@ internal fun segmentsToContent(segments: List<EditSegment>): String =
             is EditSegment.ImageSeg -> buildImageTag(seg.fileName, seg.caption)
             is EditSegment.GallerySeg -> buildGalleryTag(seg.layout, seg.fileNames, seg.captions)
             is EditSegment.VideoSeg -> buildVideoTag(seg.fileName, seg.caption)
+            is EditSegment.ChecklistSeg -> buildChecklistTag(seg.items)
         }
     }
 
@@ -112,5 +124,7 @@ internal fun noteLineScore(segments: List<EditSegment>): Int =
             is EditSegment.ImageSeg -> 5
             is EditSegment.GallerySeg -> seg.fileNames.size * 5
             is EditSegment.VideoSeg -> 5
+            // Cada elemento de la checklist es una línea (mínimo una).
+            is EditSegment.ChecklistSeg -> seg.items.size.coerceAtLeast(1)
         }
     }

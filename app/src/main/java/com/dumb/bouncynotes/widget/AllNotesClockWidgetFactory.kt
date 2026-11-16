@@ -91,6 +91,14 @@ class AllNotesClockWidgetFactory(private val context: Context, private val widge
             .filterIsInstance<ContentPart.TextPart>()
             .map { it.text.trim() }
             .firstOrNull { it.isNotEmpty() }
+        // Sin texto pero con una checklist embebida: se resume como una
+        // checklist normal ("x/y marcados") en vez de "(Sin contenido de texto)".
+        if (firstText == null) {
+            val items = parseNoteContent(note.content)
+                .filterIsInstance<ContentPart.ChecklistPart>()
+                .flatMap { it.items }
+            if (items.isNotEmpty()) return "${items.count { it.checked }}/${items.size} marcados"
+        }
         val line = firstText?.lineSequence()?.firstOrNull()?.trim()
         // Línea de una sola línea, truncada por la propia fila del widget:
         // no vale la pena parsear los marcadores a spans acá (como sí hace

@@ -119,6 +119,13 @@ fun LazyListScope.NoteContentView(context: Context, content: String, onImageClic
                     )
                 }
             }
+            is ContentPart.ChecklistPart -> {
+                item(key = "checklist-$partIndex") {
+                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                        ChecklistEditor(items = part.items, readOnly = true, onItemsChange = {})
+                    }
+                }
+            }
             is ContentPart.VideoPart -> {
                 val occurrenceIndex = imageOccurrence
                 imageOccurrence++

@@ -9,6 +9,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import com.dumb.bouncynotes.data.joinPages
+import com.dumb.bouncynotes.data.splitPages
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -66,6 +73,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
@@ -336,6 +344,24 @@ fun NoteEditScreen(
     // cambiaba el widget de "última nota editada"). También es
     // rememberSaveable para sobrevivir a una rotación igual que `current`.
     var savedSnapshot by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = initialType)) }
+    // CUADERNO (nota JOURNAL): una nota con varias páginas separadas por
+    // [[page]] en el contenido. El editor trabaja SIEMPRE una página a la vez:
+    // `segments` son los de la página `pageIndex`, y cada cambio se escribe de
+    // vuelta en su lugar dentro del contenido completo. Las demás notas son de
+    // una sola página (su contenido entero), sin ningún cambio de comportamiento.
+    var pageIndex by rememberSaveable { mutableStateOf(0) }
+    fun currentPageContent(): String =
+        if (current.type == NoteType.JOURNAL) {
+            splitPages(current.content).let { it[pageIndex.coerceIn(0, it.lastIndex)] }
+        } else current.content
+    // Reemplaza el texto de la página actual dentro del contenido completo.
+    fun setCurrentPageContent(pageText: String) {
+        current = if (current.type == NoteType.JOURNAL) {
+            val all = splitPages(current.content).toMutableList()
+            all[pageIndex.coerceIn(0, all.lastIndex)] = pageText
+            current.copy(content = joinPages(all))
+        } else current.copy(content = pageText)
+    }
     var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
@@ -444,6 +470,10 @@ fun NoteEditScreen(
     // (y no dentro de ChecklistEditor) porque ahora el botón de agregar está
     // en la barra inferior, fuera del editor.
     var checklistFocusRequest by remember { mutableStateOf<Int?>(null) }
+    // Igual que checklistFocusRequest pero para una checklist EMBEBIDA en una
+    // nota de texto: (índice del segmento, índice del elemento) al que hay que
+    // darle el foco una sola vez.
+    var checklistBlockFocus by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // Barra de scroll rápida (NoteScrubber): solo se muestra tras un scroll
     // moderadamente rápido, y se oculta 1.5 s después de dejar de scrollear
     // (ver el LaunchedEffect y el nestedScroll más abajo).
@@ -478,13 +508,13 @@ fun NoteEditScreen(
                 }
             }
         }
-        segments = buildEditSegments(current.content)
+        segments = buildEditSegments(currentPageContent())
         loaded = true
     }
 
     fun updateContentFromSegments(newSegments: List<EditSegment>) {
         segments = newSegments
-        current = current.copy(content = segmentsToContent(newSegments))
+        setCurrentPageContent(segmentsToContent(newSegments))
     }
 
     fun insertMediaSegmentAtActiveSegment(mediaSeg: EditSegment) {
@@ -519,7 +549,7 @@ fun NoteEditScreen(
                 if (prefix.isNotEmpty()) {
                     newSegments.add(insertAt, EditSegment.TextSeg(TextFieldValue(prefix)))
                     insertAt++
-                } else if (newSegments.getOrNull(insertAt - 1).let { it is EditSegment.ImageSeg || it is EditSegment.GallerySeg }) {
+                } else if (newSegments.getOrNull(insertAt - 1).let { it is EditSegment.ImageSeg || it is EditSegment.GallerySeg || it is EditSegment.ChecklistSeg }) {
                     // Si justo antes ya hay otra imagen/grupo (p. ej. se insertaron
                     // dos seguidos), dejamos un tramo de texto vacío como separador
                     // para que no queden pegados sin forma de escribir entre medio.
@@ -557,6 +587,15 @@ fun NoteEditScreen(
 
     fun insertVideoAtActiveSegment(fileName: String) {
         insertMediaSegmentAtActiveSegment(EditSegment.VideoSeg(fileName, ""))
+    }
+
+    // Inserta un bloque de checklist (con un elemento vacío) en el punto donde
+    // está el cursor y le da el foco. insertMediaSegmentAtActiveSegment deja
+    // activeSegmentIndex en el tramo de texto de DESPUÉS del bloque (en los
+    // dos caminos que tiene), así que el bloque quedó justo antes.
+    fun insertChecklistAtActiveSegment() {
+        insertMediaSegmentAtActiveSegment(EditSegment.ChecklistSeg(listOf(ChecklistItem())))
+        checklistBlockFocus = (activeSegmentIndex - 1) to 0
     }
 
     // --- Deshacer al borrar una imagen/video/grupo, con un toast arriba ---
@@ -600,9 +639,13 @@ fun NoteEditScreen(
             is EditSegment.ImageSeg -> listOf(seg.fileName)
             is EditSegment.GallerySeg -> seg.fileNames
             is EditSegment.VideoSeg -> listOf(seg.fileName)
+            // Una checklist no tiene archivos que borrar; se reusa igual el
+            // mismo "Deshacer" de 5 segundos de las imágenes.
+            is EditSegment.ChecklistSeg -> emptyList()
             is EditSegment.TextSeg -> return
         }
         val label = when (seg) {
+            is EditSegment.ChecklistSeg -> "Checklist eliminada"
             is EditSegment.ImageSeg -> "Imagen eliminada"
             is EditSegment.VideoSeg -> "Video eliminado"
             is EditSegment.GallerySeg -> if (seg.fileNames.size == 1) {
@@ -642,6 +685,46 @@ fun NoteEditScreen(
                 confirmPendingMediaDelete()
             }
         }
+    }
+
+    // --- Páginas de un cuaderno ---
+    var showPagePicker by remember { mutableStateOf(false) }
+    var showDeletePageConfirm by remember { mutableStateOf(false) }
+    var showDateDialog by remember { mutableStateOf(false) }
+
+    // Va a la página idx: lo que se escribió en la actual ya está en `current`
+    // (se sincroniza en cada cambio), así que solo hay que armar los segmentos de
+    // la nueva. Se cierra un posible "Deshacer" pendiente porque guarda los
+    // segmentos de UNA página concreta y restaurarlos en otra la corrompería.
+    fun goToPage(idx: Int) {
+        val all = splitPages(current.content)
+        val target = idx.coerceIn(0, all.lastIndex)
+        pendingDeleteJob?.cancel()
+        confirmPendingMediaDelete()
+        focusManager.clearFocus(force = true)
+        pageIndex = target
+        segments = buildEditSegments(all[target])
+        activeSegmentIndex = 0
+        scope.launch { editLazyListState.scrollToItem(0) }
+    }
+
+    fun addPageAfterCurrent() {
+        val all = splitPages(current.content).toMutableList()
+        val at = pageIndex.coerceIn(0, all.lastIndex) + 1
+        all.add(at, "")
+        current = current.copy(content = joinPages(all))
+        goToPage(at)
+    }
+
+    fun deleteCurrentPage() {
+        val all = splitPages(current.content).toMutableList()
+        if (all.size <= 1) return
+        val at = pageIndex.coerceIn(0, all.lastIndex)
+        // Los archivos de la página se borran de verdad (esta acción pide confirmación).
+        extractImageFileNames(all[at]).forEach { ImageStorage.deleteFile(context, it) }
+        all.removeAt(at)
+        current = current.copy(content = joinPages(all))
+        goToPage(at.coerceAtMost(all.lastIndex))
     }
 
     fun undoPendingMediaDelete() {
@@ -893,7 +976,10 @@ fun NoteEditScreen(
         if (!loaded) return
         val note = current
         if (isNoteEmpty(note)) return
-        if (note.copy(createdAt = 0L, updatedAt = 0L) == savedSnapshot.copy(createdAt = 0L, updatedAt = 0L)) return
+        // En una nota ya guardada createdAt SÍ cuenta (cambiar la fecha de un
+        // cuaderno es un cambio real); en una nueva se ignora (ver arriba).
+        fun Note.dirtyKey() = copy(updatedAt = 0L, createdAt = if (id == 0L) 0L else createdAt)
+        if (note.dirtyKey() == savedSnapshot.dirtyKey()) return
         savedSnapshot = note
         viewModel.save(note) { id ->
             if (current.id == 0L) current = current.copy(id = id)
@@ -994,19 +1080,23 @@ fun NoteEditScreen(
     }
 
     fun applyViewerContentChange(newContent: String) {
-        current = current.copy(content = newContent)
+        setCurrentPageContent(newContent)
         if (isEditing) segments = buildEditSegments(newContent)
     }
 
     if (viewerStartPos != null) {
-        val fileNames = extractImageFileNames(current.content)
+        // El visor navega los medios de la PÁGINA actual (en un cuaderno, las
+        // demás páginas no se ven en pantalla), con los mismos índices planos
+        // que usa cada segmento del editor.
+        val pageText = currentPageContent()
+        val fileNames = extractImageFileNames(pageText)
         // Antes esto se armaba a mano (filtrando ContentPart.ImagePart y
         // buscando captions aparte), lo cual además de repetir lógica que ya
         // vive en extractMediaRefs, no sabía distinguir cuáles archivos eran
         // video (por eso el visor siempre intentaba mostrarlos como imagen).
         // extractMediaRefs ya devuelve, en el mismo orden plano que usa
         // removeImageOccurrence, si cada ítem es imagen o video.
-        val mediaRefs = extractMediaRefs(current.content)
+        val mediaRefs = extractMediaRefs(pageText)
         val images = mediaRefs.map { ref ->
             NoteImage(
                 path = "${ImageStorage.imagesDir(context)}/${ref.fileName}",
@@ -1026,7 +1116,7 @@ fun NoteEditScreen(
             canDelete = isEditing,
             onDelete = { pos ->
                 if (pos < fileNames.size) ImageStorage.deleteFile(context, fileNames[pos])
-                applyViewerContentChange(removeImageOccurrence(current.content, pos))
+                applyViewerContentChange(removeImageOccurrence(pageText, pos))
                 viewerStartPos = null
             },
             onSaveToDevice = { pos, callback ->
@@ -1296,7 +1386,78 @@ fun NoteEditScreen(
     // línea del contenido queda tapada justo esa diferencia — es lo que
     // reportó el amigo del usuario.
     val bottomBarNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val bottomBarCompensation = bottomBarHeight + bottomBarNavInset + 12.dp
+    // En un cuaderno hay una barra de páginas extra (44dp) arriba de la barra de herramientas.
+    val pageBarHeight = if (current.type == NoteType.JOURNAL) 44.dp else 0.dp
+    val bottomBarCompensation = bottomBarHeight + bottomBarNavInset + pageBarHeight + 12.dp
+
+    if (showPagePicker) {
+        val pageTotal = splitPages(current.content).size
+        val pageCurrent = pageIndex.coerceIn(0, pageTotal - 1)
+        AlertDialog(
+            onDismissRequest = { showPagePicker = false },
+            title = { Text("Páginas") },
+            text = {
+                Column {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(pageTotal) { i ->
+                            FilterChip(
+                                selected = i == pageCurrent,
+                                onClick = {
+                                    showPagePicker = false
+                                    goToPage(i)
+                                },
+                                label = { Text("${i + 1}") }
+                            )
+                        }
+                    }
+                    if (isEditing) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            showPagePicker = false
+                            addPageAfterCurrent()
+                        }) { Text("Nueva página después de esta") }
+                        if (pageTotal > 1) {
+                            TextButton(onClick = {
+                                showPagePicker = false
+                                showDeletePageConfirm = true
+                            }) { Text("Eliminar esta página") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPagePicker = false }) { Text("Cerrar") } }
+        )
+    }
+    if (showDeletePageConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeletePageConfirm = false },
+            title = { Text("¿Eliminar la página ${pageIndex + 1}?") },
+            text = { Text("Se borra su contenido y sus imágenes o videos. No se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeletePageConfirm = false
+                    deleteCurrentPage()
+                }) { Text("Eliminar") }
+            },
+            dismissButton = { TextButton(onClick = { showDeletePageConfirm = false }) { Text("Cancelar") } }
+        )
+    }
+    if (showDateDialog) {
+        val todayStart = remember { dayStartMillis(System.currentTimeMillis()) }
+        JournalCalendarDialog(
+            selectedDayStart = dayStartMillis(current.createdAt),
+            todayStart = todayStart,
+            daysWithEntries = emptySet(),
+            onPick = { dayStart ->
+                showDateDialog = false
+                // Se cambia el DÍA conservando la hora del cuaderno (así sigue
+                // ordenándose igual dentro de ese día).
+                val timeOfDay = current.createdAt - dayStartMillis(current.createdAt)
+                current = current.copy(createdAt = dayStart + timeOfDay)
+            },
+            onDismiss = { showDateDialog = false }
+        )
+    }
 
     Scaffold(
         // containerColor transparente cuando se muestra el fondo de la nota:
@@ -1315,7 +1476,18 @@ fun NoteEditScreen(
                             java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL)
                                 .format(java.util.Date(current.createdAt))
                         }
-                        Text(journalDate, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                        // Tocar la fecha abre el calendario para cambiar el día del cuaderno.
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { showDateDialog = true }
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(journalDate, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Filled.CalendarMonth, contentDescription = "Cambiar fecha", modifier = Modifier.size(18.dp))
+                        }
                     }
                 },
                 navigationIcon = {
@@ -1363,6 +1535,20 @@ fun NoteEditScreen(
             // extiende SU PROPIO fondo semitransparente hasta ahí, dejando
             // los botones arriba de esa franja — el tinte se ve continuo
             // hasta el borde real de la pantalla, sin hueco.
+            Column {
+                if (current.type == NoteType.JOURNAL && loaded) {
+                    JournalPageBar(
+                        pageIndex = pageIndex.coerceIn(0, splitPages(current.content).lastIndex),
+                        pageCount = splitPages(current.content).size,
+                        isEditing = isEditing,
+                        onPrev = { goToPage(pageIndex - 1) },
+                        onNext = {
+                            val last = splitPages(current.content).lastIndex
+                            if (pageIndex < last) goToPage(pageIndex + 1) else addPageAfterCurrent()
+                        },
+                        onPick = { showPagePicker = true }
+                    )
+                }
             GlassBottomBar(
                     height = bottomBarHeight,
                     navBarInset = bottomBarNavInset,
@@ -1420,6 +1606,11 @@ fun NoteEditScreen(
                         checklistFocusRequest = newIndex
                     }) {
                         Icon(Icons.Filled.Add, contentDescription = "Agregar elemento")
+                    }
+                }
+                if (current.type != NoteType.CHECKLIST && isEditing) {
+                    IconButton(onClick = { insertChecklistAtActiveSegment() }) {
+                        Icon(Icons.Filled.Checklist, contentDescription = "Insertar checklist")
                     }
                 }
                 if (current.type != NoteType.CHECKLIST && isEditing) {
@@ -1501,7 +1692,7 @@ fun NoteEditScreen(
                 IconButton(onClick = {
                     val goingToEdit = !isEditing
                     if (goingToEdit && current.type != NoteType.CHECKLIST) {
-                        segments = buildEditSegments(current.content)
+                        segments = buildEditSegments(currentPageContent())
                     } else if (!goingToEdit) {
                         // BUG encontrado (relacionado con el de arriba, aunque es
                         // un mecanismo distinto): pasar a modo vista sin sacar el
@@ -1546,12 +1737,13 @@ fun NoteEditScreen(
                     }
                 }
             }
+            }
         }
     ) { padding ->
         val readModeGesture = if (!isEditing) {
             Modifier.pointerInput(Unit) {
                 detectDoubleTapToEdit {
-                    segments = buildEditSegments(current.content)
+                    segments = buildEditSegments(currentPageContent())
                     isEditing = true
                 }
             }
@@ -1732,7 +1924,7 @@ fun NoteEditScreen(
                                                     is EditSegment.ImageSeg -> 1
                                                     is EditSegment.GallerySeg -> s.fileNames.size
                                                     is EditSegment.VideoSeg -> 1
-                                                    is EditSegment.TextSeg -> 0
+                                                    is EditSegment.TextSeg, is EditSegment.ChecklistSeg -> 0
                                                 }
                                             }
                                             // Se usa la relación de aspecto REAL de la imagen
@@ -1811,7 +2003,7 @@ fun NoteEditScreen(
                                             is EditSegment.ImageSeg -> 1
                                             is EditSegment.GallerySeg -> s.fileNames.size
                                             is EditSegment.VideoSeg -> 1
-                                            is EditSegment.TextSeg -> 0
+                                            is EditSegment.TextSeg, is EditSegment.ChecklistSeg -> 0
                                         }
                                     }
                                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -1860,6 +2052,53 @@ fun NoteEditScreen(
                                         )
                                     }
                                 }
+                                is EditSegment.ChecklistSeg -> {
+                                    // Checklist embebida: ChecklistEditor ya es una Column
+                                    // sin scroll propio (el scroll es el de esta LazyColumn),
+                                    // así que se reusa tal cual, también en modo lectura
+                                    // (readOnly) donde las casillas se pueden marcar.
+                                    Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                                        ChecklistEditor(
+                                            items = segment.items,
+                                            checkboxPosition = settings.checkboxPosition,
+                                            readOnly = !isEditing,
+                                            extraBottomInset = bottomBarCompensation,
+                                            focusRequestIndex = checklistBlockFocus?.takeIf { it.first == index }?.second,
+                                            onFocusRequestHandled = { checklistBlockFocus = null },
+                                            onItemsChange = { newItems ->
+                                                val sorted = if (settings.autoSortChecked) newItems.sortedBy { it.checked } else newItems
+                                                val newSegments = segments.toMutableList()
+                                                newSegments[index] = EditSegment.ChecklistSeg(sorted)
+                                                updateContentFromSegments(newSegments)
+                                            }
+                                        )
+                                        if (isEditing) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                TextButton(onClick = {
+                                                    val newList = segment.items + ChecklistItem()
+                                                    val finalList = if (settings.autoSortChecked) newList.sortedBy { it.checked } else newList
+                                                    val newIndex = if (settings.autoSortChecked) {
+                                                        newList.count { !it.checked } - 1
+                                                    } else {
+                                                        newList.size - 1
+                                                    }
+                                                    val newSegments = segments.toMutableList()
+                                                    newSegments[index] = EditSegment.ChecklistSeg(finalList)
+                                                    updateContentFromSegments(newSegments)
+                                                    checklistBlockFocus = index to newIndex
+                                                }) {
+                                                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Agregar elemento")
+                                                }
+                                                Spacer(Modifier.weight(1f))
+                                                TextButton(onClick = { deleteMediaSegment(index) }) {
+                                                    Text("Quitar checklist")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 is EditSegment.VideoSeg -> {
                                     // Índice plano de este video (misma lógica que
                                     // ImageSeg/GallerySeg de arriba), para abrir el
@@ -1869,7 +2108,7 @@ fun NoteEditScreen(
                                             is EditSegment.ImageSeg -> 1
                                             is EditSegment.GallerySeg -> s.fileNames.size
                                             is EditSegment.VideoSeg -> 1
-                                            is EditSegment.TextSeg -> 0
+                                            is EditSegment.TextSeg, is EditSegment.ChecklistSeg -> 0
                                         }
                                     }
                                     Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -2111,3 +2350,43 @@ fun NoteEditScreen(
 //    DatePicker siempre abierto.
 //  - TimeWheelPicker.kt (+ NumberWheel + wheelStep, usado por el anterior)
 
+
+
+// Barra de páginas de un cuaderno, arriba de la barra de herramientas: página
+// anterior, "Página X de N" (tocar para saltar a una página o gestionarlas) y
+// siguiente. Al final del cuaderno, en modo edición, "siguiente" agrega una
+// página nueva (como pasar de hoja en un libro de Minecraft); en modo lectura
+// queda deshabilitado.
+@Composable
+private fun JournalPageBar(
+    pageIndex: Int,
+    pageCount: Int,
+    isEditing: Boolean,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onPick: () -> Unit
+) {
+    val isLast = pageIndex >= pageCount - 1
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.25f))
+            .height(44.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onPrev, enabled = pageIndex > 0) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "Página anterior")
+        }
+        TextButton(onClick = onPick) {
+            Text("Página ${pageIndex + 1} de $pageCount")
+        }
+        IconButton(onClick = onNext, enabled = !isLast || isEditing) {
+            if (isLast) {
+                Icon(Icons.Filled.Add, contentDescription = "Nueva página")
+            } else {
+                Icon(Icons.Filled.ChevronRight, contentDescription = "Página siguiente")
+            }
+        }
+    }
+}

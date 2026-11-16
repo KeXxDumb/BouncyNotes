@@ -65,6 +65,14 @@ fun buildNoteWidgetRows(context: Context, note: Note): List<NoteWidgetRow> {
             is ContentPart.GalleryPart -> part.fileNames.forEach { addImage(it) }
             // Un widget no puede reproducir video ni decodificar un frame
             // para miniatura acá.
+            is ContentPart.ChecklistPart -> {
+                val lines = part.items.filter { it.text.isNotBlank() }
+                if (lines.isNotEmpty()) {
+                    result += NoteWidgetRow.TextRow(
+                        lines.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + it.text }
+                    )
+                }
+            }
             is ContentPart.VideoPart -> result += NoteWidgetRow.TextRow(
                 "🎬 " + part.caption.ifBlank { "Video" } + " — abrí la nota para verlo"
             )

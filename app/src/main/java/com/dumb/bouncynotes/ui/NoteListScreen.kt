@@ -155,6 +155,7 @@ import com.dumb.bouncynotes.data.RightEdgeSwipeAction
 import com.dumb.bouncynotes.data.TitleMode
 import com.dumb.bouncynotes.data.WelcomeMessages
 import com.dumb.bouncynotes.data.parseNoteContent
+import com.dumb.bouncynotes.data.splitPages
 import com.dumb.bouncynotes.data.stripFormattingMarkers
 import com.dumb.bouncynotes.ui.components.rememberVideoThumbnail
 import com.dumb.bouncynotes.ui.components.NoteBackgroundImage
@@ -478,7 +479,7 @@ fun NoteListScreen(
                                             text = when (type) {
                                                 NoteType.TEXT -> "Nueva nota"
                                                 NoteType.CHECKLIST -> "Nuevo checklist"
-                                                NoteType.JOURNAL -> "Nueva entrada"
+                                                NoteType.JOURNAL -> "Nuevo cuaderno"
                                             },
                                             selected = false,
                                             onClick = {
@@ -759,10 +760,10 @@ private fun NoteTypeBottomBar(selected: NoteType, onSelect: (NoteType) -> Unit) 
 // (índice COUNT-1) es HOY; deslizar a la derecha va a días anteriores. Es un
 // Pager "perezoso", así que tener miles de páginas no cuesta nada.
 private const val JOURNAL_PAGE_COUNT = 3651
-private const val DAY_MILLIS = 24L * 60 * 60 * 1000
+internal const val DAY_MILLIS = 24L * 60 * 60 * 1000
 
 // Inicio (00:00 local) del día al que pertenece un instante.
-private fun dayStartMillis(timeMillis: Long): Long = Calendar.getInstance().apply {
+internal fun dayStartMillis(timeMillis: Long): Long = Calendar.getInstance().apply {
     timeInMillis = timeMillis
     set(Calendar.HOUR_OF_DAY, 0)
     set(Calendar.MINUTE, 0)
@@ -822,7 +823,7 @@ private fun JournalPager(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Todas las entradas",
+                    "Todos los cuadernos",
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f)
                 )
@@ -879,7 +880,7 @@ private fun JournalPager(
         if (listMode) {
             if (notes.isEmpty()) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("Todavía no hay entradas", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Todavía no hay cuadernos", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 val grouped = remember(notes) {
@@ -925,7 +926,7 @@ private fun JournalPager(
                 }
                 if (entries.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Sin entradas este día", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Sin cuadernos este día", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 } else {
                     LazyColumn(
@@ -967,7 +968,7 @@ private fun JournalPager(
 // (inicio de día vía Calendar), así que no hay conversiones de UTC como con
 // el DatePicker.
 @Composable
-private fun JournalCalendarDialog(
+internal fun JournalCalendarDialog(
     selectedDayStart: Long,
     todayStart: Long,
     daysWithEntries: Set<Long>,
@@ -1404,7 +1405,14 @@ private const val PREVIEW_MEDIA_LINE_COST = 3
 // (sin mover el resto de contenido de lugar).
 @Composable
 private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: Boolean, context: android.content.Context) {
-    val allParts = remember(note.content) { parseNoteContent(note.content) }
+    // Un cuaderno (JOURNAL) muestra solo su PRIMERA página como vista previa,
+    // más un contador de páginas al final.
+    val pageCount = remember(note.content, note.type) {
+        if (note.type == NoteType.JOURNAL) splitPages(note.content).size else 1
+    }
+    val allParts = remember(note.content, note.type) {
+        parseNoteContent(if (note.type == NoteType.JOURNAL) splitPages(note.content).first() else note.content)
+    }
 
     val firstImagePartIndex = remember(allParts, showFirstImage, showMedia) {
         if (!showMedia || !showFirstImage) {
@@ -1460,6 +1468,19 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
                 Spacer(Modifier.height(6.dp))
                 remaining -= PREVIEW_MEDIA_LINE_COST
                 if (partIndex == firstImagePartIndex) firstImageAlreadyShown = true
+            }
+            is ContentPart.ChecklistPart -> {
+                // Resumen de la checklist: una línea por elemento (con ☐/☑),
+                // recortado al presupuesto de líneas que quede.
+                val lines = part.items.filter { it.text.isNotBlank() }
+                if (lines.isEmpty()) continue
+                Text(
+                    text = lines.joinToString("\n") { (if (it.checked) "☑ " else "☐ ") + stripFormattingMarkers(it.text) },
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = remaining.coerceAtLeast(1),
+                    overflow = TextOverflow.Ellipsis
+                )
+                remaining -= lines.size.coerceAtMost(remaining.coerceAtLeast(1))
             }
             is ContentPart.GalleryPart -> {
                 if (!showMedia) continue
@@ -1553,6 +1574,15 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
             }
             else -> Unit
         }
+    }
+
+    if (pageCount > 1) {
+        Text(
+            text = "📖 $pageCount páginas",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
     }
 }
 

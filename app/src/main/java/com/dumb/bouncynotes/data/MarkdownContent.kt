@@ -10,7 +10,15 @@ import android.text.style.TypefaceSpan
 // [[img:nombre_de_archivo.jpg|descripción opcional]]           -> una sola imagen (o gif)
 // [[gallery:LAYOUT:archivo1.jpg,archivo2.jpg,archivo3.jpg]]    -> varias imágenes agrupadas
 // [[video:nombre_de_archivo.mp4|descripción opcional]]         -> un video
+// [[checklist]]\n[ ] tarea\n[x] tarea hecha\n[[/checklist]]            -> un bloque de checklist (varias líneas)
 // Los archivos siempre viven en ImageStorage.imagesDir(context), así que solo se guarda el nombre.
+// [[page]]                                                      -> separador de PÁGINAS de un cuaderno (solo notas JOURNAL)
+// Un "cuaderno" es UNA sola nota de tipo JOURNAL cuyo contenido son varias páginas separadas
+// por [[page]]: cada página es contenido normal (texto, imágenes, videos, checklists). Así no
+// hace falta ninguna columna nueva en Room. Una nota sin [[page]] es un cuaderno de 1 página.
+// El bloque de checklist es de varias líneas A PROPÓSITO (en vez de un solo tag con
+// los ítems escapados): queda legible en el texto crudo, la búsqueda encuentra el
+// texto de los ítems y un ítem puede llevar cualquier carácter menos un salto de línea.
 
 // Formatos de vista disponibles para un grupo de imágenes. Configurable en
 // Ajustes (formato por defecto) y elegido en el momento al insertar el grupo.
@@ -19,6 +27,13 @@ enum class GalleryLayout(val label: String) {
     GRID_3("Cuadrícula de 3"),
     CAROUSEL("Carrusel horizontal")
 }
+
+const val PAGE_BREAK = "[[page]]"
+
+// Páginas de un cuaderno (siempre al menos una, aunque esté vacía).
+fun splitPages(content: String): List<String> = content.split(PAGE_BREAK)
+
+fun joinPages(pages: List<String>): String = pages.joinToString(PAGE_BREAK)
 
 sealed class ContentPart {
     data class TextPart(val text: String) : ContentPart()
@@ -32,6 +47,8 @@ sealed class ContentPart {
         fun captionAt(index: Int): String = captions.getOrElse(index) { "" }
     }
     data class VideoPart(val fileName: String, val caption: String) : ContentPart()
+    // Checklist embebida dentro de una nota de texto (ver buildChecklistTag).
+    data class ChecklistPart(val items: List<ChecklistItem>) : ContentPart()
 }
 
 // Un ítem cualquiera de la lista PLANA de medios de una nota (para el visor a
@@ -42,11 +59,12 @@ data class MediaRef(val fileName: String, val isVideo: Boolean, val caption: Str
 private val imageTagRegex = Regex("""\[\[img:([^|\]]+)\|([^\]]*)\]\]""")
 private val galleryTagRegex = Regex("""\[\[gallery:([A-Z0-9_]+):([^\]]*)\]\]""")
 private val videoTagRegex = Regex("""\[\[video:([^|\]]+)\|([^\]]*)\]\]""")
+private val checklistTagRegex = Regex("""\[\[checklist\]\]([\s\S]*?)\[\[/checklist\]\]""")
 // Combinada, para recorrer el contenido UNA sola vez y mantener el orden real
-// de aparición de imágenes sueltas, grupos y videos mezclados. Orden de
-// grupos de captura: 1-2 imagen, 3-4 grupo, 5-6 video.
+// de aparición de imágenes sueltas, grupos, videos y checklists mezclados.
+// Orden de grupos de captura: 1-2 imagen, 3-4 grupo, 5-6 video, 7 checklist.
 private val combinedTagRegex = Regex(
-    """${imageTagRegex.pattern}|${galleryTagRegex.pattern}|${videoTagRegex.pattern}"""
+    """${imageTagRegex.pattern}|${galleryTagRegex.pattern}|${videoTagRegex.pattern}|${checklistTagRegex.pattern}"""
 )
 
 fun buildImageTag(fileName: String, caption: String = ""): String =
@@ -68,16 +86,48 @@ fun buildGalleryTag(layout: GalleryLayout, fileNames: List<String>, captions: Li
 fun buildVideoTag(fileName: String, caption: String = ""): String =
     "[[video:$fileName|$caption]]"
 
+// Cada ítem en su línea: "[ ] texto" / "[x] texto". El texto de un ítem no
+// puede contener saltos de línea (se pasan a espacio) ni "[[" (se separa con
+// un espacio) para que nunca se pueda confundir con el cierre del bloque.
+fun buildChecklistTag(items: List<ChecklistItem>): String {
+    val lines = items.joinToString("\n") { item ->
+        val text = item.text.replace("\r", " ").replace("\n", " ").replace("[[", "[ [")
+        (if (item.checked) "[x] " else "[ ] ") + text
+    }
+    return "[[checklist]]\n$lines\n[[/checklist]]"
+}
+
+private fun parseChecklistBody(body: String): List<ChecklistItem> {
+    val inner = body.removePrefix("\n").removeSuffix("\n")
+    if (inner.isEmpty()) return emptyList()
+    return inner.split("\n").map { raw ->
+        val line = raw.trimEnd('\r')
+        when {
+            line.startsWith("[x] ") || line.startsWith("[X] ") -> ChecklistItem(line.drop(4), true)
+            line.startsWith("[ ] ") -> ChecklistItem(line.drop(4), false)
+            line == "[x]" || line == "[X]" -> ChecklistItem("", true)
+            line == "[ ]" -> ChecklistItem("", false)
+            else -> ChecklistItem(line, false)
+        }
+    }
+}
+
 private fun parseGalleryLayout(raw: String): GalleryLayout =
     runCatching { GalleryLayout.valueOf(raw) }.getOrDefault(GalleryLayout.GRID_2)
 
 private fun matchKind(value: String): String = when {
     value.startsWith("[[img:") -> "img"
     value.startsWith("[[gallery:") -> "gallery"
+    value.startsWith("[[checklist]]") -> "checklist"
     else -> "video"
 }
 
-fun parseNoteContent(content: String): List<ContentPart> {
+fun parseNoteContent(rawContent: String): List<ContentPart> {
+    // Para todo lo que recorre la nota ENTERA (medios a borrar/limpiar, si está
+    // vacía, vistas previas) las páginas de un cuaderno se aplanan: el
+    // separador pasa a ser un salto de línea. El editor NO usa esto sobre el
+    // contenido completo: trabaja una página a la vez (ver splitPages).
+    val content = if (rawContent.contains(PAGE_BREAK)) rawContent.replace(PAGE_BREAK, "\n") else rawContent
     val result = mutableListOf<ContentPart>()
     var lastIndex = 0
     for (match in combinedTagRegex.findAll(content)) {
@@ -94,6 +144,7 @@ fun parseNoteContent(content: String): List<ContentPart> {
                     result.add(ContentPart.GalleryPart(parseGalleryLayout(match.groupValues[3]), fileNames, captions))
                 }
             }
+            "checklist" -> result.add(ContentPart.ChecklistPart(parseChecklistBody(match.groupValues[7])))
             else -> result.add(ContentPart.VideoPart(fileName = match.groupValues[5], caption = match.groupValues[6]))
         }
         lastIndex = match.range.last + 1
@@ -113,7 +164,7 @@ fun extractImageFileNames(content: String): List<String> =
             is ContentPart.ImagePart -> listOf(part.fileName)
             is ContentPart.GalleryPart -> part.fileNames
             is ContentPart.VideoPart -> listOf(part.fileName)
-            is ContentPart.TextPart -> emptyList()
+            is ContentPart.TextPart, is ContentPart.ChecklistPart -> emptyList()
         }
     }
 
@@ -128,7 +179,7 @@ fun extractMediaRefs(content: String): List<MediaRef> =
                 MediaRef(name, isVideo = false, caption = part.captionAt(i))
             }
             is ContentPart.VideoPart -> listOf(MediaRef(part.fileName, isVideo = true, caption = part.caption))
-            is ContentPart.TextPart -> emptyList()
+            is ContentPart.TextPart, is ContentPart.ChecklistPart -> emptyList()
         }
     }
 
@@ -162,6 +213,8 @@ fun updateImageCaption(content: String, occurrenceIndex: Int, newCaption: String
                 sb.append(match.value)
                 flatIndex++
             }
+            // Una checklist no tiene medios: se copia tal cual y no cuenta en el índice plano.
+            "checklist" -> sb.append(match.value)
             else -> {
                 val layout = match.groupValues[3]
                 val rawEntries = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -200,6 +253,7 @@ fun removeImageOccurrence(content: String, occurrenceIndex: Int): String {
                 }
                 flatIndex++
             }
+            "checklist" -> sb.append(match.value)
             else -> {
                 val layout = match.groupValues[3]
                 val rawEntries = match.groupValues[4].split(",").map { it.trim() }.filter { it.isNotEmpty() }
@@ -302,7 +356,13 @@ fun isNoteEmpty(note: Note): Boolean {
     return when (note.type) {
         NoteType.TEXT, NoteType.JOURNAL -> {
             if (extractImageFileNames(note.content).isNotEmpty()) return false
-            parseNoteContent(note.content).filterIsInstance<ContentPart.TextPart>().all { it.text.isBlank() }
+            parseNoteContent(note.content).all { part ->
+                when (part) {
+                    is ContentPart.TextPart -> part.text.isBlank()
+                    is ContentPart.ChecklistPart -> part.items.all { it.text.isBlank() }
+                    else -> true
+                }
+            }
         }
         NoteType.CHECKLIST -> note.checklistItems.all { it.text.isBlank() }
     }
@@ -323,6 +383,9 @@ fun buildPlainTextPreview(note: Note): String = when (note.type) {
             is ContentPart.ImagePart -> "📷 "
             is ContentPart.GalleryPart -> "🖼️ "
             is ContentPart.VideoPart -> "🎬 "
+            is ContentPart.ChecklistPart -> part.items.joinToString("\n", prefix = "\n", postfix = "\n") { item ->
+                (if (item.checked) "☑ " else "☐ ") + item.text
+            }
         }
     }.trim()
 }
