@@ -185,11 +185,17 @@ fun NoteListScreen(
     // Cada tipo vive en su propio lugar. Con una búsqueda activa se ignora
     // el filtro por tipo, para que la búsqueda encuentre en todos lados.
     var typeTabName by rememberSaveable { mutableStateOf(NoteType.TEXT.name) }
-    val typeTab = NoteType.valueOf(typeTabName)
+    // CHECKLIST ya no es una pestaña (ver BouncyNotesApp.convertLegacyChecklistNotes):
+    // un valor viejo guardado se trata como Notas.
+    val typeTab = NoteType.valueOf(typeTabName).let { if (it == NoteType.CHECKLIST) NoteType.TEXT else it }
     // Con el ajuste "todos los tipos en una sola lista", no hay pestañas ni
     // filtro por tipo: todo se mezcla como antes.
     val separateTypes = !settings.allTypesInOneList
-    val notes: List<Note>? = if (query.isNotBlank() || !separateTypes) allNotes else allNotes?.filter { it.type == typeTab }
+    val notes: List<Note>? = if (query.isNotBlank() || !separateTypes) allNotes else allNotes?.filter {
+        // Notas = todo lo que no es cuaderno (incluye alguna checklist vieja que
+        // todavía no se haya convertido).
+        if (typeTab == NoteType.TEXT) it.type != NoteType.JOURNAL else it.type == typeTab
+    }
 
     // Diario: una página por día, de hoy hacia atrás (ver JournalPager).
     // Se hoistea acá para que la página elegida sobreviva a cambiar de
@@ -467,7 +473,7 @@ fun NoteListScreen(
                                     val createTypes = if (separateTypes) {
                                         listOf(typeTab)
                                     } else {
-                                        listOf(NoteType.JOURNAL, NoteType.CHECKLIST, NoteType.TEXT)
+                                        listOf(NoteType.JOURNAL, NoteType.TEXT)
                                     }
                                     createTypes.forEach { type ->
                                         FabMenuItem(
@@ -725,7 +731,6 @@ fun NoteListScreen(
 
 private val TYPE_TABS = listOf(
     Triple(NoteType.TEXT, Icons.Filled.Notes, "Notas"),
-    Triple(NoteType.CHECKLIST, Icons.Filled.Checklist, "Checklists"),
     Triple(NoteType.JOURNAL, Icons.Filled.Book, "Diario")
 )
 

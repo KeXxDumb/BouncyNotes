@@ -35,6 +35,19 @@ fun splitPages(content: String): List<String> = content.split(PAGE_BREAK)
 
 fun joinPages(pages: List<String>): String = pages.joinToString(PAGE_BREAK)
 
+// Cada página puede llevar SU PROPIA fecha como primera línea: "[[date:<epoch millis>]]".
+// Sin esa línea, la página usa la fecha de la nota (createdAt). El editor trabaja con
+// el cuerpo SIN la línea de fecha (pageBodyOf) y la vuelve a poner al guardar.
+private val pageDateRegex = Regex("""^\[\[date:(\d+)\]\]\n?""")
+private val anyPageDateRegex = Regex("""\[\[date:\d+\]\]\n?""")
+
+fun pageDateOf(page: String): Long? = pageDateRegex.find(page)?.groupValues?.get(1)?.toLongOrNull()
+
+fun pageBodyOf(page: String): String = pageDateRegex.replaceFirst(page, "")
+
+fun withPageDate(body: String, millis: Long?): String =
+    if (millis == null) body else "[[date:$millis]]\n$body"
+
 sealed class ContentPart {
     data class TextPart(val text: String) : ContentPart()
     data class ImagePart(val fileName: String, val caption: String) : ContentPart()
@@ -127,7 +140,9 @@ fun parseNoteContent(rawContent: String): List<ContentPart> {
     // vacía, vistas previas) las páginas de un cuaderno se aplanan: el
     // separador pasa a ser un salto de línea. El editor NO usa esto sobre el
     // contenido completo: trabaja una página a la vez (ver splitPages).
-    val content = if (rawContent.contains(PAGE_BREAK)) rawContent.replace(PAGE_BREAK, "\n") else rawContent
+    var content = if (rawContent.contains(PAGE_BREAK)) rawContent.replace(PAGE_BREAK, "\n") else rawContent
+    // Las líneas de fecha de las páginas son metadatos, no texto de la nota.
+    if (content.contains("[[date:")) content = content.replace(anyPageDateRegex, "")
     val result = mutableListOf<ContentPart>()
     var lastIndex = 0
     for (match in combinedTagRegex.findAll(content)) {

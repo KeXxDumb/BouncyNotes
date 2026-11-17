@@ -11,6 +11,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import com.dumb.bouncynotes.data.joinPages
 import com.dumb.bouncynotes.data.splitPages
+import com.dumb.bouncynotes.data.withPageDate
+import com.dumb.bouncynotes.data.pageDateOf
+import com.dumb.bouncynotes.data.pageBodyOf
+import com.dumb.bouncynotes.data.buildChecklistTag
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -34,6 +38,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -331,9 +337,14 @@ fun NoteEditScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     var loaded by rememberSaveable { mutableStateOf(false) }
+    // Las checklists ya no son un tipo de nota: pedir una nueva (p. ej. desde el
+    // widget de acciones rápidas) crea una nota de texto que arranca con un
+    // bloque de checklist con un elemento vacío.
+    val newNoteType = if (initialType == NoteType.CHECKLIST) NoteType.TEXT else initialType
+    val newNoteContent = if (initialType == NoteType.CHECKLIST) buildChecklistTag(listOf(ChecklistItem())) else ""
     var current by rememberSaveable(stateSaver = NoteStateSaver) {
         mutableStateOf(
-            Note(type = initialType).let { if (initialCreatedAt > 0L) it.copy(createdAt = initialCreatedAt) else it }
+            Note(type = newNoteType, content = newNoteContent).let { if (initialCreatedAt > 0L) it.copy(createdAt = initialCreatedAt) else it }
         )
     }
     // Última versión de la nota que se sabe que está en la base de datos (o
@@ -343,26 +354,44 @@ fun NoteEditScreen(
     // volver ya figuraba como "modificada" (subía al tope de la lista y
     // cambiaba el widget de "última nota editada"). También es
     // rememberSaveable para sobrevivir a una rotación igual que `current`.
-    var savedSnapshot by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = initialType)) }
+    var savedSnapshot by rememberSaveable(stateSaver = NoteStateSaver) { mutableStateOf(Note(type = newNoteType, content = newNoteContent)) }
     // CUADERNO (nota JOURNAL): una nota con varias páginas separadas por
     // [[page]] en el contenido. El editor trabaja SIEMPRE una página a la vez:
     // `segments` son los de la página `pageIndex`, y cada cambio se escribe de
     // vuelta en su lugar dentro del contenido completo. Las demás notas son de
     // una sola página (su contenido entero), sin ningún cambio de comportamiento.
     var pageIndex by rememberSaveable { mutableStateOf(0) }
+    // Cuerpo de la página actual (SIN su línea de fecha, ver pageBodyOf).
     fun currentPageContent(): String =
         if (current.type == NoteType.JOURNAL) {
-            splitPages(current.content).let { it[pageIndex.coerceIn(0, it.lastIndex)] }
+            splitPages(current.content).let { pageBodyOf(it[pageIndex.coerceIn(0, it.lastIndex)]) }
         } else current.content
-    // Reemplaza el texto de la página actual dentro del contenido completo.
+    // Fecha de la página actual: la suya, o la de la nota si no tiene.
+    fun currentPageDate(): Long =
+        if (current.type == NoteType.JOURNAL) {
+            splitPages(current.content).let { pageDateOf(it[pageIndex.coerceIn(0, it.lastIndex)]) } ?: current.createdAt
+        } else current.createdAt
+    // Reemplaza el cuerpo de la página actual dentro del contenido completo,
+    // conservando su línea de fecha.
     fun setCurrentPageContent(pageText: String) {
         current = if (current.type == NoteType.JOURNAL) {
             val all = splitPages(current.content).toMutableList()
-            all[pageIndex.coerceIn(0, all.lastIndex)] = pageText
+            val i = pageIndex.coerceIn(0, all.lastIndex)
+            all[i] = withPageDate(pageText, pageDateOf(all[i]))
             current.copy(content = joinPages(all))
         } else current.copy(content = pageText)
     }
-    var segments by remember { mutableStateOf(listOf<EditSegment>(EditSegment.TextSeg(TextFieldValue("")))) }
+    // Cambia la fecha de la página actual. La de la PRIMERA página es además la
+    // fecha del cuaderno (createdAt): con ella se lo ubica en el Diario.
+    fun setCurrentPageDate(millis: Long) {
+        val all = splitPages(current.content).toMutableList()
+        val i = pageIndex.coerceIn(0, all.lastIndex)
+        all[i] = withPageDate(pageBodyOf(all[i]), millis)
+        current = current.copy(
+            content = joinPages(all),
+            createdAt = if (i == 0) millis else current.createdAt
+        )
+    }
     var activeSegmentIndex by remember { mutableStateOf(0) }
     var unlockedThisNote by remember { mutableStateOf(false) }
     // pendingCameraFileName y showImageSourceDialog se eliminaron: ya no hay
@@ -696,14 +725,25 @@ fun NoteEditScreen(
     // (se sincroniza en cada cambio), así que solo hay que armar los segmentos de
     // la nueva. Se cierra un posible "Deshacer" pendiente porque guarda los
     // segmentos de UNA página concreta y restaurarlos en otra la corrompería.
+    // Animación de pasar de página: la página nueva entra deslizándose desde el
+    // lado hacia el que se avanza (derecha al ir adelante, izquierda al volver)
+    // mientras aparece. Se aplica como graphicsLayer sobre la lista (ver abajo).
+    val pageAnim = remember { Animatable(1f) }
+    var pageDir by remember { mutableStateOf(1) }
+
     fun goToPage(idx: Int) {
         val all = splitPages(current.content)
         val target = idx.coerceIn(0, all.lastIndex)
+        pageDir = if (target >= pageIndex) 1 else -1
+        scope.launch {
+            pageAnim.snapTo(0f)
+            pageAnim.animateTo(1f, tween(260))
+        }
         pendingDeleteJob?.cancel()
         confirmPendingMediaDelete()
         focusManager.clearFocus(force = true)
         pageIndex = target
-        segments = buildEditSegments(all[target])
+        segments = buildEditSegments(pageBodyOf(all[target]))
         activeSegmentIndex = 0
         scope.launch { editLazyListState.scrollToItem(0) }
     }
@@ -711,7 +751,7 @@ fun NoteEditScreen(
     fun addPageAfterCurrent() {
         val all = splitPages(current.content).toMutableList()
         val at = pageIndex.coerceIn(0, all.lastIndex) + 1
-        all.add(at, "")
+        all.add(at, withPageDate("", System.currentTimeMillis()))
         current = current.copy(content = joinPages(all))
         goToPage(at)
     }
@@ -1410,12 +1450,12 @@ fun NoteEditScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = {
+                        showPagePicker = false
+                        addPageAfterCurrent()
+                    }) { Text("Nueva página después de esta") }
                     if (isEditing) {
-                        Spacer(Modifier.height(8.dp))
-                        TextButton(onClick = {
-                            showPagePicker = false
-                            addPageAfterCurrent()
-                        }) { Text("Nueva página después de esta") }
                         if (pageTotal > 1) {
                             TextButton(onClick = {
                                 showPagePicker = false
@@ -1445,15 +1485,15 @@ fun NoteEditScreen(
     if (showDateDialog) {
         val todayStart = remember { dayStartMillis(System.currentTimeMillis()) }
         JournalCalendarDialog(
-            selectedDayStart = dayStartMillis(current.createdAt),
+            selectedDayStart = dayStartMillis(currentPageDate()),
             todayStart = todayStart,
             daysWithEntries = emptySet(),
             onPick = { dayStart ->
                 showDateDialog = false
-                // Se cambia el DÍA conservando la hora del cuaderno (así sigue
-                // ordenándose igual dentro de ese día).
-                val timeOfDay = current.createdAt - dayStartMillis(current.createdAt)
-                current = current.copy(createdAt = dayStart + timeOfDay)
+                // Se cambia el DÍA de la página conservando su hora.
+                val pageDate = currentPageDate()
+                val timeOfDay = pageDate - dayStartMillis(pageDate)
+                setCurrentPageDate(dayStart + timeOfDay)
             },
             onDismiss = { showDateDialog = false }
         )
@@ -1468,34 +1508,30 @@ fun NoteEditScreen(
         containerColor = if (settings.showBackgroundInNotes) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = {
-                    // En una entrada de diario, el título de la barra es su
-                    // fecha (la de la página del día donde vive).
-                    if (current.type == NoteType.JOURNAL) {
-                        val journalDate = remember(current.createdAt) {
-                            java.text.DateFormat.getDateInstance(java.text.DateFormat.FULL)
-                                .format(java.util.Date(current.createdAt))
-                        }
-                        // Tocar la fecha abre el calendario para cambiar el día del cuaderno.
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { showDateDialog = true }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(journalDate, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                            Spacer(Modifier.width(6.dp))
-                            Icon(Icons.Filled.CalendarMonth, contentDescription = "Cambiar fecha", modifier = Modifier.size(18.dp))
-                        }
-                    }
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = {
                         persistIfDirty()
                         onBack()
                     }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+                // Color/etiquetas y recordatorio (antes en la barra inferior, solo
+                // en edición): ahora arriba, siempre disponibles en una nota que
+                // no está en la papelera.
+                actions = {
+                    if (current.deletedAt == null) {
+                        IconButton(onClick = { showMoreSheet = true }) {
+                            Icon(Icons.Filled.Palette, contentDescription = "Color y etiquetas")
+                        }
+                        IconButton(onClick = { showReminderSheet = true }) {
+                            Icon(
+                                if (current.reminderAt != null) Icons.Filled.Alarm else Icons.Outlined.AlarmAdd,
+                                contentDescription = "Recordatorio",
+                                tint = if (current.reminderAt != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                            )
+                        }
                     }
                 },
                 // Mismo criterio que la barra superior de la lista de notas
@@ -1641,18 +1677,7 @@ fun NoteEditScreen(
                         Icon(Icons.Filled.SubdirectoryArrowRight, contentDescription = "Subpunto")
                     }
                 }
-                if (isEditing) {
-                    IconButton(onClick = { showMoreSheet = true }) {
-                        Icon(Icons.Filled.Palette, contentDescription = "Color y etiquetas")
-                    }
-                    IconButton(onClick = { showReminderSheet = true }) {
-                        Icon(
-                            if (current.reminderAt != null) Icons.Filled.Alarm else Icons.Outlined.AlarmAdd,
-                            contentDescription = "Recordatorio",
-                            tint = if (current.reminderAt != null) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                        )
-                    }
-                } else {
+                if (!isEditing) {
                     // Antes vivían en la barra de arriba; ahora están acá abajo
                     // junto con el resto de acciones sobre la nota ya guardada
                     // (siguen apareciendo solo en modo vista, no en edición).
@@ -1868,13 +1893,41 @@ fun NoteEditScreen(
                     // el cambio de modo completo; el "destello" de pantalla
                     // (showModeFlash, más abajo en este archivo) sigue dando
                     // aviso de que el modo cambió.
+                    // En modo vista el texto se puede seleccionar y copiar sin entrar a edición.
+                    SelectableWhen(enabled = !isEditing) {
                     LazyColumn(
                         state = editLazyListState,
                         modifier = Modifier
                             .fillMaxSize()
+                            .graphicsLayer {
+                                val p = pageAnim.value
+                                translationX = (1f - p) * pageDir * size.width * 0.25f
+                                alpha = 0.3f + 0.7f * p
+                            }
                             .imePadding()
                             .then(readModeGesture)
                     ) {
+                        // Fecha de ESTA página, arriba y en formato corto (como el
+                        // "Página 1 de 2" de un libro). Tocarla abre el calendario.
+                        if (current.type == NoteType.JOURNAL) {
+                            item(key = "page-date") {
+                                val shortDate = java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT)
+                                    .format(java.util.Date(currentPageDate()))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Row(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { showDateDialog = true }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Filled.CalendarMonth, contentDescription = "Cambiar fecha", modifier = Modifier.size(14.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(shortDate, style = MaterialTheme.typography.labelLarge)
+                                    }
+                                }
+                            }
+                        }
                         itemsIndexed(segments, key = { index, _ -> index }) { index, segment ->
                             when (segment) {
                                 is EditSegment.TextSeg -> {
@@ -2151,6 +2204,7 @@ fun NoteEditScreen(
                             Spacer(Modifier.height(bottomBarCompensation))
                         }
                     }
+                    }
                 }
                 // Slider vertical para navegar rápido por la nota — antes
                 // era un botón que solo saltaba al final; ahora se puede
@@ -2354,9 +2408,8 @@ fun NoteEditScreen(
 
 // Barra de páginas de un cuaderno, arriba de la barra de herramientas: página
 // anterior, "Página X de N" (tocar para saltar a una página o gestionarlas) y
-// siguiente. Al final del cuaderno, en modo edición, "siguiente" agrega una
-// página nueva (como pasar de hoja en un libro de Minecraft); en modo lectura
-// queda deshabilitado.
+// siguiente. Al final del cuaderno "siguiente" agrega una página nueva (como
+// pasar de hoja en un libro de Minecraft), también en modo lectura.
 @Composable
 private fun JournalPageBar(
     pageIndex: Int,
@@ -2381,7 +2434,7 @@ private fun JournalPageBar(
         TextButton(onClick = onPick) {
             Text("Página ${pageIndex + 1} de $pageCount")
         }
-        IconButton(onClick = onNext, enabled = !isLast || isEditing) {
+        IconButton(onClick = onNext) {
             if (isLast) {
                 Icon(Icons.Filled.Add, contentDescription = "Nueva página")
             } else {
@@ -2389,4 +2442,12 @@ private fun JournalPageBar(
             }
         }
     }
+}
+
+
+// SelectionContainer solo cuando `enabled` (modo vista); en edición los campos de
+// texto ya tienen su propia selección y no debe haber un contenedor encima.
+@Composable
+private fun SelectableWhen(enabled: Boolean, content: @Composable () -> Unit) {
+    if (enabled) SelectionContainer(content = content) else content()
 }

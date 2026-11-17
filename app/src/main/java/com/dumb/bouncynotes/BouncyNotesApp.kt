@@ -10,7 +10,9 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteDatabase
+import com.dumb.bouncynotes.data.NoteType
 import com.dumb.bouncynotes.data.SettingsRepository
+import com.dumb.bouncynotes.data.buildChecklistTag
 import com.dumb.bouncynotes.data.extractMediaRefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +35,34 @@ class BouncyNotesApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        applicationScope.launch { convertLegacyChecklistNotes() }
         applicationScope.launch { cleanupOrphanMediaFiles() }
+    }
+
+    // Las checklists ya no son un tipo de nota aparte: una nota normal puede
+    // llevar bloques de checklist. Las notas CHECKLIST que ya existían (incluidas
+    // las de la papelera) se convierten a notas de texto cuyo contenido es un
+    // bloque de checklist con los mismos elementos y casillas. Se guarda con
+    // upsert directo (NO con el repositorio) para conservar updatedAt y que no
+    // salten todas al tope de la lista. No es un cambio de esquema de Room.
+    // Corre en cada arranque pero solo toca algo si todavía queda alguna (por
+    // ejemplo, una importada desde un respaldo viejo).
+    private suspend fun convertLegacyChecklistNotes() {
+        try {
+            val dao = NoteDatabase.getInstance(this).noteDao()
+            dao.getAll().first().filter { it.type == NoteType.CHECKLIST }.forEach { note ->
+                val block = buildChecklistTag(note.checklistItems)
+                dao.upsert(
+                    note.copy(
+                        type = NoteType.TEXT,
+                        content = if (note.content.isBlank()) block else note.content.trimEnd() + "\n" + block,
+                        checklistItems = emptyList()
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            // Best-effort: si falla, las checklists siguen funcionando como antes.
+        }
     }
 
     // Junta los nombres de archivo que SÍ están en uso (referenciados por
