@@ -14,6 +14,7 @@ import com.dumb.bouncynotes.data.splitPages
 import com.dumb.bouncynotes.data.splitRawAt
 import com.dumb.bouncynotes.ui.components.processInlineTextFieldEdit
 import com.dumb.bouncynotes.ui.components.InlineMarkupTransformation
+import com.dumb.bouncynotes.ui.components.inlineStrikeRanges
 import com.dumb.bouncynotes.data.toggleListPrefix
 import com.dumb.bouncynotes.data.toggleInlineStyle
 import com.dumb.bouncynotes.data.activeInlineStyle
@@ -1607,7 +1608,9 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
                     }
-                } else {
+                } else if (!isEditing) {
+                    // El botón de borrar solo está en modo lectura: en edición ya hay
+                    // demasiados botones juntos y es fácil tocarlo sin querer.
                     IconButton(onClick = {
                         if (settings.confirmBeforeDelete) {
                             showDeleteConfirm = true
@@ -1958,6 +1961,7 @@ fun NoteEditScreen(
                                                 updateContentFromSegments(newSegments)
                                             },
                                             visualTransformation = InlineMarkupTransformation,
+                                            strikeRangesOf = ::inlineStrikeRanges,
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .then(

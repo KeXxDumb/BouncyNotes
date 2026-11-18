@@ -27,8 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
@@ -112,7 +115,11 @@ fun FlatTextField(
     // formato, ver InlineMarkupTransformation). El TextFieldValue sigue siendo
     // el texto crudo; el layout de texto (y por lo tanto el rectángulo del
     // cursor de más abajo) está en el espacio ya transformado.
-    visualTransformation: VisualTransformation = VisualTransformation.None
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    // Opcional: rangos del texto visible que hay que dibujar tachados a mano (ver
+    // inlineStrikeRanges). Se dibuja acá y no con TextDecoration porque el
+    // subrayado de composición del teclado pisaba al tachado mientras se escribía.
+    strikeRangesOf: ((String) -> List<IntRange>)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -120,6 +127,10 @@ fun FlatTextField(
     val textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
     var textLayoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     val extraBottomInsetPx = with(LocalDensity.current) { extraBottomInset.toPx() }
+
+    val strikeRanges = remember(value.text, strikeRangesOf) { strikeRangesOf?.invoke(value.text) ?: emptyList() }
+    val strikeColor = MaterialTheme.colorScheme.onSurface
+    val strikeStrokePx = with(LocalDensity.current) { 1.5.dp.toPx() }
 
     val requesterModifier = if (bringIntoViewRequester != null) {
         Modifier.bringIntoViewRequester(bringIntoViewRequester)
@@ -146,7 +157,20 @@ fun FlatTextField(
                 if (value.text.isEmpty() && placeholder != null) {
                     placeholder()
                 }
-                innerTextField()
+                // Las líneas de tachado se dibujan SOBRE el texto, en las
+                // coordenadas del propio layout de texto (por eso van en una caja
+                // que mide exactamente lo que el campo interno).
+                Box(
+                    modifier = Modifier.drawWithContent {
+                        drawContent()
+                        val layoutResult = textLayoutResult
+                        if (strikeRanges.isNotEmpty() && layoutResult != null) {
+                            drawStrikeLines(layoutResult, strikeRanges, strikeColor, strikeStrokePx)
+                        }
+                    }
+                ) {
+                    innerTextField()
+                }
             }
         }
     )
@@ -215,4 +239,34 @@ fun CompactCaptionField(
             }
         }
     )
+}
+
+
+// Dibuja una línea de tachado por cada tramo de línea que ocupa cada rango.
+// Un rango puede partirse en varias líneas de texto (ajuste de línea), y cada
+// línea se mide con su caja real. La línea queda un poco por encima de la
+// línea base, a la altura donde va un tachado normal.
+private fun DrawScope.drawStrikeLines(
+    layout: TextLayoutResult,
+    ranges: List<IntRange>,
+    color: Color,
+    strokePx: Float
+) {
+    val length = layout.layoutInput.text.length
+    for (range in ranges) {
+        val start = range.first.coerceIn(0, length)
+        val endExclusive = (range.last + 1).coerceIn(0, length)
+        if (endExclusive <= start) continue
+        val firstLine = layout.getLineForOffset(start)
+        val lastLine = layout.getLineForOffset(endExclusive - 1)
+        for (line in firstLine..lastLine) {
+            val lineStart = maxOf(start, layout.getLineStart(line))
+            val lineEnd = minOf(endExclusive, layout.getLineEnd(line, visibleEnd = true))
+            if (lineEnd <= lineStart) continue
+            val left = layout.getBoundingBox(lineStart).left
+            val right = layout.getBoundingBox(lineEnd - 1).right
+            val y = layout.getLineBaseline(line) - (layout.getLineBottom(line) - layout.getLineTop(line)) * 0.28f
+            drawLine(color = color, start = Offset(left, y), end = Offset(right, y), strokeWidth = strokePx)
+        }
+    }
 }

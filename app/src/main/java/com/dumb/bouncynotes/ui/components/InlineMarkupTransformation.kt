@@ -12,7 +12,6 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextDecoration
 import com.dumb.bouncynotes.data.InlineLayout
 import com.dumb.bouncynotes.data.InlinePending
 import com.dumb.bouncynotes.data.InlineStyle
@@ -52,7 +51,13 @@ object InlineMarkupTransformation : VisualTransformation {
 private fun spanStyleFor(style: InlineStyle): SpanStyle = when (style) {
     InlineStyle.BOLD -> SpanStyle(fontWeight = FontWeight.Bold)
     InlineStyle.ITALIC -> SpanStyle(fontStyle = FontStyle.Italic)
-    InlineStyle.STRIKE -> SpanStyle(textDecoration = TextDecoration.LineThrough)
+    // El tachado NO se aplica como TextDecoration: mientras el teclado está
+    // componiendo una palabra, Compose le pone subrayado a esa palabra, y como
+    // subrayado y tachado son el MISMO atributo (textDecoration), el subrayado
+    // pisaba al tachado y la palabra se veía normal hasta terminar de
+    // escribirla. El tachado se dibuja a mano en FlatTextField (ver
+    // inlineStrikeRanges), por encima del texto, sin importar la composición.
+    InlineStyle.STRIKE -> SpanStyle()
     InlineStyle.CODE -> SpanStyle(fontFamily = FontFamily.Monospace, background = Color.Gray.copy(alpha = 0.2f))
 }
 
@@ -76,4 +81,18 @@ fun processInlineTextFieldEdit(
         outcome.selEnd == new.selection.end
     val value = if (same) new else TextFieldValue(outcome.raw, TextRange(outcome.selStart, outcome.selEnd))
     return value to outcome.pending
+}
+
+// Rangos (en offsets del texto VISIBLE, el mismo espacio que el layout de
+// texto del campo) que llevan tachado, para que FlatTextField los dibuje.
+fun inlineStrikeRanges(raw: String): List<IntRange> {
+    val layout = InlineLayout(raw)
+    return layout.spans
+        .filter { it.style == InlineStyle.STRIKE }
+        .map { span ->
+            val start = layout.rawToVisible[span.contentStart]
+            val end = layout.rawToVisible[span.contentEnd]
+            start until end
+        }
+        .filter { !it.isEmpty() }
 }

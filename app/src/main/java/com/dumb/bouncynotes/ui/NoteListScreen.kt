@@ -22,6 +22,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
+import com.dumb.bouncynotes.data.pageDateOf
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.border
 import androidx.compose.material3.Surface
@@ -181,21 +188,13 @@ fun NoteListScreen(
     val labelFilter by viewModel.labelFilter.collectAsState()
     val labels by viewModel.allLabels.collectAsState()
 
-    // Pestaña de tipo de la barra inferior (Notas / Checklists / Diario).
-    // Cada tipo vive en su propio lugar. Con una búsqueda activa se ignora
-    // el filtro por tipo, para que la búsqueda encuentre en todos lados.
-    var typeTabName by rememberSaveable { mutableStateOf(NoteType.TEXT.name) }
-    // CHECKLIST ya no es una pestaña (ver BouncyNotesApp.convertLegacyChecklistNotes):
-    // un valor viejo guardado se trata como Notas.
-    val typeTab = NoteType.valueOf(typeTabName).let { if (it == NoteType.CHECKLIST) NoteType.TEXT else it }
-    // Con el ajuste "todos los tipos en una sola lista", no hay pestañas ni
-    // filtro por tipo: todo se mezcla como antes.
-    val separateTypes = !settings.allTypesInOneList
-    val notes: List<Note>? = if (query.isNotBlank() || !separateTypes) allNotes else allNotes?.filter {
-        // Notas = todo lo que no es cuaderno (incluye alguna checklist vieja que
-        // todavía no se haya convertido).
-        if (typeTab == NoteType.TEXT) it.type != NoteType.JOURNAL else it.type == typeTab
-    }
+    // Todas las notas y los cuadernos van JUNTOS en la lista normal. El Diario
+    // (un cuaderno por día, con calendario) es una vista aparte que se activa con
+    // el botón "Diario" de la barra inferior.
+    val notes: List<Note>? = allNotes
+    var journalView by rememberSaveable { mutableStateOf(false) }
+    var showCreateMenu by remember { mutableStateOf(false) }
+    var showLabelMenu by remember { mutableStateOf(false) }
 
     // Diario: una página por día, de hoy hacia atrás (ver JournalPager).
     // Se hoistea acá para que la página elegida sobreviva a cambiar de
@@ -209,7 +208,6 @@ fun NoteListScreen(
     var journalListMode by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
-    var fabExpanded by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
 
@@ -221,11 +219,7 @@ fun NoteListScreen(
     var noteToDeleteForever by remember { mutableStateOf<Note?>(null) }
     var showEmptyTrashConfirm by remember { mutableStateOf(false) }
 
-    // Con el menú desplegado, el botón "atrás" del sistema lo cierra en
-    // vez de salir de la app.
-    BackHandler(enabled = fabExpanded) { fabExpanded = false }
-
-    LaunchedEffect(viewMode, labelFilter, typeTabName) {
+    LaunchedEffect(viewMode, labelFilter) {
         selectedIds = emptySet()
     }
 
@@ -306,7 +300,7 @@ fun NoteListScreen(
                                 // La barra lateral ya no existe: sus opciones
                                 // viven en el menú del botón flotante "+", así
                                 // que este gesto lo despliega.
-                                RightEdgeSwipeAction.SIDEBAR -> fabExpanded = true
+                                RightEdgeSwipeAction.SIDEBAR -> showCreateMenu = true
                                 RightEdgeSwipeAction.NOTHING -> Unit
                             }
                         }
@@ -415,145 +409,54 @@ fun NoteListScreen(
                 HorizontalDivider()
                 }
             },
+            // La barra inferior reúne todo lo que antes tenía el botón flotante "+":
+            // vistas (notas, diario, privadas, papelera), etiquetas, ajustes y crear
+            // nota/cuaderno. Se oculta en modo selección, igual que antes el botón.
             bottomBar = {
-                if (separateTypes) {
-                    NoteTypeBottomBar(selected = typeTab, onSelect = { typeTabName = it.name })
-                }
-            },
-            floatingActionButtonPosition = if (settings.fabOnLeft) FabPosition.Start else FabPosition.End,
-            floatingActionButton = {
                 if (!selectionMode) {
-                    val fabRotation by animateFloatAsState(
-                        targetValue = if (fabExpanded) 45f else 0f,
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
-                        label = "fabRotation"
-                    )
-                    val fabSide = if (settings.fabOnLeft) Alignment.Start else Alignment.End
-                    Column(horizontalAlignment = fabSide) {
-                        // Menú del botón "+", con dos plegables:
-                        // 1) VERTICAL (arriba del "+"): crear nota/checklist,
-                        //    más las etiquetas (filtro) si hay. Con muchas
-                        //    etiquetas puede no entrar en pantalla, por eso
-                        //    hace scroll con un alto máximo.
-                        // 2) HORIZONTAL (a la izquierda del "+"): vistas y
-                        //    Ajustes, como botones cuadrados con solo el
-                        //    ícono, del mismo estilo que el propio "+".
-                        AnimatedVisibility(
-                            visible = fabExpanded,
-                            enter = fadeIn(animationSpec = tween(150)) +
-                                slideInVertically(animationSpec = tween(150)) { it / 2 },
-                            exit = fadeOut(animationSpec = tween(120)) +
-                                slideOutVertically(animationSpec = tween(120)) { it / 2 }
-                        ) {
-                            Column(
-                                horizontalAlignment = fabSide,
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier
-                                    .heightIn(max = 460.dp)
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(bottom = 8.dp)
+                    NoteListBottomBar(
+                        createOnLeft = settings.fabOnLeft,
+                        viewMode = viewMode,
+                        labelFilter = labelFilter,
+                        labels = labels,
+                        useTrash = settings.useTrash,
+                        journalView = journalView,
+                        showCreateMenu = showCreateMenu,
+                        onCreateMenuChange = { showCreateMenu = it },
+                        showLabelMenu = showLabelMenu,
+                        onLabelMenuChange = { showLabelMenu = it },
+                        onAll = {
+                            journalView = false
+                            viewModel.setViewMode(ViewMode.ALL)
+                        },
+                        onJournal = {
+                            journalView = true
+                            viewModel.setViewMode(ViewMode.ALL)
+                        },
+                        onPrivate = {
+                            journalView = false
+                            viewModel.setViewMode(ViewMode.PRIVATE)
+                        },
+                        onTrash = {
+                            journalView = false
+                            viewModel.setViewMode(ViewMode.TRASH)
+                        },
+                        onSelectLabel = { viewModel.setLabelFilter(it) },
+                        onClearLabel = { viewModel.setViewMode(ViewMode.ALL) },
+                        onSettings = onOpenSettings,
+                        onCreate = { type ->
+                            // Un cuaderno nuevo nace en el día que se está viendo en
+                            // el Diario (con la hora actual, para que se ordene bien
+                            // dentro del día); 0 = hoy.
+                            val day = if (type == NoteType.JOURNAL && journalView && !journalListMode &&
+                                journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
                             ) {
-                                labels.forEach { label ->
-                                    FabMenuItem(
-                                        icon = Icons.Filled.Label,
-                                        text = label,
-                                        selected = labelFilter == label,
-                                        onClick = {
-                                            fabExpanded = false
-                                            viewModel.setLabelFilter(label)
-                                        }
-                                    )
-                                }
-                                // En la papelera no tiene sentido crear notas.
-                                if (viewMode != ViewMode.TRASH) {
-                                    // Con pestañas por tipo, el "+" solo ofrece crear
-                                    // el tipo de la pestaña en la que estás. Con el
-                                    // ajuste "todos los tipos en una sola lista",
-                                    // ofrece los tres como antes.
-                                    val createTypes = if (separateTypes) {
-                                        listOf(typeTab)
-                                    } else {
-                                        listOf(NoteType.JOURNAL, NoteType.TEXT)
-                                    }
-                                    createTypes.forEach { type ->
-                                        FabMenuItem(
-                                            icon = when (type) {
-                                                NoteType.TEXT -> Icons.Filled.Edit
-                                                NoteType.CHECKLIST -> Icons.Filled.Checklist
-                                                NoteType.JOURNAL -> Icons.Filled.Book
-                                            },
-                                            text = when (type) {
-                                                NoteType.TEXT -> "Nueva nota"
-                                                NoteType.CHECKLIST -> "Nuevo checklist"
-                                                NoteType.JOURNAL -> "Nuevo cuaderno"
-                                            },
-                                            selected = false,
-                                            onClick = {
-                                                fabExpanded = false
-                                                typeTabName = type.name
-                                                // Entrada de diario: nace en el día que se
-                                                // está viendo, con la hora actual (así
-                                                // se ordena bien dentro del día). 0 = hoy.
-                                                val day = if (separateTypes && type == NoteType.JOURNAL && !journalListMode &&
-                                                    journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
-                                                ) {
-                                                    journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
-                                                        (System.currentTimeMillis() - journalTodayStart)
-                                                } else 0L
-                                                onAddClick(type, day)
-                                            }
-                                        )
-                                    }
-                                }
-                            }
+                                journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
+                                    (System.currentTimeMillis() - journalTodayStart)
+                            } else 0L
+                            onAddClick(type, day)
                         }
-                        // Orden pedido (de izquierda a derecha, con el "+" a la
-                        // derecha): Ajustes, Papelera, Privadas, Todas las notas,
-                        // "+". En modo zurdo el "+" pasa a la izquierda y el
-                        // orden se espeja, así "Todas las notas" sigue siendo
-                        // la más cercana al botón.
-                        val squareItems = buildList {
-                            add(FabSquare(Icons.Filled.Settings, "Ajustes", false) {
-                                fabExpanded = false
-                                onOpenSettings()
-                            })
-                            if (settings.useTrash) {
-                                add(FabSquare(Icons.Filled.Delete, "Papelera", viewMode == ViewMode.TRASH) {
-                                    fabExpanded = false
-                                    viewModel.setViewMode(ViewMode.TRASH)
-                                })
-                            }
-                            add(FabSquare(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE) {
-                                fabExpanded = false
-                                viewModel.setViewMode(ViewMode.PRIVATE)
-                            })
-                            add(FabSquare(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null) {
-                                fabExpanded = false
-                                viewModel.setViewMode(ViewMode.ALL)
-                            })
-                        }
-                        val plusButton: @Composable () -> Unit = {
-                            FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Menú y nueva nota",
-                                    modifier = Modifier.graphicsLayer(rotationZ = fabRotation)
-                                )
-                            }
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            if (settings.fabOnLeft) {
-                                plusButton()
-                                FabHorizontalMenu(fabExpanded, fromLeft = true, items = squareItems.reversed())
-                            } else {
-                                FabHorizontalMenu(fabExpanded, fromLeft = false, items = squareItems)
-                                plusButton()
-                            }
-                        }
-                    }
+                    )
                 }
             }
         ) { padding ->
@@ -581,9 +484,9 @@ fun NoteListScreen(
                     // segundo justo al abrir la app.
                     Box(modifier = Modifier.fillMaxSize().padding(padding))
                 }
-                separateTypes && typeTab == NoteType.JOURNAL && query.isBlank() -> {
+                journalView && query.isBlank() -> {
                     JournalPager(
-                        notes = currentNotes,
+                        notes = currentNotes.filter { it.type == NoteType.JOURNAL },
                         pagerState = journalPagerState,
                         todayStart = journalTodayStart,
                         padding = padding,
@@ -729,35 +632,120 @@ fun NoteListScreen(
 
 // ---- Barra inferior de tipos y modo Diario ----
 
-private val TYPE_TABS = listOf(
-    Triple(NoteType.TEXT, Icons.Filled.Notes, "Notas"),
-    Triple(NoteType.JOURNAL, Icons.Filled.Book, "Diario")
-)
-
-// Barra inferior con una pestaña por tipo de nota. Es la MISMA GlassBottomBar
-// que usa el editor de notas (misma altura de 56dp, mismo tinte, borde y
-// extensión por detrás de la barra de navegación), con botones de solo ícono
-// como los de esa barra; el tipo elegido se resalta con el color del tema.
+// Barra inferior de la lista: reemplaza al botón flotante "+" y a la barra de
+// pestañas por tipo. Es la MISMA GlassBottomBar del editor (botones de solo
+// ícono, tinte oscuro, extendida por detrás de la barra de navegación). El botón
+// de crear va a la derecha (o a la izquierda en modo zurdo) y abre un menú con
+// "Nueva nota" / "Nuevo cuaderno"; las etiquetas abren otro menú.
 @Composable
-private fun NoteTypeBottomBar(selected: NoteType, onSelect: (NoteType) -> Unit) {
+private fun NoteListBottomBar(
+    createOnLeft: Boolean,
+    viewMode: ViewMode,
+    labelFilter: String?,
+    labels: List<String>,
+    useTrash: Boolean,
+    journalView: Boolean,
+    showCreateMenu: Boolean,
+    onCreateMenuChange: (Boolean) -> Unit,
+    showLabelMenu: Boolean,
+    onLabelMenuChange: (Boolean) -> Unit,
+    onAll: () -> Unit,
+    onJournal: () -> Unit,
+    onPrivate: () -> Unit,
+    onTrash: () -> Unit,
+    onSelectLabel: (String) -> Unit,
+    onClearLabel: () -> Unit,
+    onSettings: () -> Unit,
+    onCreate: (NoteType) -> Unit
+) {
     GlassBottomBar(
         height = 56.dp,
         navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
         centered = true
     ) {
-        TYPE_TABS.forEach { (type, icon, label) ->
-            val isSelected = type == selected
-            IconButton(
-                onClick = { onSelect(type) },
-                modifier = Modifier.padding(horizontal = 12.dp),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                    contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
-                )
-            ) {
-                Icon(icon, contentDescription = label)
+        val createButton: @Composable () -> Unit = {
+            // En la papelera no tiene sentido crear notas.
+            if (viewMode != ViewMode.TRASH) {
+                Box {
+                    BarButton(Icons.Filled.Add, "Crear", false) { onCreateMenuChange(true) }
+                    DropdownMenu(expanded = showCreateMenu, onDismissRequest = { onCreateMenuChange(false) }) {
+                        DropdownMenuItem(
+                            text = { Text("Nueva nota") },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            onClick = {
+                                onCreateMenuChange(false)
+                                onCreate(NoteType.TEXT)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Nuevo cuaderno") },
+                            leadingIcon = { Icon(Icons.Filled.Book, contentDescription = null) },
+                            onClick = {
+                                onCreateMenuChange(false)
+                                onCreate(NoteType.JOURNAL)
+                            }
+                        )
+                    }
+                }
             }
         }
+        if (createOnLeft) createButton()
+        BarButton(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null && !journalView, onAll)
+        BarButton(Icons.Filled.Book, "Diario", journalView, onJournal)
+        BarButton(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE, onPrivate)
+        if (useTrash) {
+            BarButton(Icons.Filled.Delete, "Papelera", viewMode == ViewMode.TRASH, onTrash)
+        }
+        if (labels.isNotEmpty()) {
+            Box {
+                BarButton(Icons.Filled.Label, "Etiquetas", labelFilter != null) { onLabelMenuChange(true) }
+                DropdownMenu(expanded = showLabelMenu, onDismissRequest = { onLabelMenuChange(false) }) {
+                    if (labelFilter != null) {
+                        DropdownMenuItem(
+                            text = { Text("Quitar filtro") },
+                            onClick = {
+                                onLabelMenuChange(false)
+                                onClearLabel()
+                            }
+                        )
+                    }
+                    labels.forEach { label ->
+                        DropdownMenuItem(
+                            text = { Text(label) },
+                            leadingIcon = {
+                                if (labelFilter == label) Icon(Icons.Filled.Check, contentDescription = null)
+                            },
+                            onClick = {
+                                onLabelMenuChange(false)
+                                onSelectLabel(label)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        BarButton(Icons.Filled.Settings, "Ajustes", false, onSettings)
+        if (!createOnLeft) createButton()
+    }
+}
+
+// Botón de ícono de la barra; resaltado (color primario del tema) cuando su
+// vista está activa.
+@Composable
+private fun BarButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
+        )
+    ) {
+        Icon(icon, contentDescription = description)
     }
 }
 
@@ -1119,76 +1107,6 @@ internal fun JournalCalendarDialog(
             }
         }
     }
-}
-
-// Datos de un botón cuadrado del plegable horizontal del "+".
-private data class FabSquare(
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val description: String,
-    val selected: Boolean,
-    val onClick: () -> Unit
-)
-
-// Plegable horizontal del "+". Función propia (sin receptor de Row/Column) a
-// propósito: así AnimatedVisibility siempre resuelve a la versión simple y
-// no a la de ColumnScope/RowScope de un layout lejano (ya dio error de
-// compilación una vez). `fromLeft` espeja la animación para el modo zurdo.
-@Composable
-private fun FabHorizontalMenu(visible: Boolean, fromLeft: Boolean, items: List<FabSquare>) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(animationSpec = tween(150)) +
-            slideInHorizontally(animationSpec = tween(150)) { if (fromLeft) -it / 2 else it / 2 },
-        exit = fadeOut(animationSpec = tween(120)) +
-            slideOutHorizontally(animationSpec = tween(120)) { if (fromLeft) -it / 2 else it / 2 }
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items.forEach { item ->
-                FabSquareItem(item.icon, item.description, item.selected, item.onClick)
-            }
-        }
-    }
-}
-
-// Botón cuadrado redondeado (solo ícono) del plegable horizontal del "+":
-// mismo estilo que el propio FloatingActionButton. La vista activa se
-// resalta con el color primario del tema.
-@Composable
-private fun FabSquareItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    description: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    FloatingActionButton(
-        onClick = onClick,
-        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurface
-    ) {
-        Icon(icon, contentDescription = description)
-    }
-}
-
-// Opción del menú desplegable del botón "+". La opción activa (vista o
-// etiqueta actual) se resalta con el color primario del tema.
-@Composable
-private fun FabMenuItem(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    text: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        icon = { Icon(icon, contentDescription = null) },
-        text = { Text(text) },
-        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-        else MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-        else MaterialTheme.colorScheme.onSurface
-    )
 }
 
 // Título de la barra superior, a la izquierda del 🍑. Dos capas:
@@ -1581,9 +1499,14 @@ private fun NotePreviewContent(note: Note, showFirstImage: Boolean, showMedia: B
         }
     }
 
-    if (pageCount > 1) {
+    if (note.type == NoteType.JOURNAL) {
+        // Fecha corta de la primera página (o la de la nota si no tiene propia).
+        val shortDate = remember(note.content, note.createdAt) {
+            java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT)
+                .format(java.util.Date(pageDateOf(splitPages(note.content).first()) ?: note.createdAt))
+        }
         Text(
-            text = "📖 $pageCount páginas",
+            text = "📖 $pageCount ${if (pageCount == 1) "página" else "páginas"} · $shortDate",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp)
@@ -1633,8 +1556,13 @@ private fun NoteCard(
     val context = LocalContext.current
     val bg = note.color?.let {
         runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull()
-    } ?: MaterialTheme.colorScheme.surfaceContainerHigh
+    } ?: if (note.type == NoteType.JOURNAL) MaterialTheme.colorScheme.tertiaryContainer
+    else MaterialTheme.colorScheme.surfaceContainerHigh
     val cardShape = RoundedCornerShape(16.dp)
+    // Un cuaderno se distingue de una nota normal: otro color base, un lomo con
+    // aros a la izquierda y un ícono de libro junto al título.
+    val isJournal = note.type == NoteType.JOURNAL
+    val spineColor = MaterialTheme.colorScheme.tertiary
 
     Box {
         Card(
@@ -1657,8 +1585,35 @@ private fun NoteCard(
             shape = cardShape,
             border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
         ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(
+            modifier = Modifier
+                .then(
+                    if (isJournal) {
+                        Modifier.drawBehind {
+                            drawRect(color = spineColor, size = Size(10.dp.toPx(), size.height))
+                            var y = 14.dp.toPx()
+                            while (y < size.height - 8.dp.toPx()) {
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.85f),
+                                    radius = 3.dp.toPx(),
+                                    center = Offset(5.dp.toPx(), y)
+                                )
+                                y += 18.dp.toPx()
+                            }
+                        }
+                    } else Modifier
+                )
+                .padding(start = if (isJournal) 24.dp else 12.dp, top = 12.dp, end = 12.dp, bottom = 12.dp)
+        ) {
             Row(verticalAlignment = Alignment.Top) {
+                if (isJournal) {
+                    Icon(
+                        Icons.Filled.Book,
+                        contentDescription = "Cuaderno",
+                        tint = spineColor,
+                        modifier = Modifier.padding(top = 4.dp, end = 6.dp).size(18.dp)
+                    )
+                }
                 Text(
                     text = note.title.ifBlank { "(Sin título)" },
                     style = MaterialTheme.typography.titleMedium,

@@ -736,14 +736,9 @@ fun SettingsScreen(
                                                         onCheckedChange = { v -> onUpdate { it.copy(doubleTapToEdit = v) } }
                                                     )
                                                     SwitchSetting(
-                                                        label = "Botón + a la izquierda (modo zurdo)",
+                                                        label = "Botón de crear a la izquierda (modo zurdo)",
                                                         checked = settings.fabOnLeft,
                                                         onCheckedChange = { v -> onUpdate { it.copy(fabOnLeft = v) } }
-                                                    )
-                                                    SwitchSetting(
-                                                        label = "Todos los tipos de nota en una sola lista",
-                                                        checked = settings.allTypesInOneList,
-                                                        onCheckedChange = { v -> onUpdate { it.copy(allTypesInOneList = v) } }
                                                     )
                                                     // Divisor: de "checklists y edición" pasamos a
                                                     // "navegación e interfaz", otro tema distinto.
@@ -810,7 +805,7 @@ fun SettingsScreen(
                                                         label = "Deslizar desde el borde izquierdo",
                                                         options = listOf(
                                                             RightEdgeSwipeAction.SETTINGS to "Abrir Ajustes",
-                                                            RightEdgeSwipeAction.SIDEBAR to "Menú del botón +",
+                                                            RightEdgeSwipeAction.SIDEBAR to "Menú de crear (+)",
                                                             RightEdgeSwipeAction.NOTHING to "Nada"
                                                         ),
                                                         selected = settings.rightEdgeSwipeAction,
