@@ -30,9 +30,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -105,7 +107,12 @@ fun FlatTextField(
     // pedir que se traiga a la vista: bringIntoView() scrollea lo necesario
     // para que TODO el rectángulo (cursor + colchón) quede visible, dejando
     // ese espacio libre por debajo.
-    extraBottomInset: Dp = 0.dp
+    extraBottomInset: Dp = 0.dp,
+    // Cómo se DIBUJA el texto (por ejemplo, ocultando los marcadores de
+    // formato, ver InlineMarkupTransformation). El TextFieldValue sigue siendo
+    // el texto crudo; el layout de texto (y por lo tanto el rectángulo del
+    // cursor de más abajo) está en el espacio ya transformado.
+    visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -130,6 +137,7 @@ fun FlatTextField(
         textStyle = textStyle,
         singleLine = singleLine,
         keyboardOptions = keyboardOptions,
+        visualTransformation = visualTransformation,
         interactionSource = interactionSource,
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         onTextLayout = { textLayoutResult = it },
@@ -155,7 +163,12 @@ fun FlatTextField(
         val imeVisible = WindowInsets.isImeVisible
         LaunchedEffect(value.selection, textLayoutResult, imeVisible) {
             val layout = textLayoutResult ?: return@LaunchedEffect
-            val cursorOffset = value.selection.end.coerceIn(0, layout.layoutInput.text.length)
+            // La selección está en offsets del texto crudo; el layout, en los del
+            // texto transformado: se convierte antes de pedir el rectángulo.
+            val rawCursor = value.selection.end.coerceIn(0, value.text.length)
+            val cursorOffset = visualTransformation.filter(AnnotatedString(value.text))
+                .offsetMapping.originalToTransformed(rawCursor)
+                .coerceIn(0, layout.layoutInput.text.length)
             val cursorRect = layout.getCursorRect(cursorOffset)
             // Se infla el rectángulo hacia abajo (ver comentario de
             // extraBottomInset arriba) para que la barra inferior flotante

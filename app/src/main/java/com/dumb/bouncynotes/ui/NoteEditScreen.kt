@@ -11,6 +11,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import com.dumb.bouncynotes.data.joinPages
 import com.dumb.bouncynotes.data.splitPages
+import com.dumb.bouncynotes.data.splitRawAt
+import com.dumb.bouncynotes.ui.components.processInlineTextFieldEdit
+import com.dumb.bouncynotes.ui.components.InlineMarkupTransformation
+import com.dumb.bouncynotes.data.toggleListPrefix
+import com.dumb.bouncynotes.data.toggleInlineStyle
+import com.dumb.bouncynotes.data.activeInlineStyle
+import com.dumb.bouncynotes.data.InlineStyle
+import com.dumb.bouncynotes.data.InlinePending
 import com.dumb.bouncynotes.data.withPageDate
 import com.dumb.bouncynotes.data.pageDateOf
 import com.dumb.bouncynotes.data.pageBodyOf
@@ -111,6 +119,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
 import com.dumb.bouncynotes.ui.components.CompactIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -392,7 +401,15 @@ fun NoteEditScreen(
             createdAt = if (i == 0) millis else current.createdAt
         )
     }
+    // Segmentos del editor (texto / imagen / galería / video / checklist) de la
+    // página actual. Se arma en la carga inicial y al cambiar de página o de modo.
+    var segments by remember { mutableStateOf<List<EditSegment>>(listOf(EditSegment.TextSeg(TextFieldValue("")))) }
     var activeSegmentIndex by remember { mutableStateOf(0) }
+    // Formato "armado" para lo próximo que se escriba (botón de negrita, cursiva,
+    // etc. tocado sin texto seleccionado): se queda activo hasta volver a tocarlo
+    // o hasta mover el cursor, como en Word. Ver data/InlineMarkup.kt.
+    var pendingInline by remember { mutableStateOf<InlinePending?>(null) }
+    LaunchedEffect(activeSegmentIndex) { pendingInline = null }
     var unlockedThisNote by remember { mutableStateOf(false) }
     // pendingCameraFileName y showImageSourceDialog se eliminaron: ya no hay
     // cámara ni un diálogo previo para elegir imagen/video/cámara — el
@@ -559,8 +576,10 @@ fun NoteEditScreen(
         if (seg is EditSegment.TextSeg) {
             val text = seg.value.text
             val cursor = seg.value.selection.start.coerceIn(0, text.length)
-            val before = text.substring(0, cursor)
-            val after = text.substring(cursor)
+            // splitRawAt cierra/reabre un tramo con formato si el cursor está dentro
+            // de uno (con los marcadores ocultos del editor, partir el texto crudo a
+            // lo bruto dejaría marcadores huérfanos que se verían como asteriscos).
+            val (before, after) = splitRawAt(text, cursor)
 
             // Línea actual (donde está el cursor), delimitada por saltos de línea.
             val lineStart = before.lastIndexOf('\n').let { if (it == -1) 0 else it + 1 }
@@ -831,51 +850,30 @@ fun NoteEditScreen(
     fun toggleLinePrefix(prefix: String) {
         val idx = activeSegmentIndex.coerceIn(0, segments.size - 1)
         val seg = segments.getOrNull(idx) as? EditSegment.TextSeg ?: return
-        val text = seg.value.text
-        val cursor = seg.value.selection.start.coerceIn(0, text.length)
-        val lineStart = text.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it == -1) 0 else it + 1 }
-        val restOfLine = text.substring(lineStart)
-        val otherPrefixes = listOf(BULLET_PREFIX, SUB_BULLET_PREFIX).filter { it != prefix }
-        val newText: String
-        val cursorDelta: Int
-        when {
-            restOfLine.startsWith(prefix) -> {
-                newText = text.substring(0, lineStart) + text.substring(lineStart + prefix.length)
-                cursorDelta = -prefix.length
-            }
-            otherPrefixes.any { restOfLine.startsWith(it) } -> {
-                val existing = otherPrefixes.first { restOfLine.startsWith(it) }
-                newText = text.substring(0, lineStart) + prefix + text.substring(lineStart + existing.length)
-                cursorDelta = prefix.length - existing.length
-            }
-            else -> {
-                newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
-                cursorDelta = prefix.length
-            }
-        }
-        val newCursor = (cursor + cursorDelta).coerceIn(0, newText.length)
+        val value = seg.value
+        // Trabaja sobre el texto VISIBLE (ver toggleListPrefix), así funciona
+        // igual aunque la línea tenga formato con marcadores ocultos.
+        val (newText, newCaret) = toggleListPrefix(value.text, value.selection.start, prefix) ?: return
         val newSegments = segments.toMutableList()
-        newSegments[idx] = EditSegment.TextSeg(TextFieldValue(newText, TextRange(newCursor)))
+        newSegments[idx] = EditSegment.TextSeg(TextFieldValue(newText, TextRange(newCaret)))
         updateContentFromSegments(newSegments)
     }
 
-    fun wrapActiveSelection(marker: String) {
+    // Botones de formato (negrita, cursiva, tachado, mono) estilo Word: sin texto
+    // seleccionado arman el formato para lo que se escriba después (el botón queda
+    // "presionado"); con texto seleccionado lo aplican o lo quitan. Los
+    // marcadores (**, *, ~~, `) quedan ocultos: el usuario no los escribe ni los ve.
+    fun toggleInline(style: InlineStyle) {
         val idx = activeSegmentIndex.coerceIn(0, segments.size - 1)
         val seg = segments.getOrNull(idx) as? EditSegment.TextSeg ?: return
-        val text = seg.value.text
-        val sel = seg.value.selection
-        val start = sel.start.coerceIn(0, text.length)
-        val end = sel.end.coerceIn(0, text.length)
-        val selected = text.substring(start, end)
-        val newText = text.substring(0, start) + marker + selected + marker + text.substring(end)
-        val newSelection = if (start == end) {
-            TextRange(start + marker.length)
-        } else {
-            TextRange(start + marker.length, end + marker.length)
+        val value = seg.value
+        val out = toggleInlineStyle(value.text, value.selection.start, value.selection.end, style, pendingInline)
+        pendingInline = out.pending
+        if (out.raw != value.text || out.selStart != value.selection.start || out.selEnd != value.selection.end) {
+            val newSegments = segments.toMutableList()
+            newSegments[idx] = EditSegment.TextSeg(TextFieldValue(out.raw, TextRange(out.selStart, out.selEnd)))
+            updateContentFromSegments(newSegments)
         }
-        val newSegments = segments.toMutableList()
-        newSegments[idx] = EditSegment.TextSeg(TextFieldValue(newText, newSelection))
-        updateContentFromSegments(newSegments)
     }
 
     // Extraído a función para poder reusarlo desde los DOS selectores de
@@ -1658,16 +1656,23 @@ fun NoteEditScreen(
                     }) {
                         Icon(Icons.Filled.Image, contentDescription = "Insertar imagen")
                     }
-                    IconButton(onClick = { wrapActiveSelection("**") }) {
+                    // Estilo activo en el cursor/selección, para dejar "presionado" el botón.
+                    val activeInline = remember(segments, activeSegmentIndex, pendingInline) {
+                        (segments.getOrNull(activeSegmentIndex.coerceIn(0, segments.size - 1)) as? EditSegment.TextSeg)
+                            ?.let {
+                                activeInlineStyle(it.value.text, it.value.selection.start, it.value.selection.end, pendingInline)
+                            }
+                    }
+                    FormatToggleButton(active = activeInline == InlineStyle.BOLD, onClick = { toggleInline(InlineStyle.BOLD) }) {
                         Icon(Icons.Filled.FormatBold, contentDescription = "Negrita")
                     }
-                    IconButton(onClick = { wrapActiveSelection("*") }) {
+                    FormatToggleButton(active = activeInline == InlineStyle.ITALIC, onClick = { toggleInline(InlineStyle.ITALIC) }) {
                         Icon(Icons.Filled.FormatItalic, contentDescription = "Cursiva")
                     }
-                    IconButton(onClick = { wrapActiveSelection("~~") }) {
+                    FormatToggleButton(active = activeInline == InlineStyle.STRIKE, onClick = { toggleInline(InlineStyle.STRIKE) }) {
                         Icon(Icons.Filled.FormatStrikethrough, contentDescription = "Tachado")
                     }
-                    IconButton(onClick = { wrapActiveSelection("`") }) {
+                    FormatToggleButton(active = activeInline == InlineStyle.CODE, onClick = { toggleInline(InlineStyle.CODE) }) {
                         Icon(Icons.Filled.Code, contentDescription = "Monoespaciado")
                     }
                     IconButton(onClick = { toggleLinePrefix(BULLET_PREFIX) }) {
@@ -1941,10 +1946,18 @@ fun NoteEditScreen(
                                         FlatTextField(
                                             value = segment.value,
                                             onValueChange = { value ->
+                                                // El formato se maneja acá (ver processInlineEdit): el texto
+                                                // nuevo hereda el formato del anterior o el armado con los
+                                                // botones, borrar no deja marcadores sueltos y los puntos de
+                                                // lista se comportan como bloque.
+                                                val (processed, newPending) =
+                                                    processInlineTextFieldEdit(segment.value, value, pendingInline)
+                                                pendingInline = newPending
                                                 val newSegments = segments.toMutableList()
-                                                newSegments[index] = EditSegment.TextSeg(value)
+                                                newSegments[index] = EditSegment.TextSeg(processed)
                                                 updateContentFromSegments(newSegments)
                                             },
+                                            visualTransformation = InlineMarkupTransformation,
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .then(
@@ -2450,4 +2463,18 @@ private fun JournalPageBar(
 @Composable
 private fun SelectableWhen(enabled: Boolean, content: @Composable () -> Unit) {
     if (enabled) SelectionContainer(content = content) else content()
+}
+
+
+// Botón de formato con estado: resaltado (como "presionado") mientras el estilo
+// está activo en el cursor o en la selección.
+@Composable
+private fun FormatToggleButton(active: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = if (active) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+            contentColor = if (active) MaterialTheme.colorScheme.onPrimaryContainer else LocalContentColor.current
+        )
+    ) { content() }
 }
