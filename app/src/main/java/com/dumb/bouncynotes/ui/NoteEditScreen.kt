@@ -773,7 +773,9 @@ fun NoteEditScreen(
         scope.launch { editLazyListState.scrollToItem(0) }
     }
 
+    // Solo en modo edición: en modo vista no se pueden agregar páginas.
     fun addPageAfterCurrent() {
+        if (!isEditing) return
         val all = splitPages(current.content).toMutableList()
         val at = pageIndex.coerceIn(0, all.lastIndex) + 1
         all.add(at, withPageDate("", System.currentTimeMillis()))
@@ -1528,11 +1530,13 @@ fun NoteEditScreen(
                             }
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = {
-                        showPagePicker = false
-                        addPageAfterCurrent()
-                    }) { Text("Nueva página después de esta") }
+                    if (isEditing) {
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = {
+                            showPagePicker = false
+                            addPageAfterCurrent()
+                        }) { Text("Nueva página después de esta") }
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { showPagePicker = false }) { Text("Cerrar") } }
@@ -1650,7 +1654,7 @@ fun NoteEditScreen(
                         onPrev = { goToPage(pageIndex - 1) },
                         onNext = {
                             val last = splitPages(current.content).lastIndex
-                            if (pageIndex < last) goToPage(pageIndex + 1) else addPageAfterCurrent()
+                            if (pageIndex < last) goToPage(pageIndex + 1) else if (isEditing) addPageAfterCurrent()
                         },
                         onPick = { showPagePicker = true }
                     )
@@ -2496,8 +2500,9 @@ fun NoteEditScreen(
 
 // Barra de páginas de un cuaderno, arriba de la barra de herramientas: página
 // anterior, "Página X de N" (tocar para saltar a una página o gestionarlas) y
-// siguiente. Al final del cuaderno "siguiente" agrega una página nueva (como
-// pasar de hoja en un libro de Minecraft), también en modo lectura.
+// siguiente. Al final del cuaderno, en modo edición, "siguiente" agrega una
+// página nueva (como pasar de hoja en un libro de Minecraft); en modo lectura
+// queda deshabilitado: ahí no se pueden agregar páginas.
 @Composable
 private fun JournalPageBar(
     pageIndex: Int,
@@ -2522,8 +2527,8 @@ private fun JournalPageBar(
         TextButton(onClick = onPick) {
             Text("Página ${pageIndex + 1} de $pageCount")
         }
-        IconButton(onClick = onNext) {
-            if (isLast) {
+        IconButton(onClick = onNext, enabled = !isLast || isEditing) {
+            if (isLast && isEditing) {
                 Icon(Icons.Filled.Add, contentDescription = "Nueva página")
             } else {
                 Icon(Icons.Filled.ChevronRight, contentDescription = "Página siguiente")

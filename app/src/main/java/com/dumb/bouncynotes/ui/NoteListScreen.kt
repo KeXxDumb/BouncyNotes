@@ -404,7 +404,6 @@ fun NoteListScreen(
             bottomBar = {
                 if (!selectionMode) {
                     NoteListBottomBar(
-                        createOnLeft = settings.fabOnLeft,
                         viewMode = viewMode,
                         labelFilter = labelFilter,
                         labels = labels,
@@ -413,8 +412,14 @@ fun NoteListScreen(
                         onCreateMenuChange = { showCreateMenu = it },
                         showLabelMenu = showLabelMenu,
                         onLabelMenuChange = { showLabelMenu = it },
+                        // En otra vista, pasa a "todas las notas"; si YA estás ahí,
+                        // vuelve a tocarse para elegir una etiqueta (si hay).
                         onAll = {
-                            viewModel.setViewMode(ViewMode.ALL)
+                            if (viewMode == ViewMode.ALL) {
+                                if (labels.isNotEmpty()) showLabelMenu = true
+                            } else {
+                                viewModel.setViewMode(ViewMode.ALL)
+                            }
                         },
                         onPrivate = {
                             viewModel.setViewMode(ViewMode.PRIVATE)
@@ -573,13 +578,14 @@ fun NoteListScreen(
 // ---- Barra inferior de tipos y modo Diario ----
 
 // Barra inferior de la lista: reemplaza al botón flotante "+" y a la barra de
-// pestañas por tipo. Es la MISMA GlassBottomBar del editor (botones de solo
-// ícono, tinte oscuro, extendida por detrás de la barra de navegación). El botón
-// de crear va a la derecha (o a la izquierda en modo zurdo) y abre un menú con
-// "Nueva nota" / "Nuevo cuaderno"; las etiquetas abren otro menú.
+// pestañas por tipo. Es la MISMA GlassBottomBar del editor (tinte oscuro, extendida
+// por detrás de la barra de navegación). De izquierda a derecha:
+//   Ajustes · Papelera  |  (+) Crear, al centro, grande y con el color de acento  |  Privadas · Todas
+// "Todas las notas" aplica el filtro por etiquetas: si ya estás en esa vista y
+// vuelves a tocarla, se abre una burbuja con las etiquetas (no hay botón aparte).
+// El botón de crear abre una burbuja con "Nueva nota" / "Nuevo cuaderno".
 @Composable
 private fun NoteListBottomBar(
-    createOnLeft: Boolean,
     viewMode: ViewMode,
     labelFilter: String?,
     labels: List<String>,
@@ -601,55 +607,70 @@ private fun NoteListBottomBar(
         navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
         centered = true
     ) {
-        val createButton: @Composable () -> Unit = {
-            // En la papelera no tiene sentido crear notas.
-            if (viewMode != ViewMode.TRASH) {
-                Box {
-                    BarButton(Icons.Filled.Add, "Crear", showCreateMenu) { onCreateMenuChange(true) }
-                    if (showCreateMenu) {
-                        BubbleMenu(onDismissRequest = { onCreateMenuChange(false) }) {
-                            BubbleItem("Nueva nota", Icons.Filled.Edit) {
-                                onCreateMenuChange(false)
-                                onCreate(NoteType.TEXT)
-                            }
-                            BubbleItem("Nuevo cuaderno", Icons.Filled.Book) {
-                                onCreateMenuChange(false)
-                                onCreate(NoteType.JOURNAL)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (createOnLeft) createButton()
-        BarButton(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null, onAll)
-        BarButton(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE, onPrivate)
+        BarButton(Icons.Filled.Settings, "Ajustes", false, onSettings)
         if (useTrash) {
             BarButton(Icons.Filled.Delete, "Papelera", viewMode == ViewMode.TRASH, onTrash)
+        } else {
+            // Mismo ancho que el botón que falta, para que el de crear siga en el medio.
+            Spacer(Modifier.width(48.dp))
         }
-        if (labels.isNotEmpty()) {
-            Box {
-                BarButton(Icons.Filled.Label, "Etiquetas", labelFilter != null || showLabelMenu) { onLabelMenuChange(true) }
-                if (showLabelMenu) {
-                    BubbleMenu(onDismissRequest = { onLabelMenuChange(false) }) {
-                        if (labelFilter != null) {
-                            BubbleItem("Quitar filtro") {
-                                onLabelMenuChange(false)
-                                onClearLabel()
-                            }
+
+        // Crear: al centro, más grande y en un círculo con el color de acento.
+        Box(modifier = Modifier.padding(horizontal = 8.dp)) {
+            // En la papelera no tiene sentido crear notas (queda el hueco).
+            if (viewMode != ViewMode.TRASH) {
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable { onCreateMenuChange(true) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = "Nueva nota",
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+                if (showCreateMenu) {
+                    BubbleMenu(onDismissRequest = { onCreateMenuChange(false) }) {
+                        BubbleItem("Nueva nota", Icons.Filled.Edit) {
+                            onCreateMenuChange(false)
+                            onCreate(NoteType.TEXT)
                         }
-                        labels.forEach { label ->
-                            BubbleItem(text = label, icon = Icons.Filled.Label, selected = labelFilter == label) {
-                                onLabelMenuChange(false)
-                                onSelectLabel(label)
-                            }
+                        BubbleItem("Nuevo cuaderno", Icons.Filled.Book) {
+                            onCreateMenuChange(false)
+                            onCreate(NoteType.JOURNAL)
+                        }
+                    }
+                }
+            } else {
+                Spacer(Modifier.size(50.dp))
+            }
+        }
+
+        BarButton(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE, onPrivate)
+        Box {
+            BarButton(Icons.Filled.Notes, "Todas las notas (tocar de nuevo: etiquetas)", viewMode == ViewMode.ALL, onAll)
+            if (showLabelMenu) {
+                BubbleMenu(onDismissRequest = { onLabelMenuChange(false) }) {
+                    if (labelFilter != null) {
+                        BubbleItem("Quitar filtro") {
+                            onLabelMenuChange(false)
+                            onClearLabel()
+                        }
+                    }
+                    labels.forEach { label ->
+                        BubbleItem(text = label, icon = Icons.Filled.Label, selected = labelFilter == label) {
+                            onLabelMenuChange(false)
+                            onSelectLabel(label)
                         }
                     }
                 }
             }
         }
-        BarButton(Icons.Filled.Settings, "Ajustes", false, onSettings)
-        if (!createOnLeft) createButton()
     }
 }
 
