@@ -34,6 +34,8 @@ import androidx.compose.foundation.border
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material.icons.filled.ViewAgenda
+import com.dumb.bouncynotes.ui.components.BubbleItem
+import com.dumb.bouncynotes.ui.components.BubbleMenu
 import com.dumb.bouncynotes.ui.components.GlassBottomBar
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButtonDefaults
@@ -188,24 +190,11 @@ fun NoteListScreen(
     val labelFilter by viewModel.labelFilter.collectAsState()
     val labels by viewModel.allLabels.collectAsState()
 
-    // Todas las notas y los cuadernos van JUNTOS en la lista normal. El Diario
-    // (un cuaderno por día, con calendario) es una vista aparte que se activa con
-    // el botón "Diario" de la barra inferior.
+    // Todas las notas y los cuadernos van JUNTOS en la lista normal (ya no hay
+    // una categoría/vista aparte de cuadernos).
     val notes: List<Note>? = allNotes
-    var journalView by rememberSaveable { mutableStateOf(false) }
     var showCreateMenu by remember { mutableStateOf(false) }
     var showLabelMenu by remember { mutableStateOf(false) }
-
-    // Diario: una página por día, de hoy hacia atrás (ver JournalPager).
-    // Se hoistea acá para que la página elegida sobreviva a cambiar de
-    // pestaña y volver.
-    val journalTodayStart = remember { dayStartMillis(System.currentTimeMillis()) }
-    val journalPagerState = rememberPagerState(initialPage = JOURNAL_PAGE_COUNT - 1) { JOURNAL_PAGE_COUNT }
-    // true = el Diario se ve como una sola lista con todas las entradas (más
-    // nuevas primero, agrupadas por día) en vez de una página por día. Vive
-    // acá porque el "+" también lo necesita: en la lista, una entrada nueva
-    // nace hoy, no en el último día visitado.
-    var journalListMode by rememberSaveable { mutableStateOf(false) }
 
     val context = LocalContext.current
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
@@ -420,42 +409,23 @@ fun NoteListScreen(
                         labelFilter = labelFilter,
                         labels = labels,
                         useTrash = settings.useTrash,
-                        journalView = journalView,
                         showCreateMenu = showCreateMenu,
                         onCreateMenuChange = { showCreateMenu = it },
                         showLabelMenu = showLabelMenu,
                         onLabelMenuChange = { showLabelMenu = it },
                         onAll = {
-                            journalView = false
-                            viewModel.setViewMode(ViewMode.ALL)
-                        },
-                        onJournal = {
-                            journalView = true
                             viewModel.setViewMode(ViewMode.ALL)
                         },
                         onPrivate = {
-                            journalView = false
                             viewModel.setViewMode(ViewMode.PRIVATE)
                         },
                         onTrash = {
-                            journalView = false
                             viewModel.setViewMode(ViewMode.TRASH)
                         },
                         onSelectLabel = { viewModel.setLabelFilter(it) },
                         onClearLabel = { viewModel.setViewMode(ViewMode.ALL) },
                         onSettings = onOpenSettings,
-                        onCreate = { type ->
-                            // Un cuaderno nuevo nace en el día que se está viendo en
-                            // el Diario (con la hora actual, para que se ordene bien
-                            // dentro del día); 0 = hoy.
-                            val day = if (type == NoteType.JOURNAL && journalView && !journalListMode &&
-                                journalPagerState.currentPage != JOURNAL_PAGE_COUNT - 1
-                            ) {
-                                journalPageDayStart(journalTodayStart, journalPagerState.currentPage) +
-                                    (System.currentTimeMillis() - journalTodayStart)
-                            } else 0L
-                            onAddClick(type, day)
-                        }
+                        onCreate = { type -> onAddClick(type, 0L) }
                     )
                 }
             }
@@ -483,36 +453,6 @@ fun NoteListScreen(
                     // para no mentirle al usuario por una fracción de
                     // segundo justo al abrir la app.
                     Box(modifier = Modifier.fillMaxSize().padding(padding))
-                }
-                journalView && query.isBlank() -> {
-                    JournalPager(
-                        notes = currentNotes.filter { it.type == NoteType.JOURNAL },
-                        pagerState = journalPagerState,
-                        todayStart = journalTodayStart,
-                        padding = padding,
-                        listMode = journalListMode,
-                        onListModeChange = { journalListMode = it }
-                    ) { note ->
-                        NoteCard(
-                            note = note,
-                            checkboxPosition = settings.checkboxPosition,
-                            selected = note.id in selectedIds,
-                            selectionMode = selectionMode,
-                            showFirstImage = settings.showFirstImage,
-                            showMedia = false,
-                            onClick = {
-                                if (selectionMode) {
-                                    selectedIds = if (note.id in selectedIds) selectedIds - note.id else selectedIds + note.id
-                                } else {
-                                    onNoteClick(note.id)
-                                }
-                            },
-                            onLongClick = { selectedIds = selectedIds + note.id },
-                            onTogglePin = { viewModel.togglePin(note) },
-                            inTrash = viewMode == ViewMode.TRASH,
-                            onDeleteForever = { noteToDeleteForever = note }
-                        )
-                    }
                 }
                 currentNotes.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
@@ -644,13 +584,11 @@ private fun NoteListBottomBar(
     labelFilter: String?,
     labels: List<String>,
     useTrash: Boolean,
-    journalView: Boolean,
     showCreateMenu: Boolean,
     onCreateMenuChange: (Boolean) -> Unit,
     showLabelMenu: Boolean,
     onLabelMenuChange: (Boolean) -> Unit,
     onAll: () -> Unit,
-    onJournal: () -> Unit,
     onPrivate: () -> Unit,
     onTrash: () -> Unit,
     onSelectLabel: (String) -> Unit,
@@ -667,59 +605,45 @@ private fun NoteListBottomBar(
             // En la papelera no tiene sentido crear notas.
             if (viewMode != ViewMode.TRASH) {
                 Box {
-                    BarButton(Icons.Filled.Add, "Crear", false) { onCreateMenuChange(true) }
-                    DropdownMenu(expanded = showCreateMenu, onDismissRequest = { onCreateMenuChange(false) }) {
-                        DropdownMenuItem(
-                            text = { Text("Nueva nota") },
-                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                            onClick = {
+                    BarButton(Icons.Filled.Add, "Crear", showCreateMenu) { onCreateMenuChange(true) }
+                    if (showCreateMenu) {
+                        BubbleMenu(onDismissRequest = { onCreateMenuChange(false) }) {
+                            BubbleItem("Nueva nota", Icons.Filled.Edit) {
                                 onCreateMenuChange(false)
                                 onCreate(NoteType.TEXT)
                             }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Nuevo cuaderno") },
-                            leadingIcon = { Icon(Icons.Filled.Book, contentDescription = null) },
-                            onClick = {
+                            BubbleItem("Nuevo cuaderno", Icons.Filled.Book) {
                                 onCreateMenuChange(false)
                                 onCreate(NoteType.JOURNAL)
                             }
-                        )
+                        }
                     }
                 }
             }
         }
         if (createOnLeft) createButton()
-        BarButton(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null && !journalView, onAll)
-        BarButton(Icons.Filled.Book, "Diario", journalView, onJournal)
+        BarButton(Icons.Filled.Notes, "Todas las notas", viewMode == ViewMode.ALL && labelFilter == null, onAll)
         BarButton(Icons.Filled.Lock, "Privadas", viewMode == ViewMode.PRIVATE, onPrivate)
         if (useTrash) {
             BarButton(Icons.Filled.Delete, "Papelera", viewMode == ViewMode.TRASH, onTrash)
         }
         if (labels.isNotEmpty()) {
             Box {
-                BarButton(Icons.Filled.Label, "Etiquetas", labelFilter != null) { onLabelMenuChange(true) }
-                DropdownMenu(expanded = showLabelMenu, onDismissRequest = { onLabelMenuChange(false) }) {
-                    if (labelFilter != null) {
-                        DropdownMenuItem(
-                            text = { Text("Quitar filtro") },
-                            onClick = {
+                BarButton(Icons.Filled.Label, "Etiquetas", labelFilter != null || showLabelMenu) { onLabelMenuChange(true) }
+                if (showLabelMenu) {
+                    BubbleMenu(onDismissRequest = { onLabelMenuChange(false) }) {
+                        if (labelFilter != null) {
+                            BubbleItem("Quitar filtro") {
                                 onLabelMenuChange(false)
                                 onClearLabel()
                             }
-                        )
-                    }
-                    labels.forEach { label ->
-                        DropdownMenuItem(
-                            text = { Text(label) },
-                            leadingIcon = {
-                                if (labelFilter == label) Icon(Icons.Filled.Check, contentDescription = null)
-                            },
-                            onClick = {
+                        }
+                        labels.forEach { label ->
+                            BubbleItem(text = label, icon = Icons.Filled.Label, selected = labelFilter == label) {
                                 onLabelMenuChange(false)
                                 onSelectLabel(label)
                             }
-                        )
+                        }
                     }
                 }
             }

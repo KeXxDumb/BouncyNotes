@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import com.dumb.bouncynotes.data.joinPages
 import com.dumb.bouncynotes.data.splitPages
+import com.dumb.bouncynotes.data.stripFormattingMarkers
 import com.dumb.bouncynotes.data.splitRawAt
 import com.dumb.bouncynotes.ui.components.processInlineTextFieldEdit
 import com.dumb.bouncynotes.ui.components.InlineMarkupTransformation
@@ -88,6 +89,9 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -738,7 +742,8 @@ fun NoteEditScreen(
 
     // --- Páginas de un cuaderno ---
     var showPagePicker by remember { mutableStateOf(false) }
-    var showDeletePageConfirm by remember { mutableStateOf(false) }
+    // Página (índice) pendiente de confirmar su borrado, o null.
+    var pageToDelete by remember { mutableStateOf<Int?>(null) }
     var showDateDialog by remember { mutableStateOf(false) }
 
     // Va a la página idx: lo que se escribió en la actual ya está en `current`
@@ -776,15 +781,52 @@ fun NoteEditScreen(
         goToPage(at)
     }
 
-    fun deleteCurrentPage() {
-        val all = splitPages(current.content).toMutableList()
-        if (all.size <= 1) return
-        val at = pageIndex.coerceIn(0, all.lastIndex)
-        // Los archivos de la página se borran de verdad (esta acción pide confirmación).
-        extractImageFileNames(all[at]).forEach { ImageStorage.deleteFile(context, it) }
-        all.removeAt(at)
-        current = current.copy(content = joinPages(all))
-        goToPage(at.coerceAtMost(all.lastIndex))
+    // Todas las páginas con su fecha EXPLÍCITA (la propia o, si no tiene, la de la
+    // nota). Hace falta antes de reordenar o borrar: la fecha de una página sin
+    // línea propia es la de la nota (createdAt), que cambia al cambiar la primera
+    // página, y sin fijarla cada página "heredaría" otra fecha distinta.
+    fun taggedPages(): List<String> =
+        splitPages(current.content).map { raw -> withPageDate(pageBodyOf(raw), pageDateOf(raw) ?: current.createdAt) }
+
+    // Aplica una lista de páginas (ya con fecha explícita) y va a `newCurrent`. La
+    // fecha de la nota es siempre la de la PRIMERA página: con ella se ordena en la lista.
+    fun applyPages(pages: List<String>, newCurrent: Int) {
+        val first = pageDateOf(pages.first()) ?: current.createdAt
+        current = current.copy(content = joinPages(pages), createdAt = first)
+        goToPage(newCurrent.coerceIn(0, pages.lastIndex))
+    }
+
+    // Mueve la página `from` a la posición `to`. La página que se estaba viendo
+    // sigue siendo la misma (su índice se ajusta).
+    fun movePage(from: Int, to: Int) {
+        val pages = taggedPages().toMutableList()
+        if (from !in pages.indices || to !in pages.indices || from == to) return
+        val moved = pages.removeAt(from)
+        pages.add(to, moved)
+        val cur = pageIndex.coerceIn(0, pages.lastIndex)
+        val newCurrent = when {
+            cur == from -> to
+            from < cur && cur <= to -> cur - 1
+            to <= cur && cur < from -> cur + 1
+            else -> cur
+        }
+        applyPages(pages, newCurrent)
+    }
+
+    // Borra la página `at` y los archivos de imagen/video que sólo ella usaba (la
+    // acción pide confirmación). No se puede borrar la única página.
+    fun deletePageAt(at: Int) {
+        val pages = taggedPages().toMutableList()
+        if (pages.size <= 1 || at !in pages.indices) return
+        extractImageFileNames(pages[at]).forEach { ImageStorage.deleteFile(context, it) }
+        val cur = pageIndex.coerceIn(0, pages.lastIndex)
+        pages.removeAt(at)
+        val newCurrent = when {
+            cur == at -> at.coerceAtMost(pages.lastIndex)
+            cur > at -> cur - 1
+            else -> cur
+        }
+        applyPages(pages, newCurrent)
     }
 
     fun undoPendingMediaDelete() {
@@ -1430,23 +1472,60 @@ fun NoteEditScreen(
     val bottomBarCompensation = bottomBarHeight + bottomBarNavInset + pageBarHeight + 12.dp
 
     if (showPagePicker) {
-        val pageTotal = splitPages(current.content).size
-        val pageCurrent = pageIndex.coerceIn(0, pageTotal - 1)
+        val rawPages = splitPages(current.content)
+        val pageCurrent = pageIndex.coerceIn(0, rawPages.lastIndex)
+        val shortDate = remember { java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT) }
         AlertDialog(
             onDismissRequest = { showPagePicker = false },
             title = { Text("Páginas") },
             text = {
                 Column {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(pageTotal) { i ->
-                            FilterChip(
-                                selected = i == pageCurrent,
-                                onClick = {
-                                    showPagePicker = false
-                                    goToPage(i)
-                                },
-                                label = { Text("${i + 1}") }
-                            )
+                    // Lista de páginas: tocar una la abre; con las flechas se reordena y
+                    // con el tacho se borra (pide confirmación).
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        itemsIndexed(rawPages) { i, raw ->
+                            val preview = pageBodyOf(raw).lineSequence()
+                                .map { stripFormattingMarkers(it).trim() }
+                                .firstOrNull { it.isNotEmpty() && !it.startsWith("[[") }
+                                .orEmpty()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (i == pageCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        showPagePicker = false
+                                        goToPage(i)
+                                    }
+                                    .padding(start = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("${i + 1}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(24.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        preview.ifEmpty { "(vacía)" },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        shortDate.format(java.util.Date(pageDateOf(raw) ?: current.createdAt)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                IconButton(onClick = { movePage(i, i - 1) }, enabled = i > 0, modifier = Modifier.size(40.dp)) {
+                                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Subir página")
+                                }
+                                IconButton(onClick = { movePage(i, i + 1) }, enabled = i < rawPages.lastIndex, modifier = Modifier.size(40.dp)) {
+                                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Bajar página")
+                                }
+                                IconButton(onClick = { pageToDelete = i }, enabled = rawPages.size > 1, modifier = Modifier.size(40.dp)) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Eliminar página")
+                                }
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -1454,31 +1533,23 @@ fun NoteEditScreen(
                         showPagePicker = false
                         addPageAfterCurrent()
                     }) { Text("Nueva página después de esta") }
-                    if (isEditing) {
-                        if (pageTotal > 1) {
-                            TextButton(onClick = {
-                                showPagePicker = false
-                                showDeletePageConfirm = true
-                            }) { Text("Eliminar esta página") }
-                        }
-                    }
                 }
             },
             confirmButton = { TextButton(onClick = { showPagePicker = false }) { Text("Cerrar") } }
         )
     }
-    if (showDeletePageConfirm) {
+    pageToDelete?.let { at ->
         AlertDialog(
-            onDismissRequest = { showDeletePageConfirm = false },
-            title = { Text("¿Eliminar la página ${pageIndex + 1}?") },
+            onDismissRequest = { pageToDelete = null },
+            title = { Text("¿Eliminar la página ${at + 1}?") },
             text = { Text("Se borra su contenido y sus imágenes o videos. No se puede deshacer.") },
             confirmButton = {
                 TextButton(onClick = {
-                    showDeletePageConfirm = false
-                    deleteCurrentPage()
+                    pageToDelete = null
+                    deletePageAt(at)
                 }) { Text("Eliminar") }
             },
-            dismissButton = { TextButton(onClick = { showDeletePageConfirm = false }) { Text("Cancelar") } }
+            dismissButton = { TextButton(onClick = { pageToDelete = null }) { Text("Cancelar") } }
         )
     }
     if (showDateDialog) {
