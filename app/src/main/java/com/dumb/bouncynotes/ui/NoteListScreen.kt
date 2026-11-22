@@ -24,6 +24,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import com.dumb.bouncynotes.data.pageDateOf
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawBehind
@@ -195,6 +196,8 @@ fun NoteListScreen(
     val notes: List<Note>? = allNotes
     var showCreateMenu by remember { mutableStateOf(false) }
     var showLabelMenu by remember { mutableStateOf(false) }
+    // "Recibir copia temporal" de otra persona por P2P (ver P2pDialogs.kt).
+    var showReceive by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
@@ -306,6 +309,12 @@ fun NoteListScreen(
     ) {
         NoteBackgroundImage(settings = settings, context = context)
 
+        if (showReceive) {
+            P2pReceiveFlow(
+                onDismiss = { showReceive = false },
+                onSaveCopy = { viewModel.save(it) }
+            )
+        }
         Scaffold(
             containerColor = if (settings.backgroundImagePath != null) Color.Transparent else MaterialTheme.colorScheme.background,
             topBar = {
@@ -430,6 +439,7 @@ fun NoteListScreen(
                         onSelectLabel = { viewModel.setLabelFilter(it) },
                         onClearLabel = { viewModel.setViewMode(ViewMode.ALL) },
                         onSettings = onOpenSettings,
+                        onReceive = { showReceive = true },
                         onCreate = { type -> onAddClick(type, 0L) }
                     )
                 }
@@ -600,6 +610,7 @@ private fun NoteListBottomBar(
     onSelectLabel: (String) -> Unit,
     onClearLabel: () -> Unit,
     onSettings: () -> Unit,
+    onReceive: () -> Unit,
     onCreate: (NoteType) -> Unit
 ) {
     GlassBottomBar(
@@ -643,6 +654,10 @@ private fun NoteListBottomBar(
                         BubbleItem("Nuevo cuaderno", Icons.Filled.Book) {
                             onCreateMenuChange(false)
                             onCreate(NoteType.JOURNAL)
+                        }
+                        BubbleItem("Recibir copia", Icons.Filled.Download) {
+                            onCreateMenuChange(false)
+                            onReceive()
                         }
                     }
                 }

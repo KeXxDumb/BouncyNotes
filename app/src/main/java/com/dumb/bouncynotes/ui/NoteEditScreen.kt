@@ -89,6 +89,7 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.outlined.AlarmAdd
 import androidx.compose.material.icons.filled.AlarmOff
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -447,6 +448,8 @@ fun NoteEditScreen(
     var pendingGroupFileNames by remember { mutableStateOf<List<String>?>(null) }
     var pendingGroupLayout by remember(pendingGroupFileNames) { mutableStateOf(settings.defaultGalleryLayout) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    // "Compartir copia temporal" por P2P (ver P2pDialogs.kt). Solo en modo lectura.
+    var showP2pShare by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
@@ -1300,6 +1303,9 @@ fun NoteEditScreen(
         )
     }
 
+    if (showP2pShare) {
+        P2pShareDialog(note = current, onDismiss = { showP2pShare = false })
+    }
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
@@ -1684,6 +1690,12 @@ fun NoteEditScreen(
                         Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
                     }
                 } else if (!isEditing) {
+                    // Compartir una copia temporal con otra persona (no para notas privadas).
+                    if (!current.isPrivate) {
+                        IconButton(onClick = { showP2pShare = true }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Compartir copia temporal")
+                        }
+                    }
                     // El botón de borrar solo está en modo lectura: en edición ya hay
                     // demasiados botones juntos y es fácil tocarlo sin querer.
                     IconButton(onClick = {

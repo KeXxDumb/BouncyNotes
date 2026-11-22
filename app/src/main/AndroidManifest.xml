@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Compartir copia temporal (P2P por WebRTC): hace falta internet para
+         conectar los dos teléfonos y ACCESS_NETWORK_STATE porque la librería
+         WebRTC consulta el estado de la red para elegir rutas. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
 
     <!-- Para los recordatorios de notas: notificaciones, alarmas exactas y
          volver a programarlas tras reiniciar el teléfono. -->
