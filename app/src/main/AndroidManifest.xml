@@ -153,6 +153,13 @@
             android:name=".data.ReminderReceiver"
             android:exported="false" />
 
+        <!-- Alarma exacta que borra una nota importada desde un .bnotes cuando
+             llega su fecha límite. No se exporta: solo la dispara nuestro
+             propio AlarmManager (PendingIntent inmutable). -->
+        <receiver
+            android:name=".data.ExpiryReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".data.BootReminderReceiver"
             android:exported="true"

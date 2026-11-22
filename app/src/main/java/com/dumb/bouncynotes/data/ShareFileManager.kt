@@ -195,9 +195,22 @@ object ShareFileManager {
     }
 
     fun deleteLocalCopyIfPossible(context: Context, uri: Uri) {
-        if (uri.scheme != "file") return
-        val path = uri.path ?: return
-        val cacheRoot = File(context.cacheDir, "share_files").absolutePath
-        if (path.startsWith(cacheRoot)) runCatching { File(path).delete() }
+        val cacheDir = File(context.cacheDir, "share_files")
+        when (uri.scheme) {
+            "file" -> {
+                val path = uri.path ?: return
+                val cacheRoot = cacheDir.absolutePath
+                if (path.startsWith(cacheRoot)) runCatching { File(path).delete() }
+            }
+            "content" -> {
+                // OpenDocument nos devuelve un URI de nuestro propio
+                // FileProvider cuando el archivo está en nuestro caché. En ese
+                // caso sí podemos borrarlo: hacemos match por autoridad para
+                // no intentar borrar archivos de otras apps.
+                if (uri.authority != "${context.packageName}.fileprovider") return
+                val name = uri.lastPathSegment ?: return
+                runCatching { File(cacheDir, name).delete() }
+            }
+        }
     }
 }

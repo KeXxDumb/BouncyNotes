@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
-import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -55,10 +53,15 @@ fun ShareFileDialog(
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(it))
     } ?: "Sin fecha límite"
 
+    // Se usa AlertDialog + DatePicker/TimePicker en vez de DatePickerDialog /
+    // TimePickerDialog: la firma de esos últimos cambió entre versiones de
+    // Material 3 (algunas no tienen parámetro `title`), y este proyecto está
+    // fijado a una versión concreta. AlertDialog es estable.
     if (showDatePicker) {
-        DatePickerDialog(
+        AlertDialog(
             onDismissRequest = { showDatePicker = false },
             title = { Text("Elegir fecha") },
+            text = { DatePicker(state = datePickerState) },
             confirmButton = {
                 TextButton(onClick = {
                     pickedDate = datePickerState.selectedDateMillis
@@ -69,15 +72,14 @@ fun ShareFileDialog(
             dismissButton = {
                 TextButton(onClick = { showDatePicker = false }) { Text("Cancelar") }
             }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        )
     }
 
     if (showTimePicker) {
-        TimePickerDialog(
+        AlertDialog(
             onDismissRequest = { showTimePicker = false },
             title = { Text("Elegir hora") },
+            text = { TimePicker(state = timePickerState) },
             confirmButton = {
                 TextButton(onClick = {
                     val cal = Calendar.getInstance().apply {
@@ -94,9 +96,7 @@ fun ShareFileDialog(
             dismissButton = {
                 TextButton(onClick = { showTimePicker = false }) { Text("Cancelar") }
             }
-        ) {
-            TimePicker(state = timePickerState)
-        }
+        )
     }
 
     AlertDialog(
