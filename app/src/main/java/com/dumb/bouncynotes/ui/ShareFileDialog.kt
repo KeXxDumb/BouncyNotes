@@ -58,6 +58,7 @@ fun ShareFileDialog(
     if (showDatePicker) {
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
+            title = { Text("Elegir fecha") },
             confirmButton = {
                 TextButton(onClick = {
                     pickedDate = datePickerState.selectedDateMillis
@@ -76,6 +77,7 @@ fun ShareFileDialog(
     if (showTimePicker) {
         TimePickerDialog(
             onDismissRequest = { showTimePicker = false },
+            title = { Text("Elegir hora") },
             confirmButton = {
                 TextButton(onClick = {
                     val cal = Calendar.getInstance().apply {
