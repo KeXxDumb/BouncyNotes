@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Compartir copia temporal (P2P por WebRTC): hace falta internet para
-         conectar los dos teléfonos y ACCESS_NETWORK_STATE porque la librería
-         WebRTC consulta el estado de la red para elegir rutas. -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-
     <!-- Para los recordatorios de notas: notificaciones, alarmas exactas y
          volver a programarlas tras reiniciar el teléfono. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -61,6 +54,33 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Notes" />
+
+        <!-- Entrada "Abrir con BouncyNotes" para archivos .bnotes. Android no
+             permite declarar extensiones en el manifest, así que además del
+             MIME propio se acepta application/octet-stream (lo que usan
+             muchos administradores de archivos para extensiones desconocidas).
+             El contenido se valida siempre leyendo la cabecera "BNOT1". -->
+        <activity
+            android:name=".OpenBnotesActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Notes">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/x-bouncynotes" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/x-bouncynotes" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
 
         <!-- "Durazno": nota con texto + durazno adjunto dentro de la hoja
              (ver ic_icon_peach.webp; el ícono del launcher es el adaptativo mipmap/ic_launcher_peach).

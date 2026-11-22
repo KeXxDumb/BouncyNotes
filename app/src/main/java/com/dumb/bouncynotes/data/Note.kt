@@ -73,5 +73,11 @@ data class Note(
     //    mes/día/hora/minuto); al sonar, esa fecha se reemplaza por la
     //    misma un año después, nunca se descarta.
     val reminderCalendarDates: Set<Long> = emptySet(),
-    val reminderCalendarRecurring: Boolean = false
+    val reminderCalendarRecurring: Boolean = false,
+    // Fecha límite (epoch millis) de una nota importada desde un archivo
+    // .bnotes. Al llegar a esa hora la nota se elimina de forma permanente,
+    // aunque esté en la papelera. null = nota normal, sin caducidad.
+    // Va AL FINAL a propósito: la migración 6 -> 7 agrega la columna con
+    // ALTER TABLE ... ADD COLUMN, o sea al final de la tabla existente.
+    val expiresAt: Long? = null
 )

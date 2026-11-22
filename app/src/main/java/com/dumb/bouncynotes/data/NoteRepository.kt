@@ -26,6 +26,12 @@ class NoteRepository(private val dao: NoteDao, private val context: Context? = n
 
     suspend fun purgeOldTrash(threshold: Long) = dao.purgeOldTrash(threshold).also { refreshWidgets() }
 
+    suspend fun getAllWithExpiry(): List<Note> = dao.getAllWithExpiry()
+
+    suspend fun getAllWithExpiryIncludingTrashed(): List<Note> = dao.getAllWithExpiryIncludingTrashed()
+
+    suspend fun deleteExpired(now: Long) = dao.deleteExpired(now).also { refreshWidgets() }
+
     suspend fun getAllWithReminders(): List<Note> = dao.getAllWithReminders()
 
     private fun refreshWidgets() {

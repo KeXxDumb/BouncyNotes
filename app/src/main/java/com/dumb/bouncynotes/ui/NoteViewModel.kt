@@ -4,6 +4,8 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dumb.bouncynotes.data.ExpiryManager
+import com.dumb.bouncynotes.data.ExpiryScheduler
 import com.dumb.bouncynotes.data.Note
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteRepository
@@ -77,6 +79,11 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             ViewMode.TRASH -> list.filter { it.deletedAt != null }
             ViewMode.PRIVATE -> list.filter { it.deletedAt == null && it.isPrivate }
         }
+        // Defensa extra: aunque la alarma de caducidad se haya demorado, una
+        // nota vencida nunca se muestra en ninguna lista.
+        filtered = filtered.filter { note ->
+            note.expiresAt == null || note.expiresAt > System.currentTimeMillis()
+        }
         if (label != null) {
             filtered = filtered.filter { label in it.labels }
         }
@@ -138,7 +145,18 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         _viewMode.value = ViewMode.ALL
     }
 
-    suspend fun getById(id: Long): Note? = repository.getById(id)
+    suspend fun getById(id: Long): Note? = repository.getById(id)?.let { note ->
+        val expiresAt = note.expiresAt
+        if (expiresAt != null && expiresAt <= System.currentTimeMillis()) {
+            // Nadie debe poder "recuperar" una nota caducada abriéndola por
+            // id (widget, notificación, navegación directa). Se borra antes
+            // de devolverla.
+            ExpiryManager.purgeNote(getApplication(), note.id)
+            null
+        } else {
+            note
+        }
+    }
 
     suspend fun getAllNotesSnapshot(): List<Note> = allNotes.first()
 
@@ -223,6 +241,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
             ReminderScheduler.cancel(getApplication(), note.id)
+            ExpiryScheduler.cancel(getApplication(), note.id)
             repository.delete(note)
         }
     }
@@ -242,6 +261,28 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
                     // trae un recordatorio (reminderChanged trata previous
                     // == null como "cambió", así que esto sí programa).
                     applyReminderScheduling(note.copy(id = savedId), previous = null)
+                }
+                // Un respaldo .zip puede contener notas que a su vez vinieron
+                // de un .bnotes: su fecha límite debe seguir vigente.
+                if (note.expiresAt != null) {
+                    ExpiryScheduler.schedule(getApplication(), note.copy(id = savedId))
+                }
+            }
+        }
+    }
+
+    // Importación de un .bnotes: además de guardar, programa la alarma de
+    // caducidad de cada nota (la fecha viaja DENTRO del archivo, la eligió
+    // quien lo envió, no quien lo abre).
+    fun importSharedNotes(notes: List<Note>) {
+        viewModelScope.launch {
+            notes.forEach { note ->
+                val savedId = repository.save(note)
+                if (note.reminderAt != null) {
+                    applyReminderScheduling(note.copy(id = savedId), previous = null)
+                }
+                if (note.expiresAt != null) {
+                    ExpiryScheduler.schedule(getApplication(), note.copy(id = savedId))
                 }
             }
         }
@@ -272,6 +313,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             all.filter { it.id in ids }.forEach { note ->
                 extractImageFileNames(note.content).forEach { ImageStorage.deleteFile(getApplication(), it) }
                 ReminderScheduler.cancel(getApplication(), note.id)
+                ExpiryScheduler.cancel(getApplication(), note.id)
                 repository.delete(note)
             }
         }

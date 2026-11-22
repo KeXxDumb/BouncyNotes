@@ -2,6 +2,9 @@ package com.dumb.bouncynotes.ui
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -448,8 +451,8 @@ fun NoteEditScreen(
     var pendingGroupFileNames by remember { mutableStateOf<List<String>?>(null) }
     var pendingGroupLayout by remember(pendingGroupFileNames) { mutableStateOf(settings.defaultGalleryLayout) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    // "Compartir copia temporal" por P2P (ver P2pDialogs.kt). Solo en modo lectura.
-    var showP2pShare by remember { mutableStateOf(false) }
+    // Compartir la nota como archivo .bnotes cifrado (reemplaza al P2P).
+    var showShareFile by remember { mutableStateOf(false) }
     var showMoreSheet by remember { mutableStateOf(false) }
     var showReminderSheet by remember { mutableStateOf(false) }
     var captionActiveIndices by remember { mutableStateOf(setOf<Int>()) }
@@ -1303,8 +1306,8 @@ fun NoteEditScreen(
         )
     }
 
-    if (showP2pShare) {
-        P2pShareDialog(note = current, onDismiss = { showP2pShare = false })
+    if (showShareFile) {
+        ShareFileDialog(notes = listOf(current), onDismiss = { showShareFile = false })
     }
     if (showDeleteConfirm) {
         AlertDialog(
@@ -1588,7 +1591,14 @@ fun NoteEditScreen(
         containerColor = if (settings.showBackgroundInNotes) Color.Transparent else MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    current.expiresAt?.let { expiresAt ->
+                        Text(
+                            text = "Caduca: " + SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(expiresAt)),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = {
                         persistIfDirty()
@@ -1690,10 +1700,10 @@ fun NoteEditScreen(
                         Icon(Icons.Filled.RestoreFromTrash, contentDescription = "Restaurar")
                     }
                 } else if (!isEditing) {
-                    // Compartir una copia temporal con otra persona (no para notas privadas).
+                    // Compartir como archivo .bnotes (no para notas privadas).
                     if (!current.isPrivate) {
-                        IconButton(onClick = { showP2pShare = true }) {
-                            Icon(Icons.Filled.Share, contentDescription = "Compartir copia temporal")
+                        IconButton(onClick = { showShareFile = true }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Compartir archivo .bnotes")
                         }
                     }
                     // El botón de borrar solo está en modo lectura: en edición ya hay

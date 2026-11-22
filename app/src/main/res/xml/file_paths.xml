@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="images" path="images/" />
+    <!-- Archivos .bnotes generados para compartir (ACTION_SEND con FileProvider). -->
+    <cache-path name="share_files" path="share_files/" />
 </paths>
