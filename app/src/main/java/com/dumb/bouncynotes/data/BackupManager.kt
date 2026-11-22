@@ -71,7 +71,9 @@ object BackupManager {
         return result
     }
 
-    private fun noteToJson(note: Note): JSONObject {
+    // internal para que ShareFileManager reutilice exactamente el mismo
+    // formato de nota (un solo lugar donde agregar campos nuevos).
+    internal fun noteToJson(note: Note): JSONObject {
         val o = JSONObject()
         o.put("type", note.type.name)
         o.put("title", note.title)
@@ -81,6 +83,7 @@ object BackupManager {
         o.put("archived", note.archived)
         o.put("isPrivate", note.isPrivate)
         o.put("deletedAt", note.deletedAt ?: JSONObject.NULL)
+        o.put("expiresAt", note.expiresAt ?: JSONObject.NULL)
         o.put("createdAt", note.createdAt)
         o.put("updatedAt", note.updatedAt)
         o.put("reminderAt", note.reminderAt ?: JSONObject.NULL)
@@ -107,7 +110,7 @@ object BackupManager {
         return o
     }
 
-    private fun jsonToNote(o: JSONObject): Note {
+    internal fun jsonToNote(o: JSONObject): Note {
         val type = try { NoteType.valueOf(o.optString("type")) } catch (e: Exception) { NoteType.TEXT }
         val labels = mutableListOf<String>()
         o.optJSONArray("labels")?.let { arr -> for (i in 0 until arr.length()) labels.add(arr.getString(i)) }
@@ -132,6 +135,7 @@ object BackupManager {
             archived = o.optBoolean("archived"),
             isPrivate = o.optBoolean("isPrivate"),
             deletedAt = if (o.isNull("deletedAt")) null else o.optLong("deletedAt"),
+            expiresAt = if (o.isNull("expiresAt")) null else o.optLong("expiresAt"),
             createdAt = o.optLong("createdAt", System.currentTimeMillis()),
             updatedAt = o.optLong("updatedAt", System.currentTimeMillis()),
             // Nota: al importar, el recordatorio recuperado NO vuelve a programar

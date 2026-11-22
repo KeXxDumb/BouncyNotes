@@ -1,5 +1,10 @@
 package com.dumb.bouncynotes.ui
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.dumb.bouncynotes.OpenBnotesActivity
+import com.dumb.bouncynotes.data.ShareFileManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -196,10 +201,21 @@ fun NoteListScreen(
     val notes: List<Note>? = allNotes
     var showCreateMenu by remember { mutableStateOf(false) }
     var showLabelMenu by remember { mutableStateOf(false) }
-    // "Recibir copia temporal" de otra persona por P2P (ver P2pDialogs.kt).
-    var showReceive by remember { mutableStateOf(false) }
-
     val context = LocalContext.current
+    // Importar un .bnotes desde el propio app (además de "Abrir con" desde el
+    // administrador de archivos). El Uri se pasa a OpenBnotesActivity, que es
+    // quien valida la fecha límite antes de mostrar/importar nada.
+    val openBnotesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            context.startActivity(Intent(context, OpenBnotesActivity::class.java).apply {
+                action = Intent.ACTION_VIEW
+                data = uri
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            })
+        }
+    }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     val selectionMode = selectedIds.isNotEmpty()
 
@@ -309,12 +325,6 @@ fun NoteListScreen(
     ) {
         NoteBackgroundImage(settings = settings, context = context)
 
-        if (showReceive) {
-            P2pReceiveFlow(
-                onDismiss = { showReceive = false },
-                onSaveCopy = { viewModel.save(it) }
-            )
-        }
         Scaffold(
             containerColor = if (settings.backgroundImagePath != null) Color.Transparent else MaterialTheme.colorScheme.background,
             topBar = {
@@ -439,7 +449,11 @@ fun NoteListScreen(
                         onSelectLabel = { viewModel.setLabelFilter(it) },
                         onClearLabel = { viewModel.setViewMode(ViewMode.ALL) },
                         onSettings = onOpenSettings,
-                        onReceive = { showReceive = true },
+                        onImport = {
+                            openBnotesLauncher.launch(
+                                arrayOf(ShareFileManager.MIME_TYPE, "*/*")
+                            )
+                        },
                         onCreate = { type -> onAddClick(type, 0L) }
                     )
                 }
@@ -610,7 +624,7 @@ private fun NoteListBottomBar(
     onSelectLabel: (String) -> Unit,
     onClearLabel: () -> Unit,
     onSettings: () -> Unit,
-    onReceive: () -> Unit,
+    onImport: () -> Unit,
     onCreate: (NoteType) -> Unit
 ) {
     GlassBottomBar(
@@ -655,9 +669,9 @@ private fun NoteListBottomBar(
                             onCreateMenuChange(false)
                             onCreate(NoteType.JOURNAL)
                         }
-                        BubbleItem("Recibir copia", Icons.Filled.Download) {
+                        BubbleItem("Importar .bnotes", Icons.Filled.Download) {
                             onCreateMenuChange(false)
-                            onReceive()
+                            onImport()
                         }
                     }
                 }

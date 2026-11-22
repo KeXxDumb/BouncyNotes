@@ -11,7 +11,5 @@
 -keep class androidx.media3.** { *; }
 -dontwarn androidx.media3.**
 
-# WebRTC (Compartir copia temporal): el código nativo (JNI) llama a clases y
-# métodos de org.webrtc por nombre, así que R8 no debe renombrarlos ni quitarlos.
--keep class org.webrtc.** { *; }
--dontwarn org.webrtc.**
+# El reemplazo de P2P (archivos .bnotes) usa solo javax.crypto del SDK: no
+# necesita reglas R8 adicionales.

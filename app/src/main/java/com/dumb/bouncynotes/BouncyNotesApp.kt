@@ -8,6 +8,8 @@ import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
+import com.dumb.bouncynotes.data.ExpiryManager
+import com.dumb.bouncynotes.data.ExpiryScheduler
 import com.dumb.bouncynotes.data.ImageStorage
 import com.dumb.bouncynotes.data.NoteDatabase
 import com.dumb.bouncynotes.data.NoteType
@@ -37,6 +39,13 @@ class BouncyNotesApp : Application(), ImageLoaderFactory {
         super.onCreate()
         applicationScope.launch { convertLegacyChecklistNotes() }
         applicationScope.launch { cleanupOrphanMediaFiles() }
+        applicationScope.launch {
+            // Si el teléfono estaba apagado (o la app en segundo plano muy
+            // tiempo) cuando vencía un .bnotes, la alarma pudo no llegar.
+            // Acá se purga lo vencido y se reprograma lo que sigue vivo.
+            ExpiryManager.purgeAllExpired(this@BouncyNotesApp)
+            ExpiryScheduler.rescheduleAll(this@BouncyNotesApp)
+        }
     }
 
     // Las checklists ya no son un tipo de nota aparte: una nota normal puede

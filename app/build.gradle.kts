@@ -146,11 +146,6 @@ dependencies {
     // confirmadas compatibles con compileSdk 36.
     implementation("androidx.core:core-ktx:1.17.0")
 
-    // WebRTC precompilado para Android (la librería de Google ya no se mantiene;
-    // esta es la versión mantenida por Stream, en Maven Central). Se usa SOLO para el
-    // canal de datos de "Compartir copia temporal" (P2P, sin servidor): no
-    // se usa audio ni video. Ver p2p/P2pSession.kt.
-    implementation("io.getstream:stream-webrtc-android:1.3.9")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.12.3")

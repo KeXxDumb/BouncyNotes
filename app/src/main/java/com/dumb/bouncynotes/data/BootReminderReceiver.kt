@@ -28,6 +28,8 @@ class BootReminderReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 ReminderScheduler.rescheduleAll(context)
+                ExpiryManager.purgeAllExpired(context)
+                ExpiryScheduler.rescheduleAll(context)
             } finally {
                 pendingResult.finish()
             }

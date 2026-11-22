@@ -80,6 +80,32 @@ El workflow:
   con la misma clave, Android lo reconoce como una actualización y **no pide
   desinstalar**.
 
+## Compartir notas con archivos `.bnotes`
+
+Reemplaza al antiguo envío P2P. Desde una nota en modo lectura, el botón de
+compartir crea un archivo `.bnotes` cifrado (AES-256-GCM) con:
+
+- una o varias notas (el editor comparte la nota actual),
+- las imágenes/videos que tengan adjuntos,
+- una **fecha límite opcional** elegida en el momento de enviar.
+
+El archivo se comparte con el botón de compartir de Android y aparece como
+**“Abrir con BouncyNotes”** en el administrador de archivos (MIME
+`application/x-bouncynotes`; también se acepta `application/octet-stream`).
+También se puede importar desde **+ → Importar .bnotes** en la lista.
+
+Si el archivo tiene fecha límite y ya pasó al abrirlo, **no se importa nada y
+la nota nunca se muestra**. Si se importó antes de vencer, una alarma exacta
+borra la nota y sus archivos adjuntos a la hora indicada; al arrancar la app o
+reiniciar el teléfono se vuelve a comprobar/borrar lo vencido y se reprograma
+lo que sigue vivo.
+
+El cifrado es “simple” a propósito: la clave se deriva de una frase fija que
+vive en la app, así que el archivo no es legible a simple vista y detecta
+cambios, pero **no es secreto** frente a alguien que extraiga la clave del APK.
+Para secreto real haría falta pedir contraseña al enviar y derivar la clave
+con PBKDF2/Argon2.
+
 ## Notas técnicas
 
 - `versionCode` se genera automáticamente a partir del número de ejecución
